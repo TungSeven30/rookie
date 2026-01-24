@@ -17,7 +17,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
 | 1 - Foundation | Complete | 5/5 | 100% |
-| 2 - Core Framework | In Progress | 1/6 | 17% |
+| 2 - Core Framework | In Progress | 2/6 | 33% |
 | 3 - Personal Tax Simple | Pending | 0/0 | 0% |
 | 4 - Personal Tax Complex | Pending | 0/0 | 0% |
 | 5 - Review Infrastructure | Pending | 0/0 | 0% |
@@ -25,20 +25,20 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall Progress:** [##______] 15%
+**Overall Progress:** [##______] 18%
 
 ## Current Position
 
 - **Phase:** 2 of 8 (Core Framework)
-- **Plan:** 02-02 complete, 02-01 in parallel
+- **Plan:** 02-01 and 02-02 complete (Wave 1)
 - **Status:** In Progress
-- **Last activity:** 2026-01-24 - Completed 02-02-PLAN.md (Task Dispatcher)
+- **Last activity:** 2026-01-24 - Completed 02-01-PLAN.md (State Machine)
 
 ## Performance Metrics
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Plans completed | 6 | - |
+| Plans completed | 7 | - |
 | Requirements delivered | 6/60 | 60 |
 | Phases complete | 1/8 | 8 |
 
@@ -70,6 +70,9 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2026-01-24 | "degraded" status for partial failure | More informative than binary ok/error |
 | 2026-01-24 | Singleton with reset for dispatcher | Convenient access via get_dispatcher(), test isolation via reset_dispatcher() |
 | 2026-01-24 | Handler replacement logs warning | Allows hot-reload patterns without raising exceptions |
+| 2026-01-24 | python-statemachine model binding pattern | Binds task.status field for automatic state sync |
+| 2026-01-24 | Failed state is not final (allows retry) | Enables retry workflow from failed back to pending |
+| 2026-01-24 | Completed and escalated states are final | No transitions out of terminal states |
 
 ### Deferred Items
 
@@ -95,7 +98,7 @@ None currently.
 - [x] Execute 01-04-PLAN.md (Alembic Migrations)
 - [x] Execute 01-05-PLAN.md (FastAPI Application)
 - [x] Plan Phase 2 (Core Framework)
-- [ ] Execute 02-01-PLAN.md (State Machine + Dependencies)
+- [x] Execute 02-01-PLAN.md (State Machine + Dependencies)
 - [x] Execute 02-02-PLAN.md (Task Dispatcher)
 - [ ] Execute 02-03-PLAN.md (Circuit Breaker)
 - [ ] Execute 02-04-PLAN.md (Skill Engine)
@@ -118,20 +121,22 @@ None currently.
 | 2026-01-24 | **Phase 1 Complete** - Foundation operational |
 | 2026-01-24 | Phase 2 plans created (6 plans in 4 waves) |
 | 2026-01-24 | Completed 02-02: Task Dispatcher (3 min) |
+| 2026-01-24 | Completed 02-01: State Machine (4 min) |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Executed 02-02-PLAN.md (Task Dispatcher):
-- TaskDispatcher class with register/unregister/dispatch methods
-- Handler routing by task.task_type to registered async handlers
-- ValueError for unregistered task types with helpful error message
-- Comprehensive test coverage with 12 passing tests
+Executed 02-01-PLAN.md (State Machine + Dependencies):
+- Installed Phase 2 dependencies (python-statemachine, pybreaker, pydantic-yaml, ruamel.yaml, voyageai)
+- TaskStateMachine class with model binding to task.status field
+- States: pending, assigned, in_progress, completed, failed, escalated
+- Transitions: assign, start, complete, fail, escalate, retry
+- Comprehensive test coverage with 17 passing tests
 
 ### Next Session Starting Point
 
-Continue Phase 2 execution - remaining plans: 02-01 (parallel), 02-03, 02-04, 02-05, 02-06.
+Continue Phase 2 execution - Wave 2: 02-03 (Circuit Breaker), then Wave 3: 02-04, 02-05 (parallel), then Wave 4: 02-06.
 
 ### Context to Preserve
 
@@ -174,9 +179,14 @@ Continue Phase 2 execution - remaining plans: 02-01 (parallel), 02-03, 02-04, 02
 - Full audit trail required
 - 7-year data retention for completed tasks
 
-**Orchestration (02-02):**
+**Orchestration (02-01, 02-02):**
+- `src/orchestration/state_machine.py` - TaskStateMachine class with model binding
 - `src/orchestration/dispatcher.py` - TaskDispatcher class for routing tasks to handlers
+- `tests/orchestration/test_state_machine.py` - 17 comprehensive tests
 - `tests/orchestration/test_dispatcher.py` - 12 comprehensive tests
+
+**Phase 2 Dependencies Added:**
+- python-statemachine, pybreaker, pydantic-yaml, ruamel.yaml, voyageai
 
 **Critical Path:**
 Phase 1 -> 2 -> 3 -> 4 -> 5 -> 7 -> 8
@@ -184,4 +194,4 @@ Phase 1 -> 2 -> 3 -> 4 -> 5 -> 7 -> 8
 ---
 
 *State initialized: 2026-01-23*
-*Last updated: 2026-01-24*
+*Last updated: 2026-01-24 09:08 UTC*
