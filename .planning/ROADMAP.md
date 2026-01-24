@@ -71,6 +71,15 @@ Phase 4 (PT Complex)
 
 **Rollback:** If Redis unreliable, fall back to in-memory queue for dev.
 
+**Plans:** 5 plans in 4 waves
+
+Plans:
+- [ ] 01-01-PLAN.md — Project scaffolding and Pydantic configuration
+- [ ] 01-02-PLAN.md — SQLAlchemy models and database utilities
+- [ ] 01-03-PLAN.md — Redis, structlog, and Sentry infrastructure
+- [ ] 01-04-PLAN.md — Alembic migrations with pgvector support
+- [ ] 01-05-PLAN.md — FastAPI app with health endpoint
+
 ---
 
 ### Phase 2: Core Framework
@@ -280,7 +289,7 @@ Phase 4 (PT Complex)
 
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
-| 1 - Foundation | Pending | 0/0 | 0% |
+| 1 - Foundation | Planning | 0/5 | 0% |
 | 2 - Core Framework | Pending | 0/0 | 0% |
 | 3 - Personal Tax Simple | Pending | 0/0 | 0% |
 | 4 - Personal Tax Complex | Pending | 0/0 | 0% |
