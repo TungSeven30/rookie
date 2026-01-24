@@ -67,18 +67,24 @@ def configure_logging() -> None:
         _add_context_vars,
     ]
 
-    if settings.environment == "development":
-        # Development: colored console output
+    log_format = settings.log_format.lower() if settings.log_format else None
+    use_json = log_format == "json" or (
+        log_format is None and settings.environment != "development"
+    )
+
+    if use_json:
+        # JSON output with explicit message field for observability tooling.
         processors: list[Processor] = [
             *shared_processors,
-            structlog.dev.ConsoleRenderer(colors=True),
-        ]
-    else:
-        # Production: JSON output with orjson
-        processors = [
-            *shared_processors,
+            structlog.processors.EventRenamer("message"),
             structlog.processors.format_exc_info,
             structlog.processors.JSONRenderer(serializer=_orjson_serializer),
+        ]
+    else:
+        # Development: colored console output
+        processors = [
+            *shared_processors,
+            structlog.dev.ConsoleRenderer(colors=True),
         ]
 
     structlog.configure(

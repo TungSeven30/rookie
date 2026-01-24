@@ -31,5 +31,8 @@ class Settings(BaseSettings):
     debug: bool = False
     """Enable debug mode."""
 
+    log_format: str | None = None
+    """Logging format override (json or console). Defaults by environment."""
+
 
 settings = Settings()
