@@ -153,10 +153,19 @@ async def load_skill_for_year(
 
     # Parse the YAML content into a SkillFileModel
     # Note: skill_file.content is stored as YAML text in the database
-    from src.skills.loader import load_skill_from_yaml
+    from io import StringIO
+
+    from ruamel.yaml import YAML
+
+    from src.skills.loader import load_skill_from_dict
 
     try:
-        return load_skill_from_yaml(skill_file.content)
+        yaml = YAML()
+        yaml.preserve_quotes = True
+        data = yaml.load(StringIO(skill_file.content))
+        if data is None or not isinstance(data, dict):
+            return None
+        return load_skill_from_dict(dict(data))
     except Exception:
         # If parsing fails, log and return None
         # In production, this would be logged via structlog
