@@ -32,6 +32,10 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **SKILL-04**: Client profile append-only log maintains integrity after 100+ writes
 - [ ] **SKILL-05**: Client profile computed view derives current state from log
 
+### Search
+
+- [ ] **SEARCH-01**: Hybrid search combining pgvector (semantic) + pg_textsearch (BM25 keyword)
+
 ### Document Processing
 
 - [ ] **DOC-01**: Vision API extracts all fields from W-2 with >95% accuracy
@@ -174,6 +178,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SKILL-03 | Phase 2 | Pending |
 | SKILL-04 | Phase 2 | Pending |
 | SKILL-05 | Phase 2 | Pending |
+| SEARCH-01 | Phase 2 | Pending |
 | DOC-01 | Phase 3 | Pending |
 | DOC-02 | Phase 3 | Pending |
 | DOC-03 | Phase 3 | Pending |
@@ -233,8 +238,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PROD-05 | Phase 8 | Pending |
 
 **Coverage:**
-- v1 requirements: 60 total
-- Mapped to phases: 60
+- v1 requirements: 61 total
+- Mapped to phases: 61
 - Unmapped: 0 ✓
 
 ---
