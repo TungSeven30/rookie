@@ -174,8 +174,15 @@ Tax law changes? Update the skill file with a new effective date. The agent know
   - [x] Structured JSON logging with correlation IDs
   - [x] Request context middleware
   - [x] Unit tests with mocked dependencies
-- [ ] **Phase 2**: Core framework (orchestration, state machine, skills) ← *in progress*
-- [ ] **Phase 3**: Personal Tax Agent (simple returns)
+- [x] **Phase 2**: Core framework
+  - [x] Task Dispatcher with agent routing
+  - [x] State Machine (pending → assigned → in_progress → completed/failed/escalated)
+  - [x] Circuit Breaker (5-fail threshold, 30s recovery)
+  - [x] Skill Engine (YAML parsing, version selection)
+  - [x] Client Profile Manager (append-only log)
+  - [x] Context Builder for agent execution
+  - [x] Hybrid Search (pgvector + BM25 with RRF fusion)
+- [ ] **Phase 3**: Personal Tax Agent (simple returns) ← *next*
 - [ ] **Phase 4**: Personal Tax Agent (complex returns)
 - [ ] **Phase 5**: Review infrastructure (feedback, checker, basic status)
 - [ ] **Phase 6**: Business Tax Agent
