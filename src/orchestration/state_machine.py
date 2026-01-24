@@ -39,6 +39,13 @@ class TaskStateMachine(StateMachine):
     - fail: in_progress/assigned -> failed
     - escalate: in_progress/assigned -> escalated
     - retry: failed -> pending (allows retry after failure)
+
+    Usage:
+        task = Task(status=TaskStatus.PENDING, ...)
+        sm = TaskStateMachine(task=task)
+        sm.assign(agent="personal_tax_agent")
+        sm.start()
+        sm.complete()
     """
 
     # States (match TaskStatus enum values)
@@ -70,25 +77,22 @@ class TaskStateMachine(StateMachine):
         """
         self.task = task
         self.session = session
-        # Initialize from task's current status
-        super().__init__()
+        # Initialize state machine using task's status field
+        # The model parameter binds to task, state_field reads/writes task.status
+        # start_value ensures we start from the task's current status
+        super().__init__(
+            model=task,
+            state_field="status",
+            start_value=task.status,
+        )
 
-    @property
-    def current_state_value(self) -> TaskStatus:
-        """Get current state as TaskStatus enum."""
+    def get_state_value(self) -> TaskStatus:
+        """Get current state as TaskStatus enum.
+
+        Returns:
+            Current TaskStatus value
+        """
         return self.current_state.value
-
-    def _get_initial_state(self) -> State:
-        """Determine initial state from task's current status."""
-        status_to_state = {
-            TaskStatus.PENDING: self.pending,
-            TaskStatus.ASSIGNED: self.assigned,
-            TaskStatus.IN_PROGRESS: self.in_progress,
-            TaskStatus.COMPLETED: self.completed,
-            TaskStatus.FAILED: self.failed,
-            TaskStatus.ESCALATED: self.escalated,
-        }
-        return status_to_state.get(self.task.status, self.pending)
 
     # Transition callbacks
     def on_assign(self, agent: str) -> None:
@@ -98,7 +102,6 @@ class TaskStateMachine(StateMachine):
             agent: Name/identifier of the assigned agent
         """
         self.task.assigned_agent = agent
-        self.task.status = TaskStatus.ASSIGNED
         logger.info(
             "task_assigned",
             task_id=self.task.id,
@@ -107,7 +110,6 @@ class TaskStateMachine(StateMachine):
 
     def on_start(self) -> None:
         """Called when agent starts working on task."""
-        self.task.status = TaskStatus.IN_PROGRESS
         logger.info(
             "task_started",
             task_id=self.task.id,
@@ -116,7 +118,6 @@ class TaskStateMachine(StateMachine):
 
     def on_complete(self) -> None:
         """Called when task completes successfully."""
-        self.task.status = TaskStatus.COMPLETED
         self.task.completed_at = datetime.utcnow()
         logger.info(
             "task_completed",
@@ -130,7 +131,6 @@ class TaskStateMachine(StateMachine):
         Args:
             reason: Description of failure
         """
-        self.task.status = TaskStatus.FAILED
         logger.warning(
             "task_failed",
             task_id=self.task.id,
@@ -144,7 +144,6 @@ class TaskStateMachine(StateMachine):
         Args:
             reason: Description of why escalation needed
         """
-        self.task.status = TaskStatus.ESCALATED
         logger.warning(
             "task_escalated",
             task_id=self.task.id,
@@ -154,7 +153,6 @@ class TaskStateMachine(StateMachine):
 
     def on_retry(self) -> None:
         """Called when retrying a failed task."""
-        self.task.status = TaskStatus.PENDING
         self.task.assigned_agent = None
         self.task.completed_at = None
         logger.info(
