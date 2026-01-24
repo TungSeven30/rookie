@@ -16,7 +16,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
-| 1 - Foundation | In Progress | 3/5 | ~60% |
+| 1 - Foundation | In Progress | 4/5 | ~80% |
 | 2 - Core Framework | Pending | 0/0 | 0% |
 | 3 - Personal Tax Simple | Pending | 0/0 | 0% |
 | 4 - Personal Tax Complex | Pending | 0/0 | 0% |
@@ -25,20 +25,20 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall Progress:** [###_____] ~8%
+**Overall Progress:** [####____] ~10%
 
 ## Current Position
 
 - **Phase:** 1 of 8 (Foundation)
-- **Plan:** 01-02 complete
+- **Plan:** 01-04 complete
 - **Status:** In progress
-- **Last activity:** 2026-01-24 - Completed 01-02-PLAN.md (Database Models)
+- **Last activity:** 2026-01-24 - Completed 01-04-PLAN.md (Alembic Migrations)
 
 ## Performance Metrics
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Plans completed | 3 | - |
+| Plans completed | 4 | - |
 | Requirements delivered | 0/60 | 60 |
 | Phases complete | 0/8 | 8 |
 
@@ -63,6 +63,9 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2026-01-24 | Pool size 20, max_overflow 0 | Bounded connections prevent database overload |
 | 2026-01-24 | expire_on_commit=False | Objects usable after commit in FastAPI responses |
 | 2026-01-24 | Lazy engine initialization | Avoids connection at import time |
+| 2026-01-24 | Async migrations with NullPool | Prevents connection leaks during migration runs |
+| 2026-01-24 | pgvector via ischema_names | Autogenerate recognizes Vector type |
+| 2026-01-24 | PostgreSQL 17 for local dev | pgvector Homebrew bottle compatibility |
 
 ### Deferred Items
 
@@ -85,7 +88,7 @@ None currently.
 - [x] Execute 01-01-PLAN.md (Project Scaffolding)
 - [x] Execute 01-02-PLAN.md (Database Models)
 - [x] Execute 01-03-PLAN.md (Infrastructure Services)
-- [ ] Execute 01-04-PLAN.md (FastAPI Application)
+- [x] Execute 01-04-PLAN.md (Alembic Migrations)
 - [ ] Execute 01-05-PLAN.md (Testing Infrastructure)
 
 ## Recent Activity
@@ -99,22 +102,22 @@ None currently.
 | 2026-01-24 | Completed 01-01: Project Scaffolding (3 min) |
 | 2026-01-24 | Completed 01-02: Database Models (4 min) |
 | 2026-01-24 | Completed 01-03: Infrastructure Services (4 min) |
+| 2026-01-24 | Completed 01-04: Alembic Migrations (4 min) |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Executed 01-02-PLAN.md (Database Models):
-- Created SQLAlchemy 2.0 models with Mapped/mapped_column patterns
-- 11 domain models: Task, Escalation, TaskArtifact, Client, ClientProfileEntry, FeedbackEntry, DocumentEmbedding, SkillFile, SkillEmbedding, AgentLog, AgentMetric
-- TimestampMixin for created_at/updated_at columns
-- pgvector Vector(1536) for embedding columns
-- Async database engine factory with connection pooling
-- FastAPI-compatible session dependency
+Executed 01-04-PLAN.md (Alembic Migrations):
+- Alembic initialized with async PostgreSQL support
+- pgvector Vector type registered in ischema_names
+- Initial migration creates all 11 domain tables
+- Full downgrade/upgrade cycle verified
+- PostgreSQL 17 configured with pgvector extension
 
 ### Next Session Starting Point
 
-Ready for 01-04-PLAN.md (FastAPI Application) or 01-05-PLAN.md (Testing Infrastructure).
+Ready for 01-05-PLAN.md (Testing Infrastructure).
 
 ### Context to Preserve
 
@@ -139,6 +142,11 @@ Ready for 01-04-PLAN.md (FastAPI Application) or 01-05-PLAN.md (Testing Infrastr
 - `src/core/logging.py` - structlog config, contextvars
 - `src/core/sentry.py` - Sentry init with FastAPI integration
 
+**Alembic Migrations (01-04):**
+- `alembic.ini` - Configuration with URL from env.py
+- `migrations/env.py` - Async migrations with pgvector support
+- `migrations/versions/c5fc18e7c719_*.py` - Initial 11-table schema
+
 **Key Constraints:**
 - No client PII in AI training
 - Only SSN last-4 stored
@@ -151,4 +159,4 @@ Phase 1 -> 2 -> 3 -> 4 -> 5 -> 7 -> 8
 ---
 
 *State initialized: 2026-01-23*
-*Last updated: 2026-01-24*
+*Last updated: 2026-01-24 06:46Z*
