@@ -18,28 +18,28 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 |-------|--------|-------|----------|
 | 1 - Foundation | Complete | 5/5 | 100% |
 | 2 - Core Framework | Complete | 6/6 | 100% |
-| 3 - Personal Tax Simple | In Progress | 5/7 | 71% |
+| 3 - Personal Tax Simple | In Progress | 6/7 | 86% |
 | 4 - Personal Tax Complex | Pending | 0/0 | 0% |
 | 5 - Review Infrastructure | Pending | 0/0 | 0% |
 | 6 - Business Tax | Pending | 0/0 | 0% |
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall Progress:** [######__] 38%
+**Overall Progress:** [######__] 40%
 
 ## Current Position
 
 - **Phase:** 3 of 8 (Personal Tax Simple)
-- **Plan:** 03-05 complete (Tax Calculator with Credits)
+- **Plan:** 03-06 complete (Output Generators)
 - **Status:** In Progress
-- **Last activity:** 2026-01-24 - Completed 03-05-PLAN.md (Tax Calculator)
+- **Last activity:** 2026-01-24 - Completed 03-06-PLAN.md (Output Generators)
 
 ## Performance Metrics
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Plans completed | 15 | - |
-| Requirements delivered | 14/60 | 60 |
+| Plans completed | 16 | - |
+| Requirements delivered | 16/60 | 60 |
 | Phases complete | 2/8 | 8 |
 
 ## Accumulated Context
@@ -136,7 +136,7 @@ None currently.
 - [x] Execute 03-03-PLAN.md (Classifier & Confidence)
 - [x] Execute 03-04-PLAN.md (Document Extractor)
 - [x] Execute 03-05-PLAN.md (Tax Calculator)
-- [ ] Execute 03-06-PLAN.md (Form Routing)
+- [x] Execute 03-06-PLAN.md (Output Generators)
 - [ ] Execute 03-07-PLAN.md (End-to-End Integration)
 
 ## Recent Activity
@@ -167,24 +167,26 @@ None currently.
 | 2026-01-24 | Completed 03-03: Classifier & Confidence (10 min) |
 | 2026-01-24 | Completed 03-04: Document Extractor (5 min) |
 | 2026-01-24 | Completed 03-05: Tax Calculator with Credits (10 min) |
+| 2026-01-24 | Completed 03-06: Output Generators (5 min) |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Executed 03-05-PLAN.md (Tax Calculator with Credits) using TDD:
-- aggregate_income() sums W-2 wages, 1099-INT interest, 1099-DIV dividends, 1099-NEC income
-- get_standard_deduction() lookup by filing status (single, mfj, mfs, hoh) and year (2023, 2024)
-- calculate_deductions() standard vs itemized comparison
-- evaluate_credits() evaluates CTC, AOC, Saver's Credit, EITC with phaseouts
-- calculate_tax() marginal bracket calculation for all filing statuses
-- compare_years() variance detection with configurable threshold (default 10%)
-- TDD phases: RED (tests fail) → GREEN (implement) → REFACTOR (edge cases)
-- 72 tests passing
+Executed 03-06-PLAN.md (Output Generators):
+- generate_drake_worksheet() creates Excel workbook for Drake Tax Software manual entry
+  - Summary sheet with client info, income totals, deductions, tax calculation
+  - W-2 Income sheet with Drake-compatible column ordering
+  - 1099-INT, 1099-DIV, 1099-NEC sheets for each form type
+  - Formatting: bold headers, currency format, auto-fit widths, freeze header row
+- generate_preparer_notes() creates Markdown for CPA review with 5 sections:
+  - Summary, Sources, Flags, Assumptions, Review Focus
+  - Includes variances >10% and low confidence extractions in Flags
+- 30 tests passing
 
 ### Next Session Starting Point
 
-Execute 03-06-PLAN.md (Form Routing) - route documents to appropriate form handlers.
+Execute 03-07-PLAN.md (End-to-End Integration) - wire together all Phase 3 components into a complete workflow.
 
 ### Context to Preserve
 
@@ -298,6 +300,13 @@ Execute 03-06-PLAN.md (Form Routing) - route documents to appropriate form handl
 - Credits: CTC ($2k/child with phaseout), AOC (up to $2,500), Saver's Credit (10-50%), EITC (simplified)
 - Tax brackets: 2024 rates for single, mfj, mfs, hoh
 - `tests/agents/personal_tax/test_calculator.py` - 72 tests
+
+**Output Generators (03-06):**
+- `src/agents/personal_tax/output.py` - Drake worksheet and preparer notes generators
+- generate_drake_worksheet() creates Excel with Summary, W-2 Income, 1099-INT, 1099-DIV, 1099-NEC sheets
+- generate_preparer_notes() creates Markdown with Summary, Sources, Flags, Assumptions, Review Focus
+- Both exported from personal_tax module __init__.py
+- `tests/agents/personal_tax/test_output.py` - 30 tests
 
 **Phase 3 Dependencies Added:**
 - anthropic, instructor, openpyxl, fsspec
