@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-01-24
 **Current Phase:** 2 - Core Framework
-**Status:** In Progress
+**Status:** Complete
 
 ## Project Reference
 
@@ -17,7 +17,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
 | 1 - Foundation | Complete | 5/5 | 100% |
-| 2 - Core Framework | In Progress | 5/6 | 83% |
+| 2 - Core Framework | Complete | 6/6 | 100% |
 | 3 - Personal Tax Simple | Pending | 0/0 | 0% |
 | 4 - Personal Tax Complex | Pending | 0/0 | 0% |
 | 5 - Review Infrastructure | Pending | 0/0 | 0% |
@@ -25,22 +25,22 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall Progress:** [#####___] 27%
+**Overall Progress:** [######__] 30%
 
 ## Current Position
 
 - **Phase:** 2 of 8 (Core Framework)
-- **Plan:** 02-01, 02-02, 02-03, 02-04, 02-05 complete (Wave 1 + 2 + 3)
-- **Status:** In Progress
-- **Last activity:** 2026-01-24 - Completed 02-05-PLAN.md (Context Builder)
+- **Plan:** All 6 plans complete (Wave 1-4)
+- **Status:** Phase Complete
+- **Last activity:** 2026-01-24 - Completed 02-06-PLAN.md (Hybrid Search)
 
 ## Performance Metrics
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Plans completed | 10 | - |
-| Requirements delivered | 6/60 | 60 |
-| Phases complete | 1/8 | 8 |
+| Plans completed | 11 | - |
+| Requirements delivered | 7/60 | 60 |
+| Phases complete | 2/8 | 8 |
 
 ## Accumulated Context
 
@@ -82,6 +82,9 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2026-01-24 | Window functions for computed view | Efficient single-query latest-per-type for profile |
 | 2026-01-24 | Append-only log for profile entries | Never update existing entries, always append |
 | 2026-01-24 | TASK_TYPE_SKILLS mapping | Central mapping of task types to required skills |
+| 2026-01-24 | Mock mode for embedding client | Testing without Voyage AI API key using deterministic vectors |
+| 2026-01-24 | RRF_K=60 for fusion | Standard value from Reciprocal Rank Fusion literature |
+| 2026-01-24 | GIN index on chunk_text | Efficient full-text search on skill embeddings |
 
 ### Deferred Items
 
@@ -112,7 +115,8 @@ None currently.
 - [x] Execute 02-03-PLAN.md (Circuit Breaker)
 - [x] Execute 02-04-PLAN.md (Skill Engine)
 - [x] Execute 02-05-PLAN.md (Context Builder)
-- [ ] Execute 02-06-PLAN.md (Hybrid Search)
+- [x] Execute 02-06-PLAN.md (Hybrid Search)
+- [ ] Plan Phase 3 (Personal Tax Simple)
 
 ## Recent Activity
 
@@ -134,21 +138,23 @@ None currently.
 | 2026-01-24 | Completed 02-03: Circuit Breaker (4 min) |
 | 2026-01-24 | Completed 02-04: Skill Engine (7 min) |
 | 2026-01-24 | Completed 02-05: Context Builder (6 min) |
+| 2026-01-24 | Completed 02-06: Hybrid Search (5 min) |
+| 2026-01-24 | **Phase 2 Complete** - Core Framework operational |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Executed 02-05-PLAN.md (Context Builder):
-- Profile service: get_client_profile_view, append_profile_entry, get_profile_history
-- Context builder: AgentContext dataclass, build_agent_context, get_skills_for_task_type
-- Task-to-skills mapping for all task types
-- Stubs for Phase 3: get_client_documents, get_prior_year_return
-- 42 passing tests covering profile and builder functionality
+Executed 02-06-PLAN.md (Hybrid Search):
+- EmbeddingClient with Voyage AI and mock mode for testing
+- hybrid_search combining pgvector semantic + BM25 full-text search
+- RRF fusion for normalizing and combining rankings
+- GIN index migration for efficient full-text search
+- 30 passing tests covering embeddings and RRF logic
 
 ### Next Session Starting Point
 
-Continue Phase 2 execution - Wave 4: 02-06 (Hybrid Search).
+Phase 2 complete. Ready to plan Phase 3 (Personal Tax Simple).
 
 ### Context to Preserve
 
@@ -214,6 +220,14 @@ Continue Phase 2 execution - Wave 4: 02-06 (Hybrid Search).
 - `tests/context/test_profile.py` - 18 profile service tests
 - `tests/context/test_builder.py` - 24 context builder tests
 
+**Hybrid Search (02-06):**
+- `src/search/__init__.py` - Module exports
+- `src/search/embeddings.py` - Voyage AI client with mock mode
+- `src/search/hybrid.py` - Semantic search, keyword search, RRF fusion
+- `tests/search/test_embeddings.py` - 16 embedding client tests
+- `tests/search/test_hybrid.py` - 14 RRF and SearchResult tests
+- `migrations/versions/83c01ef4c8fc_*.py` - Full-text search GIN index
+
 **Phase 2 Dependencies Added:**
 - python-statemachine, pybreaker, pydantic-yaml, ruamel.yaml, voyageai
 
@@ -223,4 +237,4 @@ Phase 1 -> 2 -> 3 -> 4 -> 5 -> 7 -> 8
 ---
 
 *State initialized: 2026-01-23*
-*Last updated: 2026-01-24 09:29 UTC*
+*Last updated: 2026-01-24 09:38 UTC*
