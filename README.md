@@ -168,8 +168,13 @@ Tax law changes? Update the skill file with a new effective date. The agent know
 - [x] Client profile schema
 - [x] Skill file structure
 - [ ] **Phase 0**: Golden Path MVP (single known-good 1040)
-- [ ] **Phase 1**: Foundation + observability
-- [ ] **Phase 2**: Core framework (orchestration, state machine, skills)
+- [x] **Phase 1**: Foundation + observability
+  - [x] FastAPI with health endpoint
+  - [x] PostgreSQL + Redis connections
+  - [x] Structured JSON logging with correlation IDs
+  - [x] Request context middleware
+  - [x] Unit tests with mocked dependencies
+- [ ] **Phase 2**: Core framework (orchestration, state machine, skills) ← *in progress*
 - [ ] **Phase 3**: Personal Tax Agent (simple returns)
 - [ ] **Phase 4**: Personal Tax Agent (complex returns)
 - [ ] **Phase 5**: Review infrastructure (feedback, checker, basic status)
