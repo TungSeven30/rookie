@@ -3,6 +3,9 @@
 import redis.asyncio as redis
 
 from src.core.config import settings
+from src.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 async def create_redis_pool() -> redis.Redis:
@@ -35,5 +38,6 @@ async def check_redis_health(pool: redis.Redis) -> bool:
     try:
         await pool.ping()
         return True
-    except Exception:
+    except Exception as e:
+        logger.exception("redis_health_check_failed", error=str(e))
         return False
