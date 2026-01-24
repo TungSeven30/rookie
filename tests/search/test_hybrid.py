@@ -1,11 +1,14 @@
 """Tests for hybrid search with RRF fusion."""
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from src.search.hybrid import (
     RRF_K,
     SearchResult,
     compute_rrf_scores,
+    search_skills,
 )
 
 
@@ -198,3 +201,32 @@ class TestHybridSearch:
         # 1/(60+1) = 0.0164 for doc 1
         # 1/(60+10) + 1/(60+10) = 0.0286 for doc 2
         assert doc2_score > doc1_score
+
+    @pytest.mark.asyncio
+    async def test_search_skills_defaults_to_real_client(self, monkeypatch) -> None:
+        """search_skills should default to real embedding client."""
+        session = AsyncMock()
+        sentinel_client = object()
+        calls: dict[str, bool | None] = {"use_mock": None}
+
+        def fake_get_embedding_client(*args, **kwargs):
+            calls["use_mock"] = kwargs.get("use_mock")
+            return sentinel_client
+
+        async def fake_hybrid_search(*args, **kwargs):
+            embedding_arg = (
+                kwargs.get("embedding_client")
+                if "embedding_client" in kwargs
+                else args[2]
+            )
+            assert embedding_arg is sentinel_client
+            return []
+
+        monkeypatch.setattr(
+            "src.search.embeddings.get_embedding_client", fake_get_embedding_client
+        )
+        monkeypatch.setattr("src.search.hybrid.hybrid_search", fake_hybrid_search)
+
+        await search_skills(session, "test query")
+
+        assert calls["use_mock"] is False

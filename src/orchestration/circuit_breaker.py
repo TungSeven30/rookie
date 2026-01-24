@@ -10,6 +10,7 @@ Configuration:
     - success_threshold: 2 successes in half-open to close circuit
 """
 
+import asyncio
 from enum import Enum
 from functools import wraps
 from typing import Any, Awaitable, Callable, ParamSpec, TypeVar
@@ -170,6 +171,9 @@ class CircuitBreaker:
         self.fail_max = fail_max
         self.reset_timeout = reset_timeout
         self.success_threshold = success_threshold
+        self._state_cache = CircuitState.CLOSED
+        self._failure_count_cache = 0
+        self._opened_at_cache: float | None = None
 
         # Create Redis storage
         self._storage = RedisCircuitBreakerStorage(name, redis_client)
@@ -185,20 +189,55 @@ class CircuitBreaker:
     @property
     def state(self) -> CircuitState:
         """Return the current circuit state."""
-        state_str = self._breaker.current_state
-        if state_str == pybreaker.STATE_CLOSED:
-            return CircuitState.CLOSED
-        elif state_str == pybreaker.STATE_OPEN:
-            return CircuitState.OPEN
-        elif state_str == pybreaker.STATE_HALF_OPEN:
-            return CircuitState.HALF_OPEN
-        # Default fallback
-        return CircuitState.CLOSED
+        return self._state_cache
 
     @property
     def failure_count(self) -> int:
         """Return the current failure count."""
-        return self._storage.counter
+        return self._failure_count_cache
+
+    async def _refresh_state(self) -> None:
+        """Refresh cached state from Redis."""
+        state_str = await asyncio.to_thread(lambda: self._storage.state)
+        self._state_cache = self._normalize_state(state_str)
+        self._failure_count_cache = await asyncio.to_thread(lambda: self._storage.counter)
+        self._opened_at_cache = await asyncio.to_thread(lambda: self._storage.opened_at)
+
+    def _normalize_state(self, state_str: str) -> CircuitState:
+        """Normalize pybreaker state string to CircuitState."""
+        if state_str == pybreaker.STATE_CLOSED:
+            return CircuitState.CLOSED
+        if state_str == pybreaker.STATE_OPEN:
+            return CircuitState.OPEN
+        if state_str == pybreaker.STATE_HALF_OPEN:
+            return CircuitState.HALF_OPEN
+        return CircuitState.CLOSED
+
+    async def _set_state(self, state: str) -> None:
+        def _set() -> None:
+            self._storage.state = state
+
+        await asyncio.to_thread(_set)
+        self._state_cache = self._normalize_state(state)
+
+    async def _set_counter(self, value: int) -> None:
+        def _set() -> None:
+            self._storage.counter = value
+
+        await asyncio.to_thread(_set)
+        self._failure_count_cache = value
+
+    async def _increment_counter(self) -> int:
+        count = await asyncio.to_thread(self._storage.increment_counter)
+        self._failure_count_cache = count
+        return count
+
+    async def _set_opened_at(self, value: float | None) -> None:
+        def _set() -> None:
+            self._storage.opened_at = value
+
+        await asyncio.to_thread(_set)
+        self._opened_at_cache = value
 
     async def call(
         self,
@@ -220,9 +259,10 @@ class CircuitBreaker:
             CircuitBreakerError: If the circuit is open
             Exception: Any exception from the wrapped function
         """
+        await self._refresh_state()
         if self.state == CircuitState.OPEN:
             # Check if we should transition to half-open
-            if not self._should_try_reset():
+            if not await self._should_try_reset():
                 logger.warning(
                     "circuit_breaker_rejected",
                     circuit=self.name,
@@ -235,7 +275,7 @@ class CircuitBreaker:
             result = await func(*args, **kwargs)
 
             # Record success
-            self._on_success()
+            await self._on_success()
 
             return result
 
@@ -245,22 +285,22 @@ class CircuitBreaker:
 
         except Exception as exc:
             # Record failure
-            self._on_failure()
+            await self._on_failure()
             raise exc
 
-    def _should_try_reset(self) -> bool:
+    async def _should_try_reset(self) -> bool:
         """Check if we should attempt a reset (transition to half-open)."""
         import time
 
-        opened_at = self._storage.opened_at
+        opened_at = self._opened_at_cache
         if opened_at is None:
             return True
 
         elapsed = time.time() - opened_at
         if elapsed >= self.reset_timeout:
             # Transition to half-open
-            self._storage.state = pybreaker.STATE_HALF_OPEN
-            self._storage.counter = 0  # Reset success counter for half-open
+            await self._set_state(pybreaker.STATE_HALF_OPEN)
+            await self._set_counter(0)  # Reset success counter for half-open
             logger.info(
                 "circuit_breaker_half_open",
                 circuit=self.name,
@@ -270,21 +310,19 @@ class CircuitBreaker:
 
         return False
 
-    def _on_success(self) -> None:
+    async def _on_success(self) -> None:
         """Handle a successful call."""
-        import time
+        current_state = self.state
 
-        current_state = self._storage.state
-
-        if current_state == pybreaker.STATE_HALF_OPEN:
+        if current_state == CircuitState.HALF_OPEN:
             # Increment success counter in half-open state
-            success_count = self._storage.increment_counter()
+            success_count = await self._increment_counter()
 
             if success_count >= self.success_threshold:
                 # Close the circuit
-                self._storage.state = pybreaker.STATE_CLOSED
-                self._storage.counter = 0
-                self._storage.opened_at = None
+                await self._set_state(pybreaker.STATE_CLOSED)
+                await self._set_counter(0)
+                await self._set_opened_at(None)
                 logger.info(
                     "circuit_breaker_closed",
                     circuit=self.name,
@@ -292,31 +330,31 @@ class CircuitBreaker:
                 )
         else:
             # Reset failure counter on success in closed state
-            self._storage.counter = 0
+            await self._set_counter(0)
 
-    def _on_failure(self) -> None:
+    async def _on_failure(self) -> None:
         """Handle a failed call."""
         import time
 
-        current_state = self._storage.state
+        current_state = self.state
 
-        if current_state == pybreaker.STATE_HALF_OPEN:
+        if current_state == CircuitState.HALF_OPEN:
             # Failure in half-open reopens the circuit
-            self._storage.state = pybreaker.STATE_OPEN
-            self._storage.counter = 0
-            self._storage.opened_at = time.time()
+            await self._set_state(pybreaker.STATE_OPEN)
+            await self._set_counter(0)
+            await self._set_opened_at(time.time())
             logger.warning(
                 "circuit_breaker_reopened",
                 circuit=self.name,
             )
         else:
             # Increment failure counter in closed state
-            failure_count = self._storage.increment_counter()
+            failure_count = await self._increment_counter()
 
             if failure_count >= self.fail_max:
                 # Open the circuit
-                self._storage.state = pybreaker.STATE_OPEN
-                self._storage.opened_at = time.time()
+                await self._set_state(pybreaker.STATE_OPEN)
+                await self._set_opened_at(time.time())
                 logger.warning(
                     "circuit_breaker_opened",
                     circuit=self.name,
@@ -352,6 +390,9 @@ class CircuitBreaker:
         Primarily for testing purposes. Clears all Redis state.
         """
         self._storage.reset()
+        self._state_cache = CircuitState.CLOSED
+        self._failure_count_cache = 0
+        self._opened_at_cache = None
         logger.info(
             "circuit_breaker_reset",
             circuit=self.name,

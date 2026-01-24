@@ -136,6 +136,7 @@ class TestAppendProfileEntry:
     async def test_creates_new_entry(self) -> None:
         """Should create a new profile entry with correct fields."""
         session = AsyncMock()
+        session.add = MagicMock()
 
         entry_data = {"status": "married_filing_jointly"}
         result = await append_profile_entry(
@@ -156,6 +157,7 @@ class TestAppendProfileEntry:
     async def test_never_updates_existing_entries(self) -> None:
         """Should always create new entries (append-only pattern)."""
         session = AsyncMock()
+        session.add = MagicMock()
 
         # Create multiple entries for same type
         await append_profile_entry(
@@ -178,6 +180,7 @@ class TestAppendProfileEntry:
     async def test_sets_created_at_timestamp(self) -> None:
         """Should set created_at to current time."""
         session = AsyncMock()
+        session.add = MagicMock()
 
         before = datetime.utcnow()
         result = await append_profile_entry(
@@ -191,9 +194,30 @@ class TestAppendProfileEntry:
         assert before <= result.created_at <= after
 
     @pytest.mark.asyncio
+    async def test_append_100_entries_integrity(self) -> None:
+        """Append-only log should handle 100 writes without overwrites."""
+        session = AsyncMock()
+        session.add = MagicMock()
+        entries = []
+
+        for i in range(100):
+            entry = await append_profile_entry(
+                session,
+                client_id=1,
+                entry_type="filing_status",
+                data={"index": i},
+            )
+            entries.append(entry)
+
+        assert session.add.call_count == 100
+        assert len({id(entry) for entry in entries}) == 100
+        assert [entry.data["index"] for entry in entries] == list(range(100))
+
+    @pytest.mark.asyncio
     async def test_handles_complex_data(self) -> None:
         """Should handle complex nested data structures."""
         session = AsyncMock()
+        session.add = MagicMock()
 
         complex_data = {
             "dependents": [

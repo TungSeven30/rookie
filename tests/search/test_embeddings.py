@@ -1,5 +1,7 @@
 """Tests for the Voyage AI embedding client."""
 
+import builtins
+
 import pytest
 
 from src.search.embeddings import (
@@ -49,6 +51,19 @@ class TestEmbeddingClient:
         emb1 = client.embed_query("same text")
         emb2 = client.embed_query("same text")
         assert emb1 == emb2
+
+    def test_mock_embedding_does_not_use_builtin_hash(self, monkeypatch) -> None:
+        """Mock embeddings should not depend on built-in hash()."""
+        client = EmbeddingClient(use_mock=True)
+
+        def raising_hash(_value: object) -> int:
+            raise AssertionError("builtins.hash should not be used")
+
+        monkeypatch.setattr(builtins, "hash", raising_hash)
+
+        embedding = client.embed_query("hash-free seed")
+
+        assert len(embedding) == client.dimension
 
     def test_embed_query_different_for_different_text(self) -> None:
         """Different inputs should produce different outputs."""
@@ -124,3 +139,16 @@ class TestGetEmbeddingClient:
         client2 = get_embedding_client()  # Second call ignores params
         assert client1.dimension == 768
         assert client2.dimension == 768  # Same instance
+
+    def test_uses_env_api_key_when_not_provided(self, monkeypatch) -> None:
+        """API key should fall back to VOYAGE_API_KEY env var."""
+        reset_embedding_client()
+        monkeypatch.setenv("VOYAGE_API_KEY", "test-key")
+        monkeypatch.setattr(
+            "src.search.embeddings.voyageai.Client",
+            lambda api_key: object(),
+        )
+
+        client = get_embedding_client()
+
+        assert client.api_key == "test-key"

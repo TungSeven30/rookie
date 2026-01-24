@@ -236,6 +236,6 @@ async def search_skills(
     from src.search.embeddings import get_embedding_client
 
     if embedding_client is None:
-        embedding_client = get_embedding_client(use_mock=True)
+        embedding_client = get_embedding_client(use_mock=False)
 
     return await hybrid_search(session, query, embedding_client, limit=limit)

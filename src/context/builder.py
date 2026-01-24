@@ -12,10 +12,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.context.profile import get_client_profile_view
+from src.core.logging import get_logger
 from src.models.client import Client
 from src.models.skill import SkillFile
 from src.skills.models import SkillFileModel
 
+logger = get_logger(__name__)
 
 # Mapping of task types to the skills they require
 TASK_TYPE_SKILLS: dict[str, list[str]] = {
@@ -164,11 +166,20 @@ async def load_skill_for_year(
         yaml.preserve_quotes = True
         data = yaml.load(StringIO(skill_file.content))
         if data is None or not isinstance(data, dict):
+            logger.warning(
+                "skill_load_failed",
+                skill_name=skill_name,
+                message="Skill content is empty or not a mapping",
+            )
             return None
         return load_skill_from_dict(dict(data))
-    except Exception:
+    except Exception as exc:
         # If parsing fails, log and return None
-        # In production, this would be logged via structlog
+        logger.exception(
+            "skill_load_failed",
+            skill_name=skill_name,
+            error=str(exc),
+        )
         return None
 
 

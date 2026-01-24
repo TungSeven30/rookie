@@ -125,6 +125,26 @@ class TestCircuitBreakerClosedState:
         assert result == "ok"
         assert breaker.failure_count == 0
 
+    @pytest.mark.asyncio
+    async def test_call_uses_to_thread_for_storage(self, breaker, monkeypatch):
+        """Circuit breaker should offload storage calls to threads."""
+        calls: list[object] = []
+
+        async def fake_to_thread(func, *args, **kwargs):
+            calls.append(func)
+            return func(*args, **kwargs)
+
+        monkeypatch.setattr(
+            "src.orchestration.circuit_breaker.asyncio.to_thread", fake_to_thread
+        )
+
+        async def success():
+            return "ok"
+
+        await breaker.call(success)
+
+        assert calls
+
 
 class TestCircuitBreakerOpens:
     """Tests for circuit breaker opening after failures."""

@@ -4,6 +4,8 @@ Provides embedding generation for semantic search using Voyage AI's API.
 Supports mock mode for testing without an API key.
 """
 
+import hashlib
+import os
 import random
 from dataclasses import dataclass, field
 
@@ -51,8 +53,9 @@ class EmbeddingClient:
         Returns:
             List of floats representing the mock embedding vector.
         """
-        # Use text hash as seed for deterministic output
-        seed = hash(text) % (2**32)
+        # Use stable hash as seed for deterministic output across processes
+        digest = hashlib.sha256(text.encode("utf-8")).digest()
+        seed = int.from_bytes(digest[:8], "big", signed=False)
         rng = random.Random(seed)
         # Generate normalized random vector
         raw = [rng.gauss(0, 1) for _ in range(self.dimension)]
@@ -150,7 +153,7 @@ def get_embedding_client(
     """Get or create the singleton embedding client.
 
     Args:
-        api_key: Voyage AI API key (required on first call unless use_mock).
+        api_key: Voyage AI API key (falls back to VOYAGE_API_KEY if omitted).
         model: Model name to use.
         dimension: Embedding dimension.
         use_mock: If True, use mock embeddings.
@@ -161,8 +164,11 @@ def get_embedding_client(
     global _embedding_client
 
     if _embedding_client is None:
+        resolved_api_key = api_key
+        if not use_mock and resolved_api_key is None:
+            resolved_api_key = os.getenv("VOYAGE_API_KEY")
         _embedding_client = EmbeddingClient(
-            api_key=api_key,
+            api_key=resolved_api_key,
             model=model,
             dimension=dimension,
             use_mock=use_mock,

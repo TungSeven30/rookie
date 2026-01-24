@@ -259,9 +259,11 @@ content:
         mock_skill_file.content = "invalid: yaml: content: [unclosed"
         session.execute.return_value = MockResult(scalar_one=mock_skill_file)
 
-        result = await load_skill_for_year(session, "bad_skill", 2024)
+        with patch("src.context.builder.logger") as mock_logger:
+            result = await load_skill_for_year(session, "bad_skill", 2024)
 
         assert result is None
+        mock_logger.exception.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_selects_skill_by_effective_date(self) -> None:
