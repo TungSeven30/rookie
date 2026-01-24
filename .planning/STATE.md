@@ -17,7 +17,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
 | 1 - Foundation | Complete | 5/5 | 100% |
-| 2 - Core Framework | In Progress | 2/6 | 33% |
+| 2 - Core Framework | In Progress | 3/6 | 50% |
 | 3 - Personal Tax Simple | Pending | 0/0 | 0% |
 | 4 - Personal Tax Complex | Pending | 0/0 | 0% |
 | 5 - Review Infrastructure | Pending | 0/0 | 0% |
@@ -25,20 +25,20 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall Progress:** [##______] 18%
+**Overall Progress:** [###_____] 21%
 
 ## Current Position
 
 - **Phase:** 2 of 8 (Core Framework)
-- **Plan:** 02-01 and 02-02 complete (Wave 1)
+- **Plan:** 02-01, 02-02, 02-03 complete (Wave 1 + 2)
 - **Status:** In Progress
-- **Last activity:** 2026-01-24 - Completed 02-01-PLAN.md (State Machine)
+- **Last activity:** 2026-01-24 - Completed 02-03-PLAN.md (Circuit Breaker)
 
 ## Performance Metrics
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Plans completed | 7 | - |
+| Plans completed | 8 | - |
 | Requirements delivered | 6/60 | 60 |
 | Phases complete | 1/8 | 8 |
 
@@ -73,6 +73,9 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2026-01-24 | python-statemachine model binding pattern | Binds task.status field for automatic state sync |
 | 2026-01-24 | Failed state is not final (allows retry) | Enables retry workflow from failed back to pending |
 | 2026-01-24 | Completed and escalated states are final | No transitions out of terminal states |
+| 2026-01-24 | Custom Redis storage for circuit breaker | Cross-instance state sharing via pybreaker subclass |
+| 2026-01-24 | Circuit breaker thresholds: 5/30/2 | 5 failures to open, 30s timeout, 2 successes to close |
+| 2026-01-24 | Async circuit breaker call method | pybreaker sync decorators insufficient for async |
 
 ### Deferred Items
 
@@ -100,7 +103,7 @@ None currently.
 - [x] Plan Phase 2 (Core Framework)
 - [x] Execute 02-01-PLAN.md (State Machine + Dependencies)
 - [x] Execute 02-02-PLAN.md (Task Dispatcher)
-- [ ] Execute 02-03-PLAN.md (Circuit Breaker)
+- [x] Execute 02-03-PLAN.md (Circuit Breaker)
 - [ ] Execute 02-04-PLAN.md (Skill Engine)
 - [ ] Execute 02-05-PLAN.md (Context Builder)
 - [ ] Execute 02-06-PLAN.md (Hybrid Search)
@@ -122,21 +125,23 @@ None currently.
 | 2026-01-24 | Phase 2 plans created (6 plans in 4 waves) |
 | 2026-01-24 | Completed 02-02: Task Dispatcher (3 min) |
 | 2026-01-24 | Completed 02-01: State Machine (4 min) |
+| 2026-01-24 | Completed 02-03: Circuit Breaker (4 min) |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Executed 02-01-PLAN.md (State Machine + Dependencies):
-- Installed Phase 2 dependencies (python-statemachine, pybreaker, pydantic-yaml, ruamel.yaml, voyageai)
-- TaskStateMachine class with model binding to task.status field
-- States: pending, assigned, in_progress, completed, failed, escalated
-- Transitions: assign, start, complete, fail, escalate, retry
-- Comprehensive test coverage with 17 passing tests
+Executed 02-03-PLAN.md (Circuit Breaker):
+- CircuitBreaker class with Redis-backed state persistence
+- RedisCircuitBreakerStorage extending pybreaker.CircuitBreakerStorage
+- Async call() method and @protect decorator for LLM API protection
+- Configuration: fail_max=5, reset_timeout=30, success_threshold=2
+- Factory functions: get_circuit_breaker, reset_all_breakers
+- 23 passing tests covering all ORCH-03/04/05 requirements
 
 ### Next Session Starting Point
 
-Continue Phase 2 execution - Wave 2: 02-03 (Circuit Breaker), then Wave 3: 02-04, 02-05 (parallel), then Wave 4: 02-06.
+Continue Phase 2 execution - Wave 3: 02-04, 02-05 (parallel), then Wave 4: 02-06.
 
 ### Context to Preserve
 
@@ -179,11 +184,13 @@ Continue Phase 2 execution - Wave 2: 02-03 (Circuit Breaker), then Wave 3: 02-04
 - Full audit trail required
 - 7-year data retention for completed tasks
 
-**Orchestration (02-01, 02-02):**
+**Orchestration (02-01, 02-02, 02-03):**
 - `src/orchestration/state_machine.py` - TaskStateMachine class with model binding
 - `src/orchestration/dispatcher.py` - TaskDispatcher class for routing tasks to handlers
+- `src/orchestration/circuit_breaker.py` - CircuitBreaker with Redis persistence
 - `tests/orchestration/test_state_machine.py` - 17 comprehensive tests
 - `tests/orchestration/test_dispatcher.py` - 12 comprehensive tests
+- `tests/orchestration/test_circuit_breaker.py` - 23 comprehensive tests
 
 **Phase 2 Dependencies Added:**
 - python-statemachine, pybreaker, pydantic-yaml, ruamel.yaml, voyageai
@@ -194,4 +201,4 @@ Phase 1 -> 2 -> 3 -> 4 -> 5 -> 7 -> 8
 ---
 
 *State initialized: 2026-01-23*
-*Last updated: 2026-01-24 09:08 UTC*
+*Last updated: 2026-01-24 09:16 UTC*
