@@ -863,3 +863,246 @@ class TestDataStructures:
         assert situation.education_expenses == Decimal("0")
         assert situation.retirement_contributions == Decimal("0")
         assert situation.earned_income == Decimal("0")
+
+
+# =============================================================================
+# Edge Case Tests (REFACTOR Phase)
+# =============================================================================
+
+
+class TestEdgeCases:
+    """Additional edge case tests added during REFACTOR phase."""
+
+    def test_aggregate_income_empty_list(self) -> None:
+        """Empty document list should return zero totals."""
+        result = aggregate_income([])
+
+        assert result.total_wages == Decimal("0")
+        assert result.total_interest == Decimal("0")
+        assert result.total_dividends == Decimal("0")
+        assert result.total_nec == Decimal("0")
+        assert result.total_income == Decimal("0")
+        assert result.federal_withholding == Decimal("0")
+
+    def test_aggregate_income_with_withholding(self) -> None:
+        """Federal withholding should be summed from all documents."""
+        w2 = W2Data(
+            employee_ssn="123-45-6789",
+            employer_ein="12-3456789",
+            employer_name="Acme",
+            employee_name="John",
+            wages_tips_compensation=Decimal("50000"),
+            federal_tax_withheld=Decimal("7500"),
+            social_security_wages=Decimal("50000"),
+            social_security_tax=Decimal("3100"),
+            medicare_wages=Decimal("50000"),
+            medicare_tax=Decimal("725"),
+            confidence=ConfidenceLevel.HIGH,
+        )
+        int_1099 = Form1099INT(
+            payer_name="Bank",
+            payer_tin="12-3456789",
+            recipient_tin="123-45-6789",
+            interest_income=Decimal("1000"),
+            federal_tax_withheld=Decimal("200"),
+            confidence=ConfidenceLevel.HIGH,
+        )
+
+        result = aggregate_income([w2, int_1099])
+
+        assert result.federal_withholding == Decimal("7700")
+
+    def test_deduction_unknown_filing_status(self) -> None:
+        """Unknown filing status should raise ValueError."""
+        with pytest.raises(ValueError, match="Unknown filing status"):
+            get_standard_deduction("unknown", 2024)
+
+    def test_deduction_unknown_year(self) -> None:
+        """Unknown tax year should raise ValueError."""
+        with pytest.raises(ValueError, match="Unknown filing status"):
+            get_standard_deduction("single", 2020)
+
+    def test_tax_zero_income(self) -> None:
+        """Zero taxable income should return zero tax."""
+        result = calculate_tax(Decimal("0"), "single", 2024)
+
+        assert result.gross_tax == Decimal("0")
+        assert result.effective_rate == Decimal("0")
+        assert len(result.bracket_breakdown) == 0
+
+    def test_tax_at_bracket_boundary(self) -> None:
+        """Tax at exact bracket boundary should be calculated correctly."""
+        # Exactly $11,600 - should be 10% = $1,160
+        result = calculate_tax(Decimal("11600"), "single", 2024)
+
+        assert result.gross_tax == Decimal("1160")
+        assert len(result.bracket_breakdown) == 1
+
+    def test_tax_unknown_filing_status(self) -> None:
+        """Unknown filing status should raise ValueError."""
+        with pytest.raises(ValueError, match="Unknown filing status"):
+            calculate_tax(Decimal("50000"), "invalid", 2024)
+
+    def test_variance_both_zero(self) -> None:
+        """Both values zero should not produce variance."""
+        variances = compare_years(
+            {"wages": Decimal("0")},
+            {"wages": Decimal("0")},
+        )
+
+        # 0 to 0 is not a new source, so no variance
+        assert len(variances) == 0
+
+    def test_variance_decrease_to_zero(self) -> None:
+        """Decrease to zero is 100% decrease."""
+        variances = compare_years(
+            {"wages": Decimal("0")},
+            {"wages": Decimal("50000")},
+        )
+
+        assert len(variances) == 1
+        assert variances[0].direction == "decrease"
+        assert variances[0].variance_pct == Decimal("100")
+
+    def test_ctc_partial_phaseout(self) -> None:
+        """CTC should partially phase out between threshold and full phaseout."""
+        # Single filer at $220k: $20k over threshold, $20 * $50 = $1000 reduction
+        # $2000 base - $1000 = $1000 remaining (for 1 child)
+        situation = TaxSituation(
+            agi=Decimal("220000"),
+            filing_status="single",
+            tax_year=2024,
+            num_qualifying_children=1,
+        )
+
+        result = evaluate_credits(situation)
+
+        ctc = next((c for c in result.credits if c.name == "Child Tax Credit"), None)
+        assert ctc is not None
+        assert ctc.amount == Decimal("1000")
+
+    def test_aoc_over_max_expenses(self) -> None:
+        """AOC caps at $2,500 even for expenses over $4,000."""
+        situation = TaxSituation(
+            agi=Decimal("50000"),
+            filing_status="single",
+            tax_year=2024,
+            education_expenses=Decimal("10000"),
+        )
+
+        result = evaluate_credits(situation)
+
+        edu = next(
+            (c for c in result.credits if "Opportunity" in c.name),
+            None,
+        )
+        assert edu is not None
+        assert edu.amount == Decimal("2500")
+
+    def test_savers_credit_above_limit(self) -> None:
+        """No Saver's Credit above AGI threshold."""
+        situation = TaxSituation(
+            agi=Decimal("80000"),
+            filing_status="mfj",
+            tax_year=2024,
+            retirement_contributions=Decimal("2000"),
+        )
+
+        result = evaluate_credits(situation)
+
+        savers = next((c for c in result.credits if c.name == "Saver's Credit"), None)
+        assert savers is None
+
+    def test_savers_credit_max_contribution(self) -> None:
+        """Saver's Credit limited to max $2,000 contribution."""
+        situation = TaxSituation(
+            agi=Decimal("20000"),
+            filing_status="single",
+            tax_year=2024,
+            retirement_contributions=Decimal("5000"),
+        )
+
+        result = evaluate_credits(situation)
+
+        savers = next((c for c in result.credits if c.name == "Saver's Credit"), None)
+        assert savers is not None
+        # 50% rate on max $2000 = $1000
+        assert savers.amount == Decimal("1000")
+
+    def test_multiple_credits_combined(self) -> None:
+        """Multiple credits should sum correctly."""
+        situation = TaxSituation(
+            agi=Decimal("30000"),
+            filing_status="single",
+            tax_year=2024,
+            num_qualifying_children=1,
+            education_expenses=Decimal("4000"),
+            retirement_contributions=Decimal("1000"),
+        )
+
+        result = evaluate_credits(situation)
+
+        # CTC: $2,000, AOC: $2,500, Saver's: $200 (20% of $1000)
+        assert len(result.credits) >= 3
+        assert result.total_credits == sum(c.amount for c in result.credits)
+
+    def test_high_income_tax_brackets(self) -> None:
+        """High income should use all brackets correctly."""
+        # $700,000 single - goes into 37% bracket
+        result = calculate_tax(Decimal("700000"), "single", 2024)
+
+        assert len(result.bracket_breakdown) == 7
+        assert result.bracket_breakdown[-1]["rate"] == Decimal("0.37")
+
+    def test_mfs_brackets(self) -> None:
+        """MFS filing status should use correct brackets."""
+        result = calculate_tax(Decimal("50000"), "mfs", 2024)
+
+        # MFS has same brackets as single for 2024
+        expected = Decimal("1160") + Decimal("4266") + Decimal("627")
+        assert result.gross_tax == expected
+
+    def test_hoh_brackets(self) -> None:
+        """HOH filing status should use correct brackets."""
+        # HOH has 10% up to $16,550, 12% up to $63,100
+        result = calculate_tax(Decimal("50000"), "hoh", 2024)
+
+        # 10% on $16,550 = $1,655
+        # 12% on ($50,000 - $16,550) = $4,014
+        expected = Decimal("1655") + Decimal("4014")
+        assert result.gross_tax == expected
+
+    def test_deduction_equal_values(self) -> None:
+        """When itemized equals standard, standard should be selected."""
+        income = IncomeSummary(
+            total_wages=Decimal("75000"),
+            total_interest=Decimal("0"),
+            total_dividends=Decimal("0"),
+            total_qualified_dividends=Decimal("0"),
+            total_nec=Decimal("0"),
+            total_other=Decimal("0"),
+            total_income=Decimal("75000"),
+            federal_withholding=Decimal("10000"),
+        )
+
+        result = calculate_deductions(income, "single", 2024, itemized_total=Decimal("14600"))
+
+        # Equal should default to standard
+        assert result.method == "standard"
+
+    def test_eitc_phase_in_region(self) -> None:
+        """EITC in phase-in region should be proportional to income."""
+        situation = TaxSituation(
+            agi=Decimal("5000"),
+            filing_status="single",
+            tax_year=2024,
+            earned_income=Decimal("5000"),
+            num_qualifying_children=0,
+        )
+
+        result = evaluate_credits(situation)
+
+        eitc = next((c for c in result.credits if c.name == "Earned Income Credit"), None)
+        assert eitc is not None
+        # Phase-in: $5000 * 0.0765 = ~$382.50
+        assert Decimal("300") < eitc.amount < Decimal("450")
