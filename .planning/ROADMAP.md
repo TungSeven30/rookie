@@ -159,6 +159,17 @@ Plans:
 
 **Rollback:** If accuracy <90%, revert to Phase 0 manual workflow.
 
+**Plans:** 7 plans in 6 waves
+
+Plans:
+- [ ] 03-01-PLAN.md (Wave 1) — Document Pydantic models + Phase 3 dependencies
+- [ ] 03-02-PLAN.md (Wave 1) — Storage integration + client folder scanner
+- [ ] 03-03-PLAN.md (Wave 2) — Document classifier + confidence scoring
+- [ ] 03-04-PLAN.md (Wave 3) — Document extractor (Claude Vision + Instructor)
+- [ ] 03-05-PLAN.md (Wave 4) — Tax calculator (TDD: income, deductions, tax, variances)
+- [ ] 03-06-PLAN.md (Wave 5) — Output generators (Drake worksheet + preparer notes)
+- [ ] 03-07-PLAN.md (Wave 6) — Personal Tax Agent orchestration
+
 ---
 
 ### Phase 4: Personal Tax Agent - Complex Returns
@@ -301,7 +312,7 @@ Plans:
 |-------|--------|-------|----------|
 | 1 - Foundation | Complete | 5/5 | 100% |
 | 2 - Core Framework | Complete | 6/6 | 100% |
-| 3 - Personal Tax Simple | Pending | 0/0 | 0% |
+| 3 - Personal Tax Simple | Planned | 0/7 | 0% |
 | 4 - Personal Tax Complex | Pending | 0/0 | 0% |
 | 5 - Review Infrastructure | Pending | 0/0 | 0% |
 | 6 - Business Tax | Pending | 0/0 | 0% |
@@ -324,4 +335,4 @@ Plans:
 ---
 
 *Roadmap created: 2026-01-23*
-*Last updated: 2026-01-24 (Phase 2 complete)*
+*Last updated: 2026-01-24 (Phase 3 planned)*
