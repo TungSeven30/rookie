@@ -1,8 +1,8 @@
 # Project State: Rookie
 
 **Last Updated:** 2026-01-24
-**Current Phase:** 1 - Foundation
-**Status:** In progress
+**Current Phase:** 2 - Core Framework
+**Status:** In Progress
 
 ## Project Reference
 
@@ -10,14 +10,14 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 
 **Core value:** CPAs are liable for the work, not the AI. Rookie prepares, humans approve.
 
-**Current focus:** Phase 1 - Foundation
+**Current focus:** Phase 2 - Core Framework
 
 ## Phase Progress
 
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
-| 1 - Foundation | In Progress | 4/5 | ~80% |
-| 2 - Core Framework | Pending | 0/0 | 0% |
+| 1 - Foundation | Complete | 5/5 | 100% |
+| 2 - Core Framework | In Progress | 1/6 | 17% |
 | 3 - Personal Tax Simple | Pending | 0/0 | 0% |
 | 4 - Personal Tax Complex | Pending | 0/0 | 0% |
 | 5 - Review Infrastructure | Pending | 0/0 | 0% |
@@ -25,22 +25,22 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall Progress:** [####____] ~10%
+**Overall Progress:** [##______] 15%
 
 ## Current Position
 
-- **Phase:** 1 of 8 (Foundation)
-- **Plan:** 01-04 complete
-- **Status:** In progress
-- **Last activity:** 2026-01-24 - Completed 01-04-PLAN.md (Alembic Migrations)
+- **Phase:** 2 of 8 (Core Framework)
+- **Plan:** 02-02 complete, 02-01 in parallel
+- **Status:** In Progress
+- **Last activity:** 2026-01-24 - Completed 02-02-PLAN.md (Task Dispatcher)
 
 ## Performance Metrics
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Plans completed | 4 | - |
-| Requirements delivered | 0/60 | 60 |
-| Phases complete | 0/8 | 8 |
+| Plans completed | 6 | - |
+| Requirements delivered | 6/60 | 60 |
+| Phases complete | 1/8 | 8 |
 
 ## Accumulated Context
 
@@ -66,6 +66,10 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2026-01-24 | Async migrations with NullPool | Prevents connection leaks during migration runs |
 | 2026-01-24 | pgvector via ischema_names | Autogenerate recognizes Vector type |
 | 2026-01-24 | PostgreSQL 17 for local dev | pgvector Homebrew bottle compatibility |
+| 2026-01-24 | LifespanManager for tests | httpx ASGITransport doesn't trigger lifespan |
+| 2026-01-24 | "degraded" status for partial failure | More informative than binary ok/error |
+| 2026-01-24 | Singleton with reset for dispatcher | Convenient access via get_dispatcher(), test isolation via reset_dispatcher() |
+| 2026-01-24 | Handler replacement logs warning | Allows hot-reload patterns without raising exceptions |
 
 ### Deferred Items
 
@@ -89,7 +93,14 @@ None currently.
 - [x] Execute 01-02-PLAN.md (Database Models)
 - [x] Execute 01-03-PLAN.md (Infrastructure Services)
 - [x] Execute 01-04-PLAN.md (Alembic Migrations)
-- [ ] Execute 01-05-PLAN.md (Testing Infrastructure)
+- [x] Execute 01-05-PLAN.md (FastAPI Application)
+- [x] Plan Phase 2 (Core Framework)
+- [ ] Execute 02-01-PLAN.md (State Machine + Dependencies)
+- [x] Execute 02-02-PLAN.md (Task Dispatcher)
+- [ ] Execute 02-03-PLAN.md (Circuit Breaker)
+- [ ] Execute 02-04-PLAN.md (Skill Engine)
+- [ ] Execute 02-05-PLAN.md (Context Builder)
+- [ ] Execute 02-06-PLAN.md (Hybrid Search)
 
 ## Recent Activity
 
@@ -103,21 +114,24 @@ None currently.
 | 2026-01-24 | Completed 01-02: Database Models (4 min) |
 | 2026-01-24 | Completed 01-03: Infrastructure Services (4 min) |
 | 2026-01-24 | Completed 01-04: Alembic Migrations (4 min) |
+| 2026-01-24 | Completed 01-05: FastAPI Application (5 min) |
+| 2026-01-24 | **Phase 1 Complete** - Foundation operational |
+| 2026-01-24 | Phase 2 plans created (6 plans in 4 waves) |
+| 2026-01-24 | Completed 02-02: Task Dispatcher (3 min) |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Executed 01-04-PLAN.md (Alembic Migrations):
-- Alembic initialized with async PostgreSQL support
-- pgvector Vector type registered in ischema_names
-- Initial migration creates all 11 domain tables
-- Full downgrade/upgrade cycle verified
-- PostgreSQL 17 configured with pgvector extension
+Executed 02-02-PLAN.md (Task Dispatcher):
+- TaskDispatcher class with register/unregister/dispatch methods
+- Handler routing by task.task_type to registered async handlers
+- ValueError for unregistered task types with helpful error message
+- Comprehensive test coverage with 12 passing tests
 
 ### Next Session Starting Point
 
-Ready for 01-05-PLAN.md (Testing Infrastructure).
+Continue Phase 2 execution - remaining plans: 02-01 (parallel), 02-03, 02-04, 02-05, 02-06.
 
 ### Context to Preserve
 
@@ -127,6 +141,7 @@ Ready for 01-05-PLAN.md (Testing Infrastructure).
 - Drake worksheets (Excel) for manual entry
 - Package management: uv
 - Dependencies installed: fastapi, sqlalchemy, asyncpg, alembic, redis, pgvector, structlog, sentry-sdk, pydantic-settings, orjson
+- Dev dependencies: pytest, pytest-asyncio, httpx, mypy, ruff, asgi-lifespan
 
 **Database Models (01-02):**
 - `src/models/base.py` - Base, TimestampMixin
@@ -147,11 +162,21 @@ Ready for 01-05-PLAN.md (Testing Infrastructure).
 - `migrations/env.py` - Async migrations with pgvector support
 - `migrations/versions/c5fc18e7c719_*.py` - Initial 11-table schema
 
+**FastAPI Application (01-05):**
+- `src/main.py` - App with lifespan context manager
+- `src/api/deps.py` - get_db, get_redis dependencies
+- `src/api/health.py` - Health endpoint with Pydantic response model
+- `tests/test_health.py` - Integration tests with asgi-lifespan
+
 **Key Constraints:**
 - No client PII in AI training
 - Only SSN last-4 stored
 - Full audit trail required
 - 7-year data retention for completed tasks
+
+**Orchestration (02-02):**
+- `src/orchestration/dispatcher.py` - TaskDispatcher class for routing tasks to handlers
+- `tests/orchestration/test_dispatcher.py` - 12 comprehensive tests
 
 **Critical Path:**
 Phase 1 -> 2 -> 3 -> 4 -> 5 -> 7 -> 8
@@ -159,4 +184,4 @@ Phase 1 -> 2 -> 3 -> 4 -> 5 -> 7 -> 8
 ---
 
 *State initialized: 2026-01-23*
-*Last updated: 2026-01-24 06:46Z*
+*Last updated: 2026-01-24*
