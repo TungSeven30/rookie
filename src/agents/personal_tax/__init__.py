@@ -1,10 +1,21 @@
 """Personal tax agent module.
 
-This module provides tax calculation functions for personal (individual) tax returns.
-Supports W-2 and 1099 income aggregation, deduction calculation, credits evaluation,
-tax bracket computation, prior year comparison, and output generation.
+This module provides the PersonalTaxAgent for processing personal tax returns,
+along with tax calculation functions and output generators.
+
+Components:
+- PersonalTaxAgent: Main agent orchestrating the complete workflow
+- personal_tax_handler: Task handler for dispatcher integration
+- Calculator functions: Income aggregation, deductions, credits, tax computation
+- Output generators: Drake worksheet and preparer notes generation
 """
 
+from src.agents.personal_tax.agent import (
+    EscalationRequired,
+    PersonalTaxAgent,
+    PersonalTaxResult,
+    personal_tax_handler,
+)
 from src.agents.personal_tax.calculator import (
     CreditItem,
     CreditsResult,
@@ -26,6 +37,11 @@ from src.agents.personal_tax.output import (
 )
 
 __all__ = [
+    # Agent
+    "PersonalTaxAgent",
+    "PersonalTaxResult",
+    "EscalationRequired",
+    "personal_tax_handler",
     # Data structures
     "IncomeSummary",
     "DeductionResult",
