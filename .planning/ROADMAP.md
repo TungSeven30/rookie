@@ -74,11 +74,11 @@ Phase 4 (PT Complex)
 **Plans:** 5 plans in 4 waves
 
 Plans:
-- [ ] 01-01-PLAN.md — Project scaffolding and Pydantic configuration
-- [ ] 01-02-PLAN.md — SQLAlchemy models and database utilities
-- [ ] 01-03-PLAN.md — Redis, structlog, and Sentry infrastructure
-- [ ] 01-04-PLAN.md — Alembic migrations with pgvector support
-- [ ] 01-05-PLAN.md — FastAPI app with health endpoint
+- [x] 01-01-PLAN.md — Project scaffolding and Pydantic configuration
+- [x] 01-02-PLAN.md — SQLAlchemy models and database utilities
+- [x] 01-03-PLAN.md — Redis, structlog, and Sentry infrastructure
+- [x] 01-04-PLAN.md — Alembic migrations with pgvector support
+- [x] 01-05-PLAN.md — FastAPI app with health endpoint
 
 ---
 
@@ -111,6 +111,16 @@ Plans:
 **Dependencies:** Phase 1 (Foundation)
 
 **Rollback:** If circuit breaker causes too many false positives, increase threshold to 10.
+
+**Plans:** 6 plans in 4 waves
+
+Plans:
+- [x] 02-01-PLAN.md (Wave 1) - State machine + Phase 2 dependencies
+- [x] 02-02-PLAN.md (Wave 1) - Task dispatcher
+- [x] 02-03-PLAN.md (Wave 2) - Circuit breaker with Redis
+- [x] 02-04-PLAN.md (Wave 2) - Skill engine (YAML loader + version selector)
+- [x] 02-05-PLAN.md (Wave 3) - Context builder + profile service
+- [x] 02-06-PLAN.md (Wave 4) - Hybrid search (pgvector + BM25 + RRF)
 
 ---
 
@@ -289,8 +299,8 @@ Plans:
 
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
-| 1 - Foundation | Planning | 0/5 | 0% |
-| 2 - Core Framework | Pending | 0/0 | 0% |
+| 1 - Foundation | Complete | 5/5 | 100% |
+| 2 - Core Framework | Complete | 6/6 | 100% |
 | 3 - Personal Tax Simple | Pending | 0/0 | 0% |
 | 4 - Personal Tax Complex | Pending | 0/0 | 0% |
 | 5 - Review Infrastructure | Pending | 0/0 | 0% |
@@ -298,7 +308,7 @@ Plans:
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall:** 0/8 phases complete (0%)
+**Overall:** 2/8 phases complete (25%)
 
 ---
 
@@ -314,4 +324,4 @@ Plans:
 ---
 
 *Roadmap created: 2026-01-23*
-*Last updated: 2026-01-23*
+*Last updated: 2026-01-24 (Phase 2 complete)*
