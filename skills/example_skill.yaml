@@ -1,0 +1,86 @@
+metadata:
+  name: personal_tax_w2
+  version: "2024.1"
+  effective_date: 2024-01-01
+  description: "Process W-2 Wage and Tax Statement for personal tax returns"
+  tags:
+    - w2
+    - wages
+    - personal-tax
+    - form-w2
+
+content:
+  instructions: |
+    Extract W-2 information from the provided document and validate against IRS requirements.
+
+    **Step 1: Identify the Document**
+    - Verify the document is a Form W-2 (Wage and Tax Statement)
+    - Check the tax year in Box c (Employee's social security number area shows year)
+
+    **Step 2: Extract Key Fields**
+    - Box 1: Wages, tips, other compensation
+    - Box 2: Federal income tax withheld
+    - Box 3: Social security wages
+    - Box 4: Social security tax withheld
+    - Box 5: Medicare wages and tips
+    - Box 6: Medicare tax withheld
+    - Box 12: See codes (retirement contributions, health savings, etc.)
+    - Box 14: Other information (state tax, local tax, etc.)
+
+    **Step 3: Validate Data**
+    - Box 1 should generally equal or exceed Box 3 and Box 5
+    - Box 4 should be approximately 6.2% of Box 3 (up to annual limit)
+    - Box 6 should be approximately 1.45% of Box 5
+    - EIN should be 9 digits in XX-XXXXXXX format
+
+    **Step 4: Flag Issues for Human Review**
+    - Unusual Box 12 codes (e.g., DD for health insurance)
+    - State tax withholding inconsistencies
+    - Multiple employers with similar info (possible duplicate)
+
+  examples:
+    - input: |
+        Box 1: $52,000.00
+        Box 2: $6,500.00
+        Box 3: $52,000.00
+        Box 4: $3,224.00
+        Box 5: $52,000.00
+        Box 6: $754.00
+      output: |
+        Wages: $52,000.00
+        Federal Withholding: $6,500.00
+        Social Security Tax: $3,224.00 (6.2% of $52,000 - correct)
+        Medicare Tax: $754.00 (1.45% of $52,000 - correct)
+        Status: VALID
+      explanation: "Standard W-2 with all calculations matching expected percentages."
+
+    - input: |
+        Box 1: $45,000.00
+        Box 2: $5,000.00
+        Box 3: $50,000.00
+        Box 4: $3,100.00
+        Box 5: $45,000.00
+        Box 6: $652.50
+      output: |
+        Wages: $45,000.00
+        Federal Withholding: $5,000.00
+        Social Security Tax: $3,100.00 (6.2% of $50,000)
+        Medicare Tax: $652.50 (1.45% of $45,000)
+        Status: REVIEW REQUIRED
+        Issue: Box 3 ($50,000) exceeds Box 1 ($45,000) - unusual
+      explanation: "Box 3 exceeding Box 1 is unusual and requires human review."
+
+  constraints:
+    - "Never modify original W-2 amounts - only extract and validate"
+    - "Use last 4 digits of SSN only in any output"
+    - "Do not store full SSN in any logs or artifacts"
+    - "Flag but do not reject unusual amounts - human reviewer makes final call"
+    - "Respect annual Social Security wage base limits"
+
+  escalation_triggers:
+    - "SSN format is invalid or missing"
+    - "EIN cannot be verified"
+    - "Multiple W-2s from same employer with conflicting data"
+    - "Box 12 contains code DD (employer-sponsored health coverage over $250,000)"
+    - "Document appears altered or tampered"
+    - "Tax year mismatch between document and client's return year"
