@@ -17,7 +17,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
 | 1 - Foundation | Complete | 5/5 | 100% |
-| 2 - Core Framework | In Progress | 4/6 | 67% |
+| 2 - Core Framework | In Progress | 5/6 | 83% |
 | 3 - Personal Tax Simple | Pending | 0/0 | 0% |
 | 4 - Personal Tax Complex | Pending | 0/0 | 0% |
 | 5 - Review Infrastructure | Pending | 0/0 | 0% |
@@ -25,20 +25,20 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall Progress:** [####____] 24%
+**Overall Progress:** [#####___] 27%
 
 ## Current Position
 
 - **Phase:** 2 of 8 (Core Framework)
-- **Plan:** 02-01, 02-02, 02-03, 02-04 complete (Wave 1 + 2 + 3)
+- **Plan:** 02-01, 02-02, 02-03, 02-04, 02-05 complete (Wave 1 + 2 + 3)
 - **Status:** In Progress
-- **Last activity:** 2026-01-24 - Completed 02-04-PLAN.md (Skill Engine)
+- **Last activity:** 2026-01-24 - Completed 02-05-PLAN.md (Context Builder)
 
 ## Performance Metrics
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Plans completed | 9 | - |
+| Plans completed | 10 | - |
 | Requirements delivered | 6/60 | 60 |
 | Phases complete | 1/8 | 8 |
 
@@ -79,6 +79,9 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2026-01-24 | Two-section skill file structure | metadata + content keeps identity separate from behavior |
 | 2026-01-24 | effective_date for version selection | Skills become effective on a date, selector picks most recent |
 | 2026-01-24 | ruamel.yaml for YAML parsing | Preserves quotes and formatting for round-trip editing |
+| 2026-01-24 | Window functions for computed view | Efficient single-query latest-per-type for profile |
+| 2026-01-24 | Append-only log for profile entries | Never update existing entries, always append |
+| 2026-01-24 | TASK_TYPE_SKILLS mapping | Central mapping of task types to required skills |
 
 ### Deferred Items
 
@@ -108,7 +111,7 @@ None currently.
 - [x] Execute 02-02-PLAN.md (Task Dispatcher)
 - [x] Execute 02-03-PLAN.md (Circuit Breaker)
 - [x] Execute 02-04-PLAN.md (Skill Engine)
-- [ ] Execute 02-05-PLAN.md (Context Builder)
+- [x] Execute 02-05-PLAN.md (Context Builder)
 - [ ] Execute 02-06-PLAN.md (Hybrid Search)
 
 ## Recent Activity
@@ -130,21 +133,22 @@ None currently.
 | 2026-01-24 | Completed 02-01: State Machine (4 min) |
 | 2026-01-24 | Completed 02-03: Circuit Breaker (4 min) |
 | 2026-01-24 | Completed 02-04: Skill Engine (7 min) |
+| 2026-01-24 | Completed 02-05: Context Builder (6 min) |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Executed 02-04-PLAN.md (Skill Engine):
-- Pydantic models: SkillFileModel, SkillMetadata, SkillContent, SkillExample
-- YAML loader: load_skill_from_yaml, load_skills_from_directory, validate_skill_yaml
-- Version selector: select_skill_version for tax year-based selection
-- Example W-2 skill file with instructions, examples, constraints, escalation_triggers
-- 49 passing tests covering loader and selector functionality
+Executed 02-05-PLAN.md (Context Builder):
+- Profile service: get_client_profile_view, append_profile_entry, get_profile_history
+- Context builder: AgentContext dataclass, build_agent_context, get_skills_for_task_type
+- Task-to-skills mapping for all task types
+- Stubs for Phase 3: get_client_documents, get_prior_year_return
+- 42 passing tests covering profile and builder functionality
 
 ### Next Session Starting Point
 
-Continue Phase 2 execution - Wave 3: 02-05 (Context Builder), then Wave 4: 02-06 (Hybrid Search).
+Continue Phase 2 execution - Wave 4: 02-06 (Hybrid Search).
 
 ### Context to Preserve
 
@@ -203,6 +207,13 @@ Continue Phase 2 execution - Wave 3: 02-05 (Context Builder), then Wave 4: 02-06
 - `tests/skills/test_loader.py` - 23 loader tests
 - `tests/skills/test_selector.py` - 26 selector tests
 
+**Context Builder (02-05):**
+- `src/context/__init__.py` - Module exports
+- `src/context/profile.py` - Profile service with append-only log pattern
+- `src/context/builder.py` - Context assembly with AgentContext dataclass
+- `tests/context/test_profile.py` - 18 profile service tests
+- `tests/context/test_builder.py` - 24 context builder tests
+
 **Phase 2 Dependencies Added:**
 - python-statemachine, pybreaker, pydantic-yaml, ruamel.yaml, voyageai
 
@@ -212,4 +223,4 @@ Phase 1 -> 2 -> 3 -> 4 -> 5 -> 7 -> 8
 ---
 
 *State initialized: 2026-01-23*
-*Last updated: 2026-01-24 09:19 UTC*
+*Last updated: 2026-01-24 09:29 UTC*
