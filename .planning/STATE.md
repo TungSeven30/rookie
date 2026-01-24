@@ -1,8 +1,8 @@
 # Project State: Rookie
 
 **Last Updated:** 2026-01-24
-**Current Phase:** 2 - Core Framework
-**Status:** Complete
+**Current Phase:** 3 - Personal Tax Simple
+**Status:** In Progress
 
 ## Project Reference
 
@@ -10,7 +10,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 
 **Core value:** CPAs are liable for the work, not the AI. Rookie prepares, humans approve.
 
-**Current focus:** Phase 2 - Core Framework
+**Current focus:** Phase 3 - Personal Tax Simple
 
 ## Phase Progress
 
@@ -18,28 +18,28 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 |-------|--------|-------|----------|
 | 1 - Foundation | Complete | 5/5 | 100% |
 | 2 - Core Framework | Complete | 6/6 | 100% |
-| 3 - Personal Tax Simple | Pending | 0/0 | 0% |
+| 3 - Personal Tax Simple | In Progress | 2/7 | 29% |
 | 4 - Personal Tax Complex | Pending | 0/0 | 0% |
 | 5 - Review Infrastructure | Pending | 0/0 | 0% |
 | 6 - Business Tax | Pending | 0/0 | 0% |
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall Progress:** [######__] 30%
+**Overall Progress:** [######__] 35%
 
 ## Current Position
 
-- **Phase:** 2 of 8 (Core Framework)
-- **Plan:** All 6 plans complete (Wave 1-4)
-- **Status:** Phase Complete
-- **Last activity:** 2026-01-24 - Completed 02-06-PLAN.md (Hybrid Search)
+- **Phase:** 3 of 8 (Personal Tax Simple)
+- **Plan:** 03-02 complete (Storage & Scanner)
+- **Status:** In Progress
+- **Last activity:** 2026-01-24 - Completed 03-02-PLAN.md (Storage & Scanner)
 
 ## Performance Metrics
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Plans completed | 11 | - |
-| Requirements delivered | 7/60 | 60 |
+| Plans completed | 13 | - |
+| Requirements delivered | 9/60 | 60 |
 | Phases complete | 2/8 | 8 |
 
 ## Accumulated Context
@@ -85,6 +85,11 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2026-01-24 | Mock mode for embedding client | Testing without Voyage AI API key using deterministic vectors |
 | 2026-01-24 | RRF_K=60 for fusion | Standard value from Reciprocal Rank Fusion literature |
 | 2026-01-24 | GIN index on chunk_text | Efficient full-text search on skill embeddings |
+| 2026-01-24 | Decimal for monetary fields | Float precision issues with currency calculations |
+| 2026-01-24 | SSN format XXX-XX-XXXX | Standard IRS format, consistent storage |
+| 2026-01-24 | EIN format XX-XXXXXXX | Standard IRS format for employer IDs |
+| 2026-01-24 | ConfidenceLevel enum | Extraction quality indicator for human review |
+| 2026-01-24 | uncertain_fields list | Identifies fields needing human verification |
 
 ### Deferred Items
 
@@ -116,7 +121,14 @@ None currently.
 - [x] Execute 02-04-PLAN.md (Skill Engine)
 - [x] Execute 02-05-PLAN.md (Context Builder)
 - [x] Execute 02-06-PLAN.md (Hybrid Search)
-- [ ] Plan Phase 3 (Personal Tax Simple)
+- [x] Plan Phase 3 (Personal Tax Simple)
+- [x] Execute 03-01-PLAN.md (Tax Document Models)
+- [ ] Execute 03-02-PLAN.md (Storage Integration)
+- [ ] Execute 03-03-PLAN.md (Document Extraction)
+- [ ] Execute 03-04-PLAN.md (Worksheet Generator)
+- [ ] Execute 03-05-PLAN.md (Tax Calculator)
+- [ ] Execute 03-06-PLAN.md (Form Routing)
+- [ ] Execute 03-07-PLAN.md (End-to-End Integration)
 
 ## Recent Activity
 
@@ -140,21 +152,24 @@ None currently.
 | 2026-01-24 | Completed 02-05: Context Builder (6 min) |
 | 2026-01-24 | Completed 02-06: Hybrid Search (5 min) |
 | 2026-01-24 | **Phase 2 Complete** - Core Framework operational |
+| 2026-01-24 | Phase 3 plans created (7 plans) |
+| 2026-01-24 | Completed 03-01: Tax Document Models (5 min) |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Executed 02-06-PLAN.md (Hybrid Search):
-- EmbeddingClient with Voyage AI and mock mode for testing
-- hybrid_search combining pgvector semantic + BM25 full-text search
-- RRF fusion for normalizing and combining rankings
-- GIN index migration for efficient full-text search
-- 30 passing tests covering embeddings and RRF logic
+Executed 03-01-PLAN.md (Tax Document Models):
+- W2Data, Form1099INT, Form1099DIV, Form1099NEC Pydantic models
+- SSN/EIN validators with consistent formatting (XXX-XX-XXXX, XX-XXXXXXX)
+- DocumentType and ConfidenceLevel enums
+- Box12Code model for W-2 box 12 code/amount pairs
+- 44 comprehensive unit tests
+- Phase 3 dependencies installed (anthropic, instructor, openpyxl, fsspec)
 
 ### Next Session Starting Point
 
-Phase 2 complete. Ready to plan Phase 3 (Personal Tax Simple).
+Execute 03-02-PLAN.md (Storage Integration) - fsspec wrapper for cloud storage.
 
 ### Context to Preserve
 
@@ -231,10 +246,20 @@ Phase 2 complete. Ready to plan Phase 3 (Personal Tax Simple).
 **Phase 2 Dependencies Added:**
 - python-statemachine, pybreaker, pydantic-yaml, ruamel.yaml, voyageai
 
+**Document Models (03-01):**
+- `src/documents/__init__.py` - Module exports
+- `src/documents/models.py` - W2Data, Form1099INT, Form1099DIV, Form1099NEC models
+- `src/documents/scanner.py` - Document file scanner
+- `tests/documents/test_models.py` - 44 model tests
+- `tests/documents/test_scanner.py` - 23 scanner tests
+
+**Phase 3 Dependencies Added:**
+- anthropic, instructor, openpyxl, fsspec
+
 **Critical Path:**
 Phase 1 -> 2 -> 3 -> 4 -> 5 -> 7 -> 8
 
 ---
 
 *State initialized: 2026-01-23*
-*Last updated: 2026-01-24 09:38 UTC*
+*Last updated: 2026-01-24*
