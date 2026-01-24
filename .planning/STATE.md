@@ -17,7 +17,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
 | 1 - Foundation | Complete | 5/5 | 100% |
-| 2 - Core Framework | In Progress | 3/6 | 50% |
+| 2 - Core Framework | In Progress | 4/6 | 67% |
 | 3 - Personal Tax Simple | Pending | 0/0 | 0% |
 | 4 - Personal Tax Complex | Pending | 0/0 | 0% |
 | 5 - Review Infrastructure | Pending | 0/0 | 0% |
@@ -25,20 +25,20 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall Progress:** [###_____] 21%
+**Overall Progress:** [####____] 24%
 
 ## Current Position
 
 - **Phase:** 2 of 8 (Core Framework)
-- **Plan:** 02-01, 02-02, 02-03 complete (Wave 1 + 2)
+- **Plan:** 02-01, 02-02, 02-03, 02-04 complete (Wave 1 + 2 + 3)
 - **Status:** In Progress
-- **Last activity:** 2026-01-24 - Completed 02-03-PLAN.md (Circuit Breaker)
+- **Last activity:** 2026-01-24 - Completed 02-04-PLAN.md (Skill Engine)
 
 ## Performance Metrics
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Plans completed | 8 | - |
+| Plans completed | 9 | - |
 | Requirements delivered | 6/60 | 60 |
 | Phases complete | 1/8 | 8 |
 
@@ -76,6 +76,9 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2026-01-24 | Custom Redis storage for circuit breaker | Cross-instance state sharing via pybreaker subclass |
 | 2026-01-24 | Circuit breaker thresholds: 5/30/2 | 5 failures to open, 30s timeout, 2 successes to close |
 | 2026-01-24 | Async circuit breaker call method | pybreaker sync decorators insufficient for async |
+| 2026-01-24 | Two-section skill file structure | metadata + content keeps identity separate from behavior |
+| 2026-01-24 | effective_date for version selection | Skills become effective on a date, selector picks most recent |
+| 2026-01-24 | ruamel.yaml for YAML parsing | Preserves quotes and formatting for round-trip editing |
 
 ### Deferred Items
 
@@ -104,7 +107,7 @@ None currently.
 - [x] Execute 02-01-PLAN.md (State Machine + Dependencies)
 - [x] Execute 02-02-PLAN.md (Task Dispatcher)
 - [x] Execute 02-03-PLAN.md (Circuit Breaker)
-- [ ] Execute 02-04-PLAN.md (Skill Engine)
+- [x] Execute 02-04-PLAN.md (Skill Engine)
 - [ ] Execute 02-05-PLAN.md (Context Builder)
 - [ ] Execute 02-06-PLAN.md (Hybrid Search)
 
@@ -126,22 +129,22 @@ None currently.
 | 2026-01-24 | Completed 02-02: Task Dispatcher (3 min) |
 | 2026-01-24 | Completed 02-01: State Machine (4 min) |
 | 2026-01-24 | Completed 02-03: Circuit Breaker (4 min) |
+| 2026-01-24 | Completed 02-04: Skill Engine (7 min) |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Executed 02-03-PLAN.md (Circuit Breaker):
-- CircuitBreaker class with Redis-backed state persistence
-- RedisCircuitBreakerStorage extending pybreaker.CircuitBreakerStorage
-- Async call() method and @protect decorator for LLM API protection
-- Configuration: fail_max=5, reset_timeout=30, success_threshold=2
-- Factory functions: get_circuit_breaker, reset_all_breakers
-- 23 passing tests covering all ORCH-03/04/05 requirements
+Executed 02-04-PLAN.md (Skill Engine):
+- Pydantic models: SkillFileModel, SkillMetadata, SkillContent, SkillExample
+- YAML loader: load_skill_from_yaml, load_skills_from_directory, validate_skill_yaml
+- Version selector: select_skill_version for tax year-based selection
+- Example W-2 skill file with instructions, examples, constraints, escalation_triggers
+- 49 passing tests covering loader and selector functionality
 
 ### Next Session Starting Point
 
-Continue Phase 2 execution - Wave 3: 02-04, 02-05 (parallel), then Wave 4: 02-06.
+Continue Phase 2 execution - Wave 3: 02-05 (Context Builder), then Wave 4: 02-06 (Hybrid Search).
 
 ### Context to Preserve
 
@@ -192,6 +195,14 @@ Continue Phase 2 execution - Wave 3: 02-04, 02-05 (parallel), then Wave 4: 02-06
 - `tests/orchestration/test_dispatcher.py` - 12 comprehensive tests
 - `tests/orchestration/test_circuit_breaker.py` - 23 comprehensive tests
 
+**Skill Engine (02-04):**
+- `src/skills/models.py` - Pydantic models for skill files
+- `src/skills/loader.py` - YAML skill file parser with validation
+- `src/skills/selector.py` - Version selector by effective_date
+- `skills/example_skill.yaml` - W-2 processing skill example
+- `tests/skills/test_loader.py` - 23 loader tests
+- `tests/skills/test_selector.py` - 26 selector tests
+
 **Phase 2 Dependencies Added:**
 - python-statemachine, pybreaker, pydantic-yaml, ruamel.yaml, voyageai
 
@@ -201,4 +212,4 @@ Phase 1 -> 2 -> 3 -> 4 -> 5 -> 7 -> 8
 ---
 
 *State initialized: 2026-01-23*
-*Last updated: 2026-01-24 09:16 UTC*
+*Last updated: 2026-01-24 09:19 UTC*
