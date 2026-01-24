@@ -5,6 +5,7 @@ This module provides:
 - Client folder scanner for document discovery
 - Document classifier for identifying document types
 - Confidence scoring for extraction reliability
+- Document extraction using Claude Vision API
 """
 
 from src.documents.classifier import ClassificationResult, classify_document
@@ -13,6 +14,13 @@ from src.documents.confidence import (
     ConfidenceResult,
     calculate_confidence,
     get_critical_fields,
+)
+from src.documents.extractor import (
+    extract_1099_div,
+    extract_1099_int,
+    extract_1099_nec,
+    extract_document,
+    extract_w2,
 )
 from src.documents.models import (
     Box12Code,
@@ -49,4 +57,10 @@ __all__ = [
     "ConfidenceResult",
     "calculate_confidence",
     "get_critical_fields",
+    # Extractor
+    "extract_document",
+    "extract_w2",
+    "extract_1099_int",
+    "extract_1099_div",
+    "extract_1099_nec",
 ]
