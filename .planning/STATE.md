@@ -18,7 +18,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 |-------|--------|-------|----------|
 | 1 - Foundation | Complete | 5/5 | 100% |
 | 2 - Core Framework | Complete | 6/6 | 100% |
-| 3 - Personal Tax Simple | In Progress | 3/7 | 43% |
+| 3 - Personal Tax Simple | In Progress | 4/7 | 57% |
 | 4 - Personal Tax Complex | Pending | 0/0 | 0% |
 | 5 - Review Infrastructure | Pending | 0/0 | 0% |
 | 6 - Business Tax | Pending | 0/0 | 0% |
@@ -30,9 +30,9 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 ## Current Position
 
 - **Phase:** 3 of 8 (Personal Tax Simple)
-- **Plan:** 03-03 complete (Document Classifier & Confidence Scoring)
+- **Plan:** 03-04 complete (Document Extractor)
 - **Status:** In Progress
-- **Last activity:** 2026-01-24 - Completed 03-03-PLAN.md (Classifier & Confidence)
+- **Last activity:** 2026-01-24 - Completed 03-04-PLAN.md (Document Extractor)
 
 ## Performance Metrics
 
@@ -128,7 +128,7 @@ None currently.
 - [x] Execute 03-01-PLAN.md (Tax Document Models)
 - [x] Execute 03-02-PLAN.md (Storage & Scanner)
 - [x] Execute 03-03-PLAN.md (Classifier & Confidence)
-- [ ] Execute 03-04-PLAN.md (Worksheet Generator)
+- [x] Execute 03-04-PLAN.md (Document Extractor)
 - [ ] Execute 03-05-PLAN.md (Tax Calculator)
 - [ ] Execute 03-06-PLAN.md (Form Routing)
 - [ ] Execute 03-07-PLAN.md (End-to-End Integration)
@@ -159,23 +159,24 @@ None currently.
 | 2026-01-24 | Completed 03-01: Tax Document Models (5 min) |
 | 2026-01-24 | Completed 03-02: Storage & Scanner (5 min) |
 | 2026-01-24 | Completed 03-03: Classifier & Confidence (10 min) |
+| 2026-01-24 | Completed 03-04: Document Extractor (5 min) |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Executed 03-03-PLAN.md (Document Classifier & Confidence Scoring):
-- ClassificationResult model with document_type, confidence, reasoning
-- classify_document() async function using Claude Vision via instructor
-- Mock mode via MOCK_LLM=true for testing without API key
-- ConfidenceResult dataclass with level, score, factors, notes
-- calculate_confidence() with weighted factor scoring (0.3/0.4/0.3)
-- CRITICAL_FIELDS constant per document type
-- 65 tests passing
+Executed 03-04-PLAN.md (Document Extractor):
+- extract_document() router function dispatches to type-specific extractors
+- extract_w2(), extract_1099_int(), extract_1099_div(), extract_1099_nec() functions
+- Uses instructor.from_anthropic() for validated Pydantic output
+- Model: claude-sonnet-4-5-20250514 with 2048 max tokens
+- Mock mode via MOCK_LLM=true with realistic test data
+- Extraction prompts separated in prompts.py for tuning
+- 33 tests passing
 
 ### Next Session Starting Point
 
-Execute 03-04-PLAN.md (Worksheet Generator) - create Excel worksheets for Drake data entry.
+Execute 03-05-PLAN.md (Tax Calculator) - compute totals and tax estimates from extracted data.
 
 ### Context to Preserve
 
@@ -271,6 +272,14 @@ Execute 03-04-PLAN.md (Worksheet Generator) - create Excel worksheets for Drake 
 - CRITICAL_FIELDS by document type (W2, 1099-INT, 1099-DIV, 1099-NEC)
 - `tests/documents/test_classifier.py` - 26 classifier tests
 - `tests/documents/test_confidence.py` - 39 confidence tests
+
+**Document Extractor (03-04):**
+- `src/documents/extractor.py` - extract_document() + type-specific extractors
+- `src/documents/prompts.py` - detailed extraction prompts for each form type
+- Uses instructor.from_anthropic() for validated Pydantic output
+- Model: claude-sonnet-4-5-20250514, 2048 max tokens
+- Mock mode via MOCK_LLM=true with realistic test data
+- `tests/documents/test_extractor.py` - 33 extractor tests
 
 **Phase 3 Dependencies Added:**
 - anthropic, instructor, openpyxl, fsspec
