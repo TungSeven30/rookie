@@ -18,7 +18,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 |-------|--------|-------|----------|
 | 1 - Foundation | Complete | 5/5 | 100% |
 | 2 - Core Framework | Complete | 6/6 | 100% |
-| 3 - Personal Tax Simple | In Progress | 2/7 | 29% |
+| 3 - Personal Tax Simple | In Progress | 3/7 | 43% |
 | 4 - Personal Tax Complex | Pending | 0/0 | 0% |
 | 5 - Review Infrastructure | Pending | 0/0 | 0% |
 | 6 - Business Tax | Pending | 0/0 | 0% |
@@ -30,15 +30,15 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 ## Current Position
 
 - **Phase:** 3 of 8 (Personal Tax Simple)
-- **Plan:** 03-02 complete (Storage & Scanner)
+- **Plan:** 03-03 complete (Document Classifier & Confidence Scoring)
 - **Status:** In Progress
-- **Last activity:** 2026-01-24 - Completed 03-02-PLAN.md (Storage & Scanner)
+- **Last activity:** 2026-01-24 - Completed 03-03-PLAN.md (Classifier & Confidence)
 
 ## Performance Metrics
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Plans completed | 13 | - |
+| Plans completed | 14 | - |
 | Requirements delivered | 9/60 | 60 |
 | Phases complete | 2/8 | 8 |
 
@@ -90,6 +90,9 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2026-01-24 | EIN format XX-XXXXXXX | Standard IRS format for employer IDs |
 | 2026-01-24 | ConfidenceLevel enum | Extraction quality indicator for human review |
 | 2026-01-24 | uncertain_fields list | Identifies fields needing human verification |
+| 2026-01-24 | Mock mode via MOCK_LLM env var | Enable testing without Anthropic API key |
+| 2026-01-24 | Confidence weights 0.3/0.4/0.3 | Field validation is most objective measure |
+| 2026-01-24 | HIGH requires all critical fields | Missing critical data should never be auto-approved |
 
 ### Deferred Items
 
@@ -124,7 +127,7 @@ None currently.
 - [x] Plan Phase 3 (Personal Tax Simple)
 - [x] Execute 03-01-PLAN.md (Tax Document Models)
 - [x] Execute 03-02-PLAN.md (Storage & Scanner)
-- [ ] Execute 03-03-PLAN.md (Document Extraction)
+- [x] Execute 03-03-PLAN.md (Classifier & Confidence)
 - [ ] Execute 03-04-PLAN.md (Worksheet Generator)
 - [ ] Execute 03-05-PLAN.md (Tax Calculator)
 - [ ] Execute 03-06-PLAN.md (Form Routing)
@@ -155,21 +158,24 @@ None currently.
 | 2026-01-24 | Phase 3 plans created (7 plans) |
 | 2026-01-24 | Completed 03-01: Tax Document Models (5 min) |
 | 2026-01-24 | Completed 03-02: Storage & Scanner (5 min) |
+| 2026-01-24 | Completed 03-03: Classifier & Confidence (10 min) |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Executed 03-02-PLAN.md (Storage & Scanner):
-- fsspec wrapper for unified storage abstraction (local/S3/GCS)
-- get_filesystem(), list_files(), read_file() storage functions
-- ClientDocument dataclass for discovered documents
-- scan_client_folder() for document discovery in client folders
-- 41 tests (39 passed, 2 skipped for optional cloud deps)
+Executed 03-03-PLAN.md (Document Classifier & Confidence Scoring):
+- ClassificationResult model with document_type, confidence, reasoning
+- classify_document() async function using Claude Vision via instructor
+- Mock mode via MOCK_LLM=true for testing without API key
+- ConfidenceResult dataclass with level, score, factors, notes
+- calculate_confidence() with weighted factor scoring (0.3/0.4/0.3)
+- CRITICAL_FIELDS constant per document type
+- 65 tests passing
 
 ### Next Session Starting Point
 
-Execute 03-03-PLAN.md (Vision Extraction Prompts) - create prompt templates for document extraction.
+Execute 03-04-PLAN.md (Worksheet Generator) - create Excel worksheets for Drake data entry.
 
 ### Context to Preserve
 
@@ -257,6 +263,14 @@ Execute 03-03-PLAN.md (Vision Extraction Prompts) - create prompt templates for 
 - `src/documents/scanner.py` - ClientDocument + scan_client_folder
 - `tests/integrations/test_storage.py` - 18 storage tests
 - `tests/documents/test_scanner.py` - 23 scanner tests
+
+**Document Classifier & Confidence (03-03):**
+- `src/documents/classifier.py` - ClassificationResult + classify_document()
+- `src/documents/confidence.py` - ConfidenceResult + calculate_confidence()
+- Mock mode via MOCK_LLM=true environment variable
+- CRITICAL_FIELDS by document type (W2, 1099-INT, 1099-DIV, 1099-NEC)
+- `tests/documents/test_classifier.py` - 26 classifier tests
+- `tests/documents/test_confidence.py` - 39 confidence tests
 
 **Phase 3 Dependencies Added:**
 - anthropic, instructor, openpyxl, fsspec
