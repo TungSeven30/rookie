@@ -16,7 +16,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
-| 1 - Foundation | In Progress | 1/? | ~10% |
+| 1 - Foundation | In Progress | 2/5 | ~40% |
 | 2 - Core Framework | Pending | 0/0 | 0% |
 | 3 - Personal Tax Simple | Pending | 0/0 | 0% |
 | 4 - Personal Tax Complex | Pending | 0/0 | 0% |
@@ -25,20 +25,20 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall Progress:** [#_______] ~2%
+**Overall Progress:** [##______] ~5%
 
 ## Current Position
 
 - **Phase:** 1 of 8 (Foundation)
-- **Plan:** 01-01 complete
+- **Plan:** 01-03 complete
 - **Status:** In progress
-- **Last activity:** 2026-01-24 - Completed 01-01-PLAN.md (Project Scaffolding)
+- **Last activity:** 2026-01-24 - Completed 01-03-PLAN.md (Infrastructure Services)
 
 ## Performance Metrics
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Plans completed | 1 | - |
+| Plans completed | 2 | - |
 | Requirements delivered | 0/60 | 60 |
 | Phases complete | 0/8 | 8 |
 
@@ -55,6 +55,10 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2026-01-23 | Vision API for document extraction | Direct extraction without OCR pipeline |
 | 2026-01-24 | Use uv for Python package management | Fast, modern resolver, better than pip |
 | 2026-01-24 | Pydantic Settings for configuration | Type-safe, .env file support, validation |
+| 2026-01-24 | Max 20 Redis connections per pool | Reasonable for single-firm deployment |
+| 2026-01-24 | orjson for structlog JSON serialization | Performance, already a dependency |
+| 2026-01-24 | 10% Sentry trace sampling | Balance observability cost vs insight |
+| 2026-01-24 | Disable PII in Sentry | CPA data sensitivity requirement |
 
 ### Deferred Items
 
@@ -75,7 +79,10 @@ None currently.
 
 - [x] Run `/gsd:plan-phase 1` to create execution plans for Phase 1
 - [x] Execute 01-01-PLAN.md (Project Scaffolding)
-- [ ] Execute remaining Phase 1 plans
+- [x] Execute 01-03-PLAN.md (Infrastructure Services)
+- [ ] Execute 01-02-PLAN.md (Database Setup)
+- [ ] Execute 01-04-PLAN.md (FastAPI Application)
+- [ ] Execute 01-05-PLAN.md (Testing Infrastructure)
 
 ## Recent Activity
 
@@ -86,21 +93,23 @@ None currently.
 | 2026-01-23 | Roadmap created (8 phases) |
 | 2026-01-24 | Phase 1 plans created |
 | 2026-01-24 | Completed 01-01: Project Scaffolding (3 min) |
+| 2026-01-24 | Completed 01-03: Infrastructure Services (4 min) |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Executed 01-01-PLAN.md (Project Scaffolding):
-- Initialized Python project with uv
-- Installed all production and dev dependencies
-- Created src/ directory structure (core, api, models)
-- Configured Pydantic Settings for environment variables
-- Created .gitignore and .env.example
+Executed 01-03-PLAN.md (Infrastructure Services):
+- Created Redis connection pool factory with async/await
+- Added health check function for liveness probes
+- Configured structlog with environment-aware rendering
+- Set up contextvars for task_id, client_id, agent correlation
+- Integrated Sentry error tracking with FastAPI/Starlette
+- Configured Sentry for CPA data sensitivity (no PII)
 
 ### Next Session Starting Point
 
-Ready for 01-02-PLAN.md (Database Setup) or next plan in Phase 1.
+Ready for 01-02-PLAN.md (Database Setup), 01-04-PLAN.md (FastAPI Application), or 01-05-PLAN.md (Testing Infrastructure).
 
 ### Context to Preserve
 
@@ -110,6 +119,11 @@ Ready for 01-02-PLAN.md (Database Setup) or next plan in Phase 1.
 - Drake worksheets (Excel) for manual entry
 - Package management: uv
 - Dependencies installed: fastapi, sqlalchemy, asyncpg, alembic, redis, pgvector, structlog, sentry-sdk, pydantic-settings, orjson
+
+**Infrastructure Services (01-03):**
+- `src/core/redis.py` - Redis pool factory, health check
+- `src/core/logging.py` - structlog config, contextvars
+- `src/core/sentry.py` - Sentry init with FastAPI integration
 
 **Key Constraints:**
 - No client PII in AI training
