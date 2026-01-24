@@ -16,7 +16,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
-| 1 - Foundation | In Progress | 2/5 | ~40% |
+| 1 - Foundation | In Progress | 3/5 | ~60% |
 | 2 - Core Framework | Pending | 0/0 | 0% |
 | 3 - Personal Tax Simple | Pending | 0/0 | 0% |
 | 4 - Personal Tax Complex | Pending | 0/0 | 0% |
@@ -25,20 +25,20 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall Progress:** [##______] ~5%
+**Overall Progress:** [###_____] ~8%
 
 ## Current Position
 
 - **Phase:** 1 of 8 (Foundation)
-- **Plan:** 01-03 complete
+- **Plan:** 01-02 complete
 - **Status:** In progress
-- **Last activity:** 2026-01-24 - Completed 01-03-PLAN.md (Infrastructure Services)
+- **Last activity:** 2026-01-24 - Completed 01-02-PLAN.md (Database Models)
 
 ## Performance Metrics
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Plans completed | 2 | - |
+| Plans completed | 3 | - |
 | Requirements delivered | 0/60 | 60 |
 | Phases complete | 0/8 | 8 |
 
@@ -59,6 +59,10 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2026-01-24 | orjson for structlog JSON serialization | Performance, already a dependency |
 | 2026-01-24 | 10% Sentry trace sampling | Balance observability cost vs insight |
 | 2026-01-24 | Disable PII in Sentry | CPA data sensitivity requirement |
+| 2026-01-24 | TaskStatus as Python enum | Cleaner than string constants, type safety |
+| 2026-01-24 | Pool size 20, max_overflow 0 | Bounded connections prevent database overload |
+| 2026-01-24 | expire_on_commit=False | Objects usable after commit in FastAPI responses |
+| 2026-01-24 | Lazy engine initialization | Avoids connection at import time |
 
 ### Deferred Items
 
@@ -79,8 +83,8 @@ None currently.
 
 - [x] Run `/gsd:plan-phase 1` to create execution plans for Phase 1
 - [x] Execute 01-01-PLAN.md (Project Scaffolding)
+- [x] Execute 01-02-PLAN.md (Database Models)
 - [x] Execute 01-03-PLAN.md (Infrastructure Services)
-- [ ] Execute 01-02-PLAN.md (Database Setup)
 - [ ] Execute 01-04-PLAN.md (FastAPI Application)
 - [ ] Execute 01-05-PLAN.md (Testing Infrastructure)
 
@@ -93,23 +97,24 @@ None currently.
 | 2026-01-23 | Roadmap created (8 phases) |
 | 2026-01-24 | Phase 1 plans created |
 | 2026-01-24 | Completed 01-01: Project Scaffolding (3 min) |
+| 2026-01-24 | Completed 01-02: Database Models (4 min) |
 | 2026-01-24 | Completed 01-03: Infrastructure Services (4 min) |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Executed 01-03-PLAN.md (Infrastructure Services):
-- Created Redis connection pool factory with async/await
-- Added health check function for liveness probes
-- Configured structlog with environment-aware rendering
-- Set up contextvars for task_id, client_id, agent correlation
-- Integrated Sentry error tracking with FastAPI/Starlette
-- Configured Sentry for CPA data sensitivity (no PII)
+Executed 01-02-PLAN.md (Database Models):
+- Created SQLAlchemy 2.0 models with Mapped/mapped_column patterns
+- 11 domain models: Task, Escalation, TaskArtifact, Client, ClientProfileEntry, FeedbackEntry, DocumentEmbedding, SkillFile, SkillEmbedding, AgentLog, AgentMetric
+- TimestampMixin for created_at/updated_at columns
+- pgvector Vector(1536) for embedding columns
+- Async database engine factory with connection pooling
+- FastAPI-compatible session dependency
 
 ### Next Session Starting Point
 
-Ready for 01-02-PLAN.md (Database Setup), 01-04-PLAN.md (FastAPI Application), or 01-05-PLAN.md (Testing Infrastructure).
+Ready for 01-04-PLAN.md (FastAPI Application) or 01-05-PLAN.md (Testing Infrastructure).
 
 ### Context to Preserve
 
@@ -119,6 +124,15 @@ Ready for 01-02-PLAN.md (Database Setup), 01-04-PLAN.md (FastAPI Application), o
 - Drake worksheets (Excel) for manual entry
 - Package management: uv
 - Dependencies installed: fastapi, sqlalchemy, asyncpg, alembic, redis, pgvector, structlog, sentry-sdk, pydantic-settings, orjson
+
+**Database Models (01-02):**
+- `src/models/base.py` - Base, TimestampMixin
+- `src/models/task.py` - Task, Escalation, TaskArtifact, TaskStatus
+- `src/models/client.py` - Client, ClientProfileEntry
+- `src/models/artifact.py` - FeedbackEntry, DocumentEmbedding
+- `src/models/skill.py` - SkillFile, SkillEmbedding
+- `src/models/log.py` - AgentLog, AgentMetric
+- `src/core/database.py` - Engine factory, session maker
 
 **Infrastructure Services (01-03):**
 - `src/core/redis.py` - Redis pool factory, health check
