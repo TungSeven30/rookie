@@ -459,3 +459,224 @@ def generate_drake_worksheet(
     workbook.save(output_path)
 
     return output_path
+
+
+# =============================================================================
+# Preparer Notes Generator (PTAX-14)
+# =============================================================================
+
+
+def _determine_overall_confidence(extractions: list[dict]) -> str:
+    """Determine overall confidence from extraction results.
+
+    Args:
+        extractions: List of extraction results with 'confidence' keys.
+
+    Returns:
+        Overall confidence level (HIGH, MEDIUM, or LOW).
+    """
+    if not extractions:
+        return "HIGH"
+
+    confidence_levels = [e.get("confidence", "HIGH") for e in extractions]
+
+    if "LOW" in confidence_levels:
+        return "LOW"
+    if "MEDIUM" in confidence_levels:
+        return "MEDIUM"
+    return "HIGH"
+
+
+def _format_currency(amount: Decimal) -> str:
+    """Format Decimal as currency string.
+
+    Args:
+        amount: Decimal amount.
+
+    Returns:
+        Formatted string like "$1,234.56".
+    """
+    return f"${amount:,.2f}"
+
+
+def generate_preparer_notes(
+    client_name: str,
+    tax_year: int,
+    income_summary: IncomeSummary,
+    deduction_result: DeductionResult,
+    tax_result: TaxResult,
+    variances: list[VarianceItem],
+    extractions: list[dict],
+    filing_status: str,
+    output_path: Path,
+) -> Path:
+    """Generate preparer notes in Markdown format.
+
+    Creates a Markdown document with all required sections for CPA review:
+    - Summary: Income, deductions, tax, refund/due
+    - Sources: Documents processed with confidence levels
+    - Flags: Variances >10%, low confidence extractions
+    - Assumptions: Filing status, deduction method
+    - Review Focus: What CPA should verify
+
+    Args:
+        client_name: Client name.
+        tax_year: Tax year.
+        income_summary: Aggregated income from calculator.
+        deduction_result: Deduction calculation from calculator.
+        tax_result: Tax calculation from calculator.
+        variances: List of variance items from year comparison.
+        extractions: List of extraction info dicts with keys:
+            document_type, filename, confidence.
+        filing_status: Filing status (single, mfj, mfs, hoh).
+        output_path: Where to save the markdown file.
+
+    Returns:
+        Path to generated file.
+
+    Example:
+        >>> path = generate_preparer_notes(
+        ...     "John Doe", 2024, income, deduction, tax,
+        ...     [], [], "single",
+        ...     Path("notes.md")
+        ... )
+    """
+    overall_confidence = _determine_overall_confidence(extractions)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    # Calculate derived values
+    taxable_income = max(
+        Decimal("0"), income_summary.total_income - deduction_result.amount
+    )
+    refund_due = income_summary.federal_withholding - tax_result.final_liability
+
+    lines: list[str] = []
+
+    # Header
+    lines.append(f"# Preparer Notes: {client_name} - Tax Year {tax_year}")
+    lines.append("")
+    lines.append(f"**Generated:** {timestamp}")
+    lines.append(f"**Overall Confidence:** {overall_confidence}")
+    lines.append("")
+
+    # Summary section
+    lines.append("## Summary")
+    lines.append("")
+    lines.append(f"**Filing Status:** {filing_status.upper()}")
+    lines.append(f"**Total Income:** {_format_currency(income_summary.total_income)}")
+    lines.append(
+        f"**Adjusted Gross Income:** {_format_currency(income_summary.total_income)}"
+    )
+    lines.append(f"**Taxable Income:** {_format_currency(taxable_income)}")
+    lines.append(f"**Total Tax:** {_format_currency(tax_result.final_liability)}")
+    lines.append(
+        f"**Total Withholding:** {_format_currency(income_summary.federal_withholding)}"
+    )
+
+    if refund_due >= Decimal("0"):
+        lines.append(f"**Refund:** {_format_currency(refund_due)}")
+    else:
+        lines.append(f"**Amount Due:** {_format_currency(abs(refund_due))}")
+
+    lines.append("")
+
+    # Deduction method
+    lines.append("### Deduction Method")
+    lines.append("")
+    lines.append(f"{deduction_result.method.title()} deduction selected.")
+    lines.append(
+        f"- Standard deduction: {_format_currency(deduction_result.standard_amount)}"
+    )
+    lines.append(
+        f"- Itemized total: {_format_currency(deduction_result.itemized_amount)}"
+    )
+    lines.append("")
+
+    # Sources section
+    lines.append("## Sources")
+    lines.append("")
+    if extractions:
+        lines.append("Documents processed:")
+        for ext in extractions:
+            doc_type = ext.get("document_type", "Unknown")
+            filename = ext.get("filename", "Unknown")
+            confidence = ext.get("confidence", "HIGH")
+            lines.append(f"- {doc_type}: {filename} (Confidence: {confidence})")
+    else:
+        lines.append("No documents processed.")
+    lines.append("")
+
+    # Flags section
+    lines.append("## Flags")
+    lines.append("")
+
+    # Variances subsection
+    lines.append("### Variances from Prior Year (>10%)")
+    lines.append("")
+    if variances:
+        for v in variances:
+            lines.append(
+                f"- **{v.field}**: {v.direction} {v.variance_pct:.0f}% "
+                f"({_format_currency(v.prior_value)} -> {_format_currency(v.current_value)})"
+            )
+    else:
+        lines.append("No significant variances from prior year.")
+    lines.append("")
+
+    # Extraction concerns subsection
+    lines.append("### Extraction Concerns")
+    lines.append("")
+    low_confidence = [
+        e for e in extractions if e.get("confidence") in ("MEDIUM", "LOW")
+    ]
+    if low_confidence:
+        for ext in low_confidence:
+            doc_type = ext.get("document_type", "Unknown")
+            filename = ext.get("filename", "Unknown")
+            confidence = ext.get("confidence", "MEDIUM")
+            lines.append(f"- {doc_type} ({filename}): {confidence} confidence")
+    else:
+        lines.append("No extraction concerns.")
+    lines.append("")
+
+    # Assumptions section
+    lines.append("## Assumptions")
+    lines.append("")
+    lines.append(
+        f"- Filing status: {filing_status.upper()} (from prior year / client profile)"
+    )
+
+    deduction_reason = (
+        "higher benefit"
+        if deduction_result.method == "standard"
+        else "itemized exceeds standard"
+    )
+    lines.append(
+        f"- {deduction_result.method.title()} deduction used because {deduction_reason}"
+    )
+    lines.append("- All documents in client folder were processed")
+    lines.append("")
+
+    # Review Focus section
+    lines.append("## Review Focus")
+    lines.append("")
+    lines.append("1. Verify W-2 Box 1 matches employer records")
+    lines.append("2. Confirm all 1099s received are included")
+
+    review_number = 3
+    if variances:
+        lines.append(f"{review_number}. Investigate flagged variances from prior year")
+        review_number += 1
+
+    if low_confidence:
+        lines.append(f"{review_number}. Review fields marked as uncertain")
+        review_number += 1
+
+    lines.append("")
+
+    # Write file
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    content = "\n".join(lines)
+    output_path.write_text(content)
+
+    return output_path
