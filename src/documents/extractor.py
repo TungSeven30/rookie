@@ -250,7 +250,12 @@ async def _extract_with_vision(
 
     # Use provided client or create new one
     if client is None:
-        client = AnthropicClient()
+        from src.core.config import settings
+
+        if settings.anthropic_api_key:
+            client = AnthropicClient(api_key=settings.anthropic_api_key)
+        else:
+            client = AnthropicClient()
 
     # Wrap with instructor for structured output
     instructor_client = instructor.from_anthropic(client)

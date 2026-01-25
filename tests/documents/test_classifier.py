@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -12,6 +13,7 @@ from src.documents.classifier import (
     classify_document,
     _classify_image,
 )
+from src.core.config import settings
 from src.documents.models import DocumentType
 
 
@@ -130,6 +132,29 @@ class TestClassifyDocument:
             )
         assert result == fake_result
         mock_classify.assert_called_once_with(b"test image", "image/jpeg", fake_client)
+
+    @pytest.mark.asyncio
+    async def test_classify_image_uses_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Anthropic client uses configured API key."""
+        monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+        fake_result = ClassificationResult(
+            document_type=DocumentType.W2,
+            confidence=0.9,
+            reasoning="Test result",
+        )
+        fake_messages = AsyncMock()
+        fake_messages.create = AsyncMock(return_value=fake_result)
+        fake_client = SimpleNamespace(messages=fake_messages)
+
+        with patch(
+            "instructor.from_anthropic", return_value=fake_client
+        ) as mock_instructor:
+            with patch("anthropic.AsyncAnthropic") as mock_anthropic:
+                result = await _classify_image(b"test", "image/jpeg")
+
+        mock_anthropic.assert_called_once_with(api_key="test-key")
+        mock_instructor.assert_called_once()
+        assert result == fake_result
 
     @pytest.mark.asyncio
     async def test_classify_document_pdf_converts_to_image(self) -> None:

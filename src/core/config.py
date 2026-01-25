@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     sentry_dsn: str | None = None
     """Sentry DSN for error tracking. Optional."""
 
+    anthropic_api_key: str | None = None
+    """Anthropic API key for document extraction."""
+
     # Environment
     environment: str = "development"
     """Current environment (development, staging, production)."""
