@@ -47,7 +47,7 @@ async def read_file(url: str, path: str = "") -> bytes:
         File contents as bytes
     """
     fs = get_filesystem(url)
-    full_path = _build_full_path(url, path)
+    full_path = build_full_path(url, path)
 
     return await asyncio.to_thread(_read_file_sync, fs, full_path)
 
@@ -63,7 +63,7 @@ def list_files(url: str, path: str = "") -> list[dict]:
         List of file info dicts with name, size, type, mtime
     """
     fs = get_filesystem(url)
-    full_path = _build_full_path(url, path)
+    full_path = build_full_path(url, path)
 
     # Check if path exists
     if not fs.exists(full_path):
@@ -106,7 +106,7 @@ def list_files(url: str, path: str = "") -> list[dict]:
     return result
 
 
-def _build_full_path(url: str, path: str) -> str:
+def build_full_path(url: str, path: str) -> str:
     """Build full path from base URL and relative path.
 
     Args:
@@ -136,3 +136,33 @@ def _read_file_sync(fs: fsspec.AbstractFileSystem, path: str) -> bytes:
     """Read file contents synchronously."""
     with fs.open(path, "rb") as f:
         return f.read()
+
+
+async def write_file(url: str, path: str, content: bytes) -> str:
+    """Write file bytes to storage.
+
+    Args:
+        url: Base storage URL
+        path: File path within storage
+        content: File contents as bytes
+
+    Returns:
+        Full storage path written to.
+    """
+    fs = get_filesystem(url)
+    full_path = build_full_path(url, path)
+    parsed = urlparse(url)
+    if not parsed.scheme or parsed.scheme == "file":
+        directory = os.path.dirname(full_path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+    await asyncio.to_thread(_write_file_sync, fs, full_path, content)
+    return full_path
+
+
+def _write_file_sync(
+    fs: fsspec.AbstractFileSystem, path: str, content: bytes
+) -> None:
+    """Write file contents synchronously."""
+    with fs.open(path, "wb") as f:
+        f.write(content)

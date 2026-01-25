@@ -3,6 +3,9 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from fastapi.testclient import TestClient
+
+from src.main import app
 
 
 @pytest.fixture(scope="session")
@@ -61,3 +64,13 @@ def mock_redis_failing() -> AsyncMock:
     redis_mock = AsyncMock()
     redis_mock.ping.side_effect = Exception("Redis connection refused")
     return redis_mock
+
+
+@pytest.fixture
+def client() -> TestClient:
+    """Create a test client for API testing.
+
+    Returns:
+        FastAPI TestClient instance.
+    """
+    return TestClient(app)

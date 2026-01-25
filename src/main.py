@@ -4,8 +4,11 @@ from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from src.api.clients import router as clients_router
+from src.api.demo import router as demo_router
 from src.api.health import router as health_router
 from src.api.middleware import RequestContextMiddleware
 from src.api.tasks import router as tasks_router
@@ -69,10 +72,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Add middleware
+# Add CORS middleware for frontend development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Add request context middleware
 app.add_middleware(RequestContextMiddleware)
 
 # Include routers
 app.include_router(health_router)
 app.include_router(tasks_router)
 app.include_router(clients_router)
+app.include_router(demo_router)
