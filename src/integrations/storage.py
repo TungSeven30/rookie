@@ -4,6 +4,7 @@ Provides unified access to local filesystem and cloud storage (S3, GCS)
 through fsspec's protocol detection.
 """
 
+import asyncio
 import os
 from datetime import datetime, timezone
 from urllib.parse import urlparse
@@ -48,10 +49,7 @@ async def read_file(url: str, path: str = "") -> bytes:
     fs = get_filesystem(url)
     full_path = _build_full_path(url, path)
 
-    # fsspec supports sync operations; use them for simplicity
-    # Async can be added later if performance requires it
-    with fs.open(full_path, "rb") as f:
-        return f.read()
+    return await asyncio.to_thread(_read_file_sync, fs, full_path)
 
 
 def list_files(url: str, path: str = "") -> list[dict]:
@@ -132,3 +130,9 @@ def _build_full_path(url: str, path: str) -> str:
     if path:
         return f"{base.rstrip('/')}/{path.lstrip('/')}"
     return base
+
+
+def _read_file_sync(fs: fsspec.AbstractFileSystem, path: str) -> bytes:
+    """Read file contents synchronously."""
+    with fs.open(path, "rb") as f:
+        return f.read()

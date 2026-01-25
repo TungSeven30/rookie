@@ -82,6 +82,48 @@ def validate_ein(value: str) -> str:
     return f"{digits[:2]}-{digits[2:]}"
 
 
+def _format_ssn(digits: str) -> str:
+    """Format 9-digit string as SSN."""
+    return f"{digits[:3]}-{digits[3:5]}-{digits[5:]}"
+
+
+def _format_ein(digits: str) -> str:
+    """Format 9-digit string as EIN."""
+    return f"{digits[:2]}-{digits[2:]}"
+
+
+def validate_tin(value: str, default_format: str) -> str:
+    """Validate and format TIN as SSN or EIN.
+
+    Args:
+        value: TIN string, with or without separators.
+        default_format: "ssn" or "ein" when input is ambiguous.
+
+    Returns:
+        Formatted TIN in SSN or EIN format.
+
+    Raises:
+        ValueError: If TIN is not exactly 9 digits after cleaning.
+    """
+    cleaned = re.sub(r"\s", "", value)
+    digits = re.sub(r"\D", "", cleaned)
+
+    if len(digits) != 9:
+        raise ValueError(f"TIN must be exactly 9 digits, got {len(digits)}")
+
+    if re.fullmatch(r"\d{3}-\d{2}-\d{4}", cleaned):
+        return _format_ssn(digits)
+    if re.fullmatch(r"\d{2}-\d{7}", cleaned):
+        return _format_ein(digits)
+
+    if default_format == "ssn":
+        return _format_ssn(digits)
+    if default_format == "ein":
+        return _format_ein(digits)
+
+    raise ValueError("default_format must be 'ssn' or 'ein'")
+
+
 # Type aliases for annotated fields
 SSN = Annotated[str, Field(description="Social Security Number (XXX-XX-XXXX)")]
 EIN = Annotated[str, Field(description="Employer Identification Number (XX-XXXXXXX)")]
@@ -179,17 +221,13 @@ class Form1099INT(BaseModel):
     @classmethod
     def validate_payer_tin(cls, v: str) -> str:
         """Validate payer TIN (can be EIN or SSN)."""
-        digits = re.sub(r"\D", "", v)
-        if len(digits) != 9:
-            raise ValueError(f"TIN must be exactly 9 digits, got {len(digits)}")
-        # Format as EIN if it looks like one
-        return f"{digits[:2]}-{digits[2:]}"
+        return validate_tin(v, default_format="ein")
 
     @field_validator("recipient_tin")
     @classmethod
     def validate_recipient_tin(cls, v: str) -> str:
-        """Validate recipient TIN (usually SSN)."""
-        return validate_ssn(v)
+        """Validate recipient TIN (SSN or EIN)."""
+        return validate_tin(v, default_format="ssn")
 
 
 class Form1099DIV(BaseModel):
@@ -223,17 +261,14 @@ class Form1099DIV(BaseModel):
     @field_validator("payer_tin")
     @classmethod
     def validate_payer_tin(cls, v: str) -> str:
-        """Validate payer TIN (usually EIN)."""
-        digits = re.sub(r"\D", "", v)
-        if len(digits) != 9:
-            raise ValueError(f"TIN must be exactly 9 digits, got {len(digits)}")
-        return f"{digits[:2]}-{digits[2:]}"
+        """Validate payer TIN (SSN or EIN)."""
+        return validate_tin(v, default_format="ein")
 
     @field_validator("recipient_tin")
     @classmethod
     def validate_recipient_tin(cls, v: str) -> str:
-        """Validate recipient TIN (usually SSN)."""
-        return validate_ssn(v)
+        """Validate recipient TIN (SSN or EIN)."""
+        return validate_tin(v, default_format="ssn")
 
 
 class Form1099NEC(BaseModel):
@@ -261,14 +296,11 @@ class Form1099NEC(BaseModel):
     @field_validator("payer_tin")
     @classmethod
     def validate_payer_tin(cls, v: str) -> str:
-        """Validate payer TIN (usually EIN)."""
-        digits = re.sub(r"\D", "", v)
-        if len(digits) != 9:
-            raise ValueError(f"TIN must be exactly 9 digits, got {len(digits)}")
-        return f"{digits[:2]}-{digits[2:]}"
+        """Validate payer TIN (SSN or EIN)."""
+        return validate_tin(v, default_format="ein")
 
     @field_validator("recipient_tin")
     @classmethod
     def validate_recipient_tin(cls, v: str) -> str:
-        """Validate recipient TIN (usually SSN)."""
-        return validate_ssn(v)
+        """Validate recipient TIN (SSN or EIN)."""
+        return validate_tin(v, default_format="ssn")

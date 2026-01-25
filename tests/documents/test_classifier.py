@@ -163,7 +163,7 @@ class TestClassifyDocument:
         """Test classify_document raises for unsupported media type."""
         with patch.dict(os.environ, {"MOCK_LLM": "false"}):
             with pytest.raises(ValueError, match="Unsupported media type"):
-                await classify_document(b"test", "application/pdf")
+                await classify_document(b"test", "application/octet-stream")
 
     @pytest.mark.asyncio
     async def test_classify_document_valid_media_types(self) -> None:
@@ -188,6 +188,39 @@ class TestClassifyDocument:
                 client=None,  # Uses default
             )
             assert isinstance(result, ClassificationResult)
+
+    @pytest.mark.asyncio
+    async def test_classify_document_pdf_converts_to_image(self) -> None:
+        """PDF inputs are converted to images before classification."""
+        with patch.dict(os.environ, {"MOCK_LLM": "false"}):
+            converted_bytes = b"fake png bytes"
+
+            def fake_convert(pdf_bytes: bytes) -> bytes:
+                assert pdf_bytes == b"%PDF-1.4"
+                return converted_bytes
+
+            async def fake_classify_image(
+                image_bytes: bytes, media_type: str, client=None
+            ) -> ClassificationResult:
+                assert image_bytes == converted_bytes
+                assert media_type == "image/png"
+                return ClassificationResult(
+                    document_type=DocumentType.W2,
+                    confidence=0.9,
+                    reasoning="Converted PDF to image for classification.",
+                )
+
+            with patch(
+                "src.documents.classifier._convert_pdf_to_image_bytes",
+                side_effect=fake_convert,
+            ):
+                with patch(
+                    "src.documents.classifier._classify_image",
+                    side_effect=fake_classify_image,
+                ):
+                    result = await classify_document(b"%PDF-1.4", "application/pdf")
+
+        assert result.document_type == DocumentType.W2
 
 
 class TestClassificationPrompt:

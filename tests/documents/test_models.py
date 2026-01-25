@@ -263,6 +263,18 @@ class TestForm1099INT:
         form = Form1099INT(**valid_1099int_data)
         assert form.recipient_tin == "123-45-6789"
 
+    def test_1099int_recipient_tin_accepts_ein(self, valid_1099int_data: dict) -> None:
+        """Recipient TIN accepts EIN format when provided."""
+        valid_1099int_data["recipient_tin"] = "12-3456789"
+        form = Form1099INT(**valid_1099int_data)
+        assert form.recipient_tin == "12-3456789"
+
+    def test_1099int_payer_tin_accepts_ssn(self, valid_1099int_data: dict) -> None:
+        """Payer TIN accepts SSN format when provided."""
+        valid_1099int_data["payer_tin"] = "123-45-6789"
+        form = Form1099INT(**valid_1099int_data)
+        assert form.payer_tin == "123-45-6789"
+
 
 class TestForm1099DIV:
     """Tests for Form1099DIV model."""

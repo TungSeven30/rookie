@@ -175,6 +175,29 @@ class TestReadFile:
             assert content == b"hello world"
 
     @pytest.mark.asyncio
+    async def test_read_file_uses_to_thread(self, monkeypatch) -> None:
+        """read_file offloads blocking I/O to a thread."""
+        calls: list[object] = []
+
+        async def fake_to_thread(func, *args, **kwargs):
+            calls.append(func)
+            return func(*args, **kwargs)
+
+        monkeypatch.setattr(
+            "src.integrations.storage.asyncio.to_thread", fake_to_thread
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_file = os.path.join(tmpdir, "test.txt")
+            with open(test_file, "w") as f:
+                f.write("threaded read")
+
+            content = await read_file(tmpdir, "test.txt")
+            assert content == b"threaded read"
+
+        assert calls
+
+    @pytest.mark.asyncio
     async def test_read_file_binary_content(self) -> None:
         """read_file correctly reads binary content."""
         with tempfile.TemporaryDirectory() as tmpdir:

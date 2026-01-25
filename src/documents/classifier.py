@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import os
+from io import BytesIO
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
@@ -75,6 +76,9 @@ Analyze the document and provide:
 3. reasoning: Brief explanation of why you classified it this way"""
 
 
+SUPPORTED_MEDIA_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+
+
 async def classify_document(
     image_bytes: bytes,
     media_type: str = "image/jpeg",
@@ -110,10 +114,25 @@ async def classify_document(
     if os.environ.get("MOCK_LLM", "").lower() == "true":
         return _mock_classify(image_bytes)
 
+    # Convert PDFs to images for classification
+    if media_type == "application/pdf":
+        image_bytes = _convert_pdf_to_image_bytes(image_bytes)
+        media_type = "image/png"
+
+    return await _classify_image(image_bytes, media_type, client)
+
+
+async def _classify_image(
+    image_bytes: bytes,
+    media_type: str,
+    client: "AsyncAnthropic | None" = None,
+) -> ClassificationResult:
+    """Classify an image using Claude Vision."""
     # Validate media type
-    supported_types = {"image/jpeg", "image/png", "image/gif", "image/webp"}
-    if media_type not in supported_types:
-        raise ValueError(f"Unsupported media type: {media_type}. Supported: {supported_types}")
+    if media_type not in SUPPORTED_MEDIA_TYPES:
+        raise ValueError(
+            f"Unsupported media type: {media_type}. Supported: {SUPPORTED_MEDIA_TYPES}"
+        )
 
     # Import instructor and anthropic here to avoid circular imports
     import instructor
@@ -156,6 +175,25 @@ async def classify_document(
     )
 
     return result
+
+
+def _convert_pdf_to_image_bytes(pdf_bytes: bytes) -> bytes:
+    """Convert PDF bytes to PNG image bytes (first page only)."""
+    try:
+        from pdf2image import convert_from_bytes
+    except ImportError as exc:
+        raise RuntimeError(
+            "pdf2image is required for PDF classification. "
+            "Install pdf2image and pillow, and ensure poppler is available."
+        ) from exc
+
+    images = convert_from_bytes(pdf_bytes, first_page=1, last_page=1, fmt="png")
+    if not images:
+        raise ValueError("No pages found in PDF for classification")
+
+    buffer = BytesIO()
+    images[0].save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def _mock_classify(image_bytes: bytes) -> ClassificationResult:
