@@ -569,17 +569,21 @@ class TestAgentProcessWorkflow:
                     "src.agents.personal_tax.agent.read_file",
                     return_value=b"dummy content",
                 ):
-                    with patch(
-                        "src.agents.personal_tax.agent.classify_document",
-                        return_value=mock_classification,
+                    with patch.object(
+                        agent, "_split_pdf_pages",
+                        return_value=[b"fake page 1"],
                     ):
                         with patch(
-                            "src.agents.personal_tax.agent.extract_document",
-                            return_value=sample_w2,
+                            "src.agents.personal_tax.agent.classify_document",
+                            return_value=mock_classification,
                         ):
-                            result = await agent.process(
-                                "client123", 2024, mock_session
-                            )
+                            with patch(
+                                "src.agents.personal_tax.agent.extract_document",
+                                return_value=sample_w2,
+                            ):
+                                result = await agent.process(
+                                    "client123", 2024, mock_session
+                                )
 
         assert isinstance(result, PersonalTaxResult)
         assert result.drake_worksheet_path.exists()

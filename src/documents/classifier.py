@@ -67,10 +67,46 @@ Document Types and Distinguishing Features:
    - Simpler layout compared to other 1099 forms
    - Used for independent contractor payments
 
+5. 1098 (Mortgage Interest Statement):
+   - Title: "Mortgage Interest Statement" or "Form 1098"
+   - Contains mortgage interest (Box 1), outstanding principal (Box 2)
+   - Has lender/recipient and borrower/payer sections
+   - Common fields: "Mortgage interest received", "Points paid", "Property taxes"
+
+6. 1099-R (Distributions From Pensions, Annuities, Retirement):
+   - Title: "Distributions From Pensions, Annuities, Retirement or Profit-Sharing Plans" or "Form 1099-R"
+   - Contains gross distribution (Box 1), taxable amount (Box 2a)
+   - Has distribution code (Box 7) and IRA/SEP/SIMPLE checkbox
+   - Common fields: "Gross distribution", "Taxable amount", "Federal income tax withheld"
+
+7. 1099-G (Government Payments):
+   - Title: "Certain Government Payments" or "Form 1099-G"
+   - Contains unemployment compensation (Box 1), state tax refund (Box 2)
+   - Issued by government agencies
+   - Common fields: "Unemployment compensation", "State or local income tax refunds"
+
+8. 1098-T (Tuition Statement):
+   - Title: "Tuition Statement" or "Form 1098-T"
+   - Contains payments received (Box 1), scholarships (Box 5)
+   - Issued by educational institutions
+   - Common fields: "Payments received for qualified tuition", "Scholarships or grants"
+
+9. 5498 (IRA Contribution Information):
+   - Title: "IRA Contribution Information" or "Form 5498"
+   - Contains IRA contributions (Box 1), Roth IRA contributions (Box 10)
+   - Has trustee/issuer and participant sections
+   - Common fields: "IRA contributions", "Rollover contributions", "Fair market value"
+
+10. 1099-S (Proceeds from Real Estate Transactions):
+    - Title: "Proceeds From Real Estate Transactions" or "Form 1099-S"
+    - Contains gross proceeds (Box 2), date of closing (Box 1)
+    - Has property address/description (Box 3)
+    - Common fields: "Gross proceeds", "Address or legal description"
+
 If you cannot determine the document type with confidence, classify as UNKNOWN.
 
 Analyze the document and provide:
-1. document_type: One of W2, 1099-INT, 1099-DIV, 1099-NEC, or UNKNOWN
+1. document_type: One of W2, 1099-INT, 1099-DIV, 1099-NEC, 1098, 1099-R, 1099-G, 1098-T, 5498, 1099-S, or UNKNOWN
 2. confidence: A score from 0.0 to 1.0 indicating classification confidence
 3. reasoning: Brief explanation of why you classified it this way"""
 
@@ -133,10 +169,10 @@ async def _classify_image(
     import instructor
     from anthropic import AsyncAnthropic as AnthropicClient
 
+    from src.core.config import settings
+
     # Use provided client or create new one
     if client is None:
-        from src.core.config import settings
-
         if settings.anthropic_api_key:
             client = AnthropicClient(api_key=settings.anthropic_api_key)
         else:
@@ -149,8 +185,10 @@ async def _classify_image(
     image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
     # Call Claude Vision API
+    model_name = settings.anthropic_model or "claude-3-5-sonnet-20241022"
+
     result = await instructor_client.messages.create(
-        model="claude-sonnet-4-5-20250514",
+        model=model_name,
         max_tokens=512,
         messages=[
             {

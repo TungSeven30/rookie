@@ -17,6 +17,7 @@ Example:
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -48,9 +49,15 @@ from src.documents.extractor import extract_document
 from src.documents.models import (
     ConfidenceLevel,
     DocumentType,
+    Form1098,
+    Form1098T,
     Form1099DIV,
+    Form1099G,
     Form1099INT,
     Form1099NEC,
+    Form1099R,
+    Form1099S,
+    Form5498,
     W2Batch,
     W2Data,
 )
@@ -146,6 +153,7 @@ class PersonalTaxAgent:
         self.storage_url = storage_url
         self.output_dir = output_dir
         self.escalations: list[str] = []
+        self._user_form_type_overrides: dict[str, str] = {}
 
     async def process(
         self,
@@ -153,6 +161,7 @@ class PersonalTaxAgent:
         tax_year: int,
         session: "AsyncSession",
         filing_status: str = "single",
+        user_form_type_overrides: dict[str, str] | None = None,
     ) -> PersonalTaxResult:
         """Process personal tax return.
 
@@ -167,6 +176,9 @@ class PersonalTaxAgent:
             filing_status: Filing status for deductions/brackets.
                 One of: single, mfj (married filing jointly),
                 mfs (married filing separately), hoh (head of household).
+            user_form_type_overrides: Optional mapping of filename to user-selected
+                form type. When provided, the agent will use this instead of
+                automatic classification.
 
         Returns:
             PersonalTaxResult with all outputs and metadata.
@@ -184,6 +196,9 @@ class PersonalTaxAgent:
 
         # Reset escalations for this run
         self.escalations = []
+        
+        # Store form type overrides for use during extraction
+        self._user_form_type_overrides = user_form_type_overrides or {}
 
         # 1. Load context (PTAX-01)
         context = await self._load_context(session, client_id, tax_year)
@@ -199,6 +214,9 @@ class PersonalTaxAgent:
 
         # 5. Check for conflicts (PTAX-16)
         self._check_conflicts(extractions)
+
+        # 5.5 Check for new form-specific escalations
+        self._check_new_form_escalations(extractions)
 
         # 6. Aggregate income and calculate tax
         income_summary, deduction_result, tax_result = self._calculate_tax(
@@ -341,7 +359,29 @@ class PersonalTaxAgent:
             List of extraction result dicts with type, filename,
             confidence, and data. PDF files are processed per page.
         """
+        from src.core.config import settings
+
         extractions: list[dict[str, Any]] = []
+        concurrency = max(1, settings.document_processing_concurrency)
+        semaphore = asyncio.Semaphore(concurrency)
+        tasks: list[asyncio.Task[list[dict[str, Any]]]] = []
+        task_filenames: list[str] = []
+
+        async def _run_page(
+            page_bytes: bytes,
+            page_media_type: str,
+            page_filename: str,
+            original_filename: str,
+        ) -> list[dict[str, Any]]:
+            async with semaphore:
+                # Check for user-selected form type override
+                user_form_type = self._user_form_type_overrides.get(original_filename)
+                return await self._process_page(
+                    page_bytes=page_bytes,
+                    page_media_type=page_media_type,
+                    page_filename=page_filename,
+                    user_form_type=user_form_type,
+                )
 
         for doc in documents:
             try:
@@ -352,7 +392,7 @@ class PersonalTaxAgent:
                 media_type = self._get_media_type(doc.extension)
 
                 if media_type == "application/pdf":
-                    pages = self._split_pdf_pages(image_bytes)
+                    pages = await asyncio.to_thread(self._split_pdf_pages, image_bytes)
                     page_media_type = "image/png"
                 else:
                     pages = [image_bytes]
@@ -364,147 +404,17 @@ class PersonalTaxAgent:
                         if len(pages) == 1
                         else f"{doc.name} (page {page_number})"
                     )
-
-                    # Classify document
-                    classification = await classify_document(page_bytes, page_media_type)
-                    original_type = classification.document_type
-                    original_confidence = classification.confidence
-                    original_reasoning = classification.reasoning
-                    classification_overridden = False
-
-                    filename_hint = self._infer_document_type_from_filename(page_filename)
-                    if (
-                        filename_hint is not None
-                        and filename_hint != classification.document_type
-                    ):
-                        logger.warning(
-                            "classification_overridden_by_filename",
-                            filename=page_filename,
-                            classified=classification.document_type.value,
-                            inferred=filename_hint.value,
-                            confidence=classification.confidence,
+                    tasks.append(
+                        asyncio.create_task(
+                            _run_page(
+                                page_bytes=page_bytes,
+                                page_media_type=page_media_type,
+                                page_filename=page_filename,
+                                original_filename=doc.name,
+                            )
                         )
-                        classification = ClassificationResult(
-                            document_type=filename_hint,
-                            confidence=min(0.65, classification.confidence),
-                            reasoning=f"Filename hint: {page_filename}",
-                        )
-                        classification_overridden = True
-
-                    if classification.document_type == DocumentType.UNKNOWN:
-                        logger.warning(
-                            "unknown_document_type",
-                            filename=page_filename,
-                            confidence=classification.confidence,
-                        )
-                        continue
-
-                    # Extract data
-                    data = await extract_document(
-                        page_bytes,
-                        classification.document_type,
-                        page_media_type,
                     )
-
-                    w2_forms: list[W2Data] | None = None
-                    if isinstance(data, W2Batch):
-                        w2_forms = data.forms
-                    elif isinstance(data, W2Data):
-                        w2_forms = [data]
-
-                    if w2_forms is not None:
-                        flagged_multiple = any(
-                            "multiple_forms_detected" in form.uncertain_fields
-                            for form in w2_forms
-                        )
-                        if flagged_multiple and len(w2_forms) <= 1:
-                            reason = (
-                                "Multiple W-2 forms detected on a single page. "
-                                f"Split the file and re-upload: {page_filename}"
-                            )
-                            if reason not in self.escalations:
-                                self.escalations.append(reason)
-                                logger.warning(
-                                    "multiple_w2_forms_detected",
-                                    filename=page_filename,
-                                )
-
-                        for form_index, form in enumerate(w2_forms, start=1):
-                            form_filename = (
-                                page_filename
-                                if len(w2_forms) == 1
-                                else f"{page_filename} (form {form_index})"
-                            )
-                            multiple_forms_detected = (
-                                "multiple_forms_detected" in form.uncertain_fields
-                            )
-                            extractions.append(
-                                {
-                                    "type": classification.document_type,
-                                    "document_type": classification.document_type.value,
-                                    "filename": form_filename,
-                                    "confidence": form.confidence.value,
-                                    "data": form,
-                                    "classification": classification,
-                                    "classification_confidence": classification.confidence,
-                                    "classification_reasoning": classification.reasoning,
-                                    "classification_overridden": classification_overridden,
-                                    "multiple_forms_detected": multiple_forms_detected,
-                                    "classification_original_type": (
-                                        original_type.value
-                                        if classification_overridden
-                                        else None
-                                    ),
-                                    "classification_original_confidence": (
-                                        original_confidence
-                                        if classification_overridden
-                                        else None
-                                    ),
-                                    "classification_original_reasoning": (
-                                        original_reasoning
-                                        if classification_overridden
-                                        else None
-                                    ),
-                                }
-                            )
-                            logger.info(
-                                "document_extracted",
-                                filename=form_filename,
-                                document_type=classification.document_type.value,
-                                confidence=form.confidence.value,
-                            )
-                        continue
-
-                    extractions.append(
-                        {
-                            "type": classification.document_type,
-                            "document_type": classification.document_type.value,
-                            "filename": page_filename,
-                            "confidence": data.confidence.value,
-                            "data": data,
-                            "classification": classification,
-                            "classification_confidence": classification.confidence,
-                            "classification_reasoning": classification.reasoning,
-                            "classification_overridden": classification_overridden,
-                            "multiple_forms_detected": False,
-                            "classification_original_type": (
-                                original_type.value if classification_overridden else None
-                            ),
-                            "classification_original_confidence": (
-                                original_confidence if classification_overridden else None
-                            ),
-                            "classification_original_reasoning": (
-                                original_reasoning if classification_overridden else None
-                            ),
-                        }
-                    )
-
-                    logger.info(
-                        "document_extracted",
-                        filename=page_filename,
-                        document_type=classification.document_type.value,
-                        confidence=data.confidence.value,
-                    )
+                    task_filenames.append(page_filename)
 
             except Exception as e:
                 logger.error(
@@ -514,7 +424,211 @@ class PersonalTaxAgent:
                 )
                 self.escalations.append(f"Failed to extract {doc.name}: {str(e)}")
 
+        if not tasks:
+            return extractions
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result, page_filename in zip(results, task_filenames, strict=True):
+            if isinstance(result, Exception):
+                logger.error(
+                    "extraction_failed",
+                    filename=page_filename,
+                    error=str(result),
+                )
+                self.escalations.append(
+                    f"Failed to extract {page_filename}: {str(result)}"
+                )
+                continue
+
+            extractions.extend(result)
+
         return extractions
+
+    async def _process_page(
+        self,
+        page_bytes: bytes,
+        page_media_type: str,
+        page_filename: str,
+        user_form_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Classify and extract data for a single page.
+        
+        Args:
+            page_bytes: Image bytes for the page.
+            page_media_type: MIME type of the image.
+            page_filename: Display name for the page (may include page number).
+            user_form_type: User-selected form type override. If provided,
+                classification is still run for mismatch detection, but
+                extraction uses the user-selected type.
+        """
+        # Always run classification (needed for mismatch detection)
+        classification = await classify_document(page_bytes, page_media_type)
+        original_type = classification.document_type
+        original_confidence = classification.confidence
+        original_reasoning = classification.reasoning
+        classification_overridden = False
+        user_selection_used = False
+
+        # Check for user-selected form type override
+        if user_form_type is not None:
+            try:
+                user_doc_type = DocumentType(user_form_type)
+                
+                # Check for mismatch between user selection and classifier
+                if classification.document_type != user_doc_type:
+                    if classification.confidence >= 0.8:
+                        # High-confidence mismatch - warn but use user selection
+                        logger.warning(
+                            "user_selection_mismatch",
+                            filename=page_filename,
+                            user_selected=user_form_type,
+                            classified=classification.document_type.value,
+                            classifier_confidence=classification.confidence,
+                        )
+                        self.escalations.append(
+                            f"User selected {user_form_type} for {page_filename}, "
+                            f"but classifier detected {classification.document_type.value} "
+                            f"with {classification.confidence:.0%} confidence. Please verify."
+                        )
+                
+                # Use user-selected type
+                classification = ClassificationResult(
+                    document_type=user_doc_type,
+                    confidence=1.0,  # User selection has highest confidence
+                    reasoning=f"User selected form type: {user_form_type}",
+                )
+                classification_overridden = True
+                user_selection_used = True
+            except ValueError:
+                # Invalid document type - fall back to classifier
+                logger.warning(
+                    "invalid_user_form_type",
+                    filename=page_filename,
+                    user_form_type=user_form_type,
+                )
+
+        # Filename hint override (only if user didn't select a type)
+        if not user_selection_used:
+            filename_hint = self._infer_document_type_from_filename(page_filename)
+            if filename_hint is not None and filename_hint != classification.document_type:
+                logger.warning(
+                    "classification_overridden_by_filename",
+                    filename=page_filename,
+                    classified=classification.document_type.value,
+                    inferred=filename_hint.value,
+                    confidence=classification.confidence,
+                )
+                classification = ClassificationResult(
+                    document_type=filename_hint,
+                    confidence=min(0.65, classification.confidence),
+                    reasoning=f"Filename hint: {page_filename}",
+                )
+                classification_overridden = True
+
+        if classification.document_type == DocumentType.UNKNOWN:
+            logger.warning(
+                "unknown_document_type",
+                filename=page_filename,
+                confidence=classification.confidence,
+            )
+            return []
+
+        # Extract data
+        data = await extract_document(
+            page_bytes,
+            classification.document_type,
+            page_media_type,
+        )
+
+        w2_forms: list[W2Data] | None = None
+        if isinstance(data, W2Batch):
+            w2_forms = data.forms
+        elif isinstance(data, W2Data):
+            w2_forms = [data]
+
+        if w2_forms is not None:
+            # Only escalate if multiple DISTINCT forms were detected but not all extracted
+            # If len(w2_forms) > 1, multiple forms were successfully extracted - no escalation needed
+            # If len(w2_forms) == 1 and flag is set, it likely means multiple copies of same form
+            # were handled correctly (keeping only one), so no escalation needed
+            # We only escalate if we have strong evidence of missing distinct forms
+            flagged_multiple = any(
+                "multiple_forms_detected" in form.uncertain_fields for form in w2_forms
+            )
+            # Don't escalate - the flag is informational and extraction succeeded
+            # The flag will still be included in the extraction metadata for review
+
+            extractions: list[dict[str, Any]] = []
+            for form_index, form in enumerate(w2_forms, start=1):
+                form_filename = (
+                    page_filename
+                    if len(w2_forms) == 1
+                    else f"{page_filename} (form {form_index})"
+                )
+                multiple_forms_detected = (
+                    "multiple_forms_detected" in form.uncertain_fields
+                )
+                extractions.append(
+                    {
+                        "type": classification.document_type,
+                        "document_type": classification.document_type.value,
+                        "filename": form_filename,
+                        "confidence": form.confidence.value,
+                        "data": form,
+                        "classification": classification,
+                        "classification_confidence": classification.confidence,
+                        "classification_reasoning": classification.reasoning,
+                        "classification_overridden": classification_overridden,
+                        "multiple_forms_detected": multiple_forms_detected,
+                        "classification_original_type": (
+                            original_type.value if classification_overridden else None
+                        ),
+                        "classification_original_confidence": (
+                            original_confidence if classification_overridden else None
+                        ),
+                        "classification_original_reasoning": (
+                            original_reasoning if classification_overridden else None
+                        ),
+                    }
+                )
+                logger.info(
+                    "document_extracted",
+                    filename=form_filename,
+                    document_type=classification.document_type.value,
+                    confidence=form.confidence.value,
+                )
+            return extractions
+
+        extraction = {
+            "type": classification.document_type,
+            "document_type": classification.document_type.value,
+            "filename": page_filename,
+            "confidence": data.confidence.value,
+            "data": data,
+            "classification": classification,
+            "classification_confidence": classification.confidence,
+            "classification_reasoning": classification.reasoning,
+            "classification_overridden": classification_overridden,
+            "multiple_forms_detected": False,
+            "classification_original_type": (
+                original_type.value if classification_overridden else None
+            ),
+            "classification_original_confidence": (
+                original_confidence if classification_overridden else None
+            ),
+            "classification_original_reasoning": (
+                original_reasoning if classification_overridden else None
+            ),
+        }
+
+        logger.info(
+            "document_extracted",
+            filename=page_filename,
+            document_type=classification.document_type.value,
+            confidence=data.confidence.value,
+        )
+
+        return [extraction]
 
     def _get_media_type(self, extension: str) -> str:
         """Get MIME type from file extension.
@@ -698,6 +812,8 @@ class PersonalTaxAgent:
                 continue
 
             # Get SSN/TIN based on document type
+            ssn = None
+            name = None
             if isinstance(data, W2Data):
                 ssn = data.employee_ssn
                 name = data.employee_name
@@ -707,7 +823,26 @@ class PersonalTaxAgent:
             elif isinstance(data, Form1099NEC):
                 ssn = data.recipient_tin
                 name = data.recipient_name
-            else:
+            elif isinstance(data, Form1098):
+                ssn = data.borrower_tin
+                name = data.borrower_name
+            elif isinstance(data, Form1099R):
+                ssn = data.recipient_tin
+                name = data.recipient_name
+            elif isinstance(data, Form1099G):
+                ssn = data.recipient_tin
+                name = data.recipient_name
+            elif isinstance(data, Form1098T):
+                ssn = data.student_tin
+                name = data.student_name
+            elif isinstance(data, Form5498):
+                ssn = data.participant_tin
+                name = data.participant_name
+            elif isinstance(data, Form1099S):
+                ssn = data.transferor_tin
+                name = data.transferor_name
+            
+            if ssn is None:
                 continue
 
             # Track SSNs
@@ -726,10 +861,20 @@ class PersonalTaxAgent:
 
         # Check for multiple different SSNs
         if len(ssns) > 1:
-            conflict_msg = f"Multiple SSNs found: {list(ssns.keys())}"
+            ssn_list = list(ssns.keys())
+            files_with_ssns = {ssn: filenames for ssn, filenames in ssns.items()}
+            conflict_msg = (
+                f"Multiple different SSNs found across documents: {ssn_list}. "
+                f"This may indicate documents for different taxpayers were uploaded together, "
+                f"or there is an error in the documents. Please verify all documents belong to the same taxpayer."
+            )
             conflicts.append(conflict_msg)
             self.escalations.append(f"Conflicting information: {conflict_msg}")
-            logger.warning("ssn_conflict", ssns=list(ssns.keys()))
+            logger.warning(
+                "ssn_conflict",
+                ssns=ssn_list,
+                files_with_ssns=files_with_ssns,
+            )
 
         # Check for multiple different names (only if we have 2+ different names)
         if len(names) > 1:
@@ -740,6 +885,87 @@ class PersonalTaxAgent:
             )
 
         return conflicts
+
+    def _check_new_form_escalations(
+        self,
+        extractions: list[dict[str, Any]],
+    ) -> None:
+        """Check for escalations specific to new form types.
+
+        Adds escalations for forms that require additional information or
+        professional review before tax calculations can be accurate.
+
+        Args:
+            extractions: List of extraction results.
+        """
+        for ext in extractions:
+            data = ext.get("data")
+            filename = ext.get("filename", "unknown")
+
+            if data is None:
+                continue
+
+            # 1099-R: Check for taxable amount not determined
+            if isinstance(data, Form1099R):
+                if data.taxable_amount_not_determined:
+                    self.escalations.append(
+                        f"1099-R taxable amount not determined for {filename}. "
+                        "Review distribution details to calculate taxable portion."
+                    )
+                # Check for early distribution penalty codes
+                code = data.distribution_code.upper().strip() if data.distribution_code else ""
+                early_distribution_codes = {"1", "J", "S"}
+                if any(c in code for c in early_distribution_codes):
+                    self.escalations.append(
+                        f"1099-R distribution code '{code}' in {filename} may indicate "
+                        "early distribution penalty. Verify if exception applies."
+                    )
+
+            # 1099-G: Check for state tax refund (may be taxable)
+            elif isinstance(data, Form1099G):
+                if data.state_local_tax_refund > 0:
+                    self.escalations.append(
+                        f"State tax refund of ${data.state_local_tax_refund:.2f} in {filename}. "
+                        "Taxability depends on whether itemized deductions were claimed in the prior year."
+                    )
+
+            # 1098: Mortgage interest deduction info
+            elif isinstance(data, Form1098):
+                # Note: This is informational, not an escalation
+                # Itemized deduction calculation would use this
+                pass
+
+            # 1098-T: Education credit eligibility
+            elif isinstance(data, Form1098T):
+                # Check if we have enough info for education credits
+                if not data.at_least_half_time:
+                    self.escalations.append(
+                        f"1098-T for {filename}: Student not marked as at least half-time. "
+                        "American Opportunity Credit requires half-time enrollment. "
+                        "Verify student status for credit eligibility."
+                    )
+
+            # 5498: IRA contribution deduction eligibility
+            elif isinstance(data, Form5498):
+                total_ira = (
+                    data.ira_contributions
+                    + data.sep_contributions
+                    + data.simple_contributions
+                )
+                if total_ira > 0:
+                    self.escalations.append(
+                        f"IRA contributions of ${total_ira:.2f} in {filename}. "
+                        "Deductibility depends on retirement plan coverage and MAGI limits. "
+                        "Please verify deduction eligibility."
+                    )
+
+            # 1099-S: Real estate sale
+            elif isinstance(data, Form1099S):
+                self.escalations.append(
+                    f"Real estate sale of ${data.gross_proceeds:.2f} in {filename}. "
+                    f"Property: {data.property_address}. "
+                    "Capital gains calculation requires cost basis and primary residence information."
+                )
 
     def _calculate_tax(
         self,

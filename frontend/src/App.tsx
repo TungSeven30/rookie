@@ -1,14 +1,15 @@
 import { useState, useCallback } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { UploadZone } from './components/UploadZone'
 import { ProcessingProgress } from './components/ProcessingProgress'
 import { ResultsPanel } from './components/ResultsPanel'
 import { uploadDocuments, startProcessing, getResults } from './api/demo'
-import type { FilingStatus, ResultsResponse } from './types/api'
+import type { FilingStatus, ResultsResponse, DocumentTypeOption } from './types/api'
 
 type AppState = 'upload' | 'processing' | 'results' | 'error'
 
 export default function App() {
+  const queryClient = useQueryClient()
   const [state, setState] = useState<AppState>('upload')
   const [jobId, setJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -23,13 +24,19 @@ export default function App() {
   })
 
   const handleSubmit = useCallback(
-    async (files: File[], clientName: string, taxYear: number, filingStatus: FilingStatus) => {
+    async (
+      files: File[],
+      clientName: string,
+      taxYear: number,
+      filingStatus: FilingStatus,
+      formTypes: DocumentTypeOption[]
+    ) => {
       try {
         setIsUploading(true)
         setError(null)
         
-        // Upload files
-        const uploadResult = await uploadDocuments(files, clientName, taxYear, filingStatus)
+        // Upload files with form types
+        const uploadResult = await uploadDocuments(files, clientName, taxYear, filingStatus, formTypes)
         setJobId(uploadResult.job_id)
         
         // Start processing
@@ -127,7 +134,16 @@ export default function App() {
 
         {/* Results state */}
         {state === 'results' && results && (
-          <ResultsPanel results={results} onReset={handleReset} />
+          <ResultsPanel 
+            results={results} 
+            onReset={handleReset}
+            onReprocess={(jobId) => {
+              // Invalidate old results cache
+              queryClient.invalidateQueries({ queryKey: ['results', jobId] })
+              setJobId(jobId)
+              setState('processing')
+            }}
+          />
         )}
 
         {/* Error state */}

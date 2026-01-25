@@ -9,6 +9,7 @@ import type {
   ResultsResponse,
   ProgressEvent,
   FilingStatus,
+  DocumentTypeOption,
 } from '../types/api'
 
 const API_BASE = '/api/demo'
@@ -28,7 +29,8 @@ export async function uploadDocuments(
   files: File[],
   clientName: string,
   taxYear: number,
-  filingStatus: FilingStatus
+  filingStatus: FilingStatus,
+  formTypes?: DocumentTypeOption[]
 ): Promise<UploadResponse> {
   const formData = new FormData()
   
@@ -38,6 +40,11 @@ export async function uploadDocuments(
   formData.append('client_name', clientName)
   formData.append('tax_year', taxYear.toString())
   formData.append('filing_status', filingStatus)
+  
+  // Send form types as JSON array if provided
+  if (formTypes && formTypes.length > 0) {
+    formData.append('form_types', JSON.stringify(formTypes))
+  }
   
   const response = await fetch(`${API_BASE}/upload`, {
     method: 'POST',
@@ -154,6 +161,49 @@ export function getDownloadUrl(jobId: string, fileType: 'worksheet' | 'notes'): 
     return `${API_BASE}/download/${jobId}/${fileType}?demo_api_key=${encodeURIComponent(demoApiKey)}`
   }
   return `${API_BASE}/download/${jobId}/${fileType}`
+}
+
+/**
+ * Add additional documents to an existing job.
+ */
+export async function addDocumentsToJob(
+  jobId: string,
+  files: File[]
+): Promise<UploadResponse> {
+  if (files.length === 0) {
+    throw new Error('No files selected')
+  }
+
+  const formData = new FormData()
+  
+  files.forEach(file => {
+    formData.append('files', file)
+  })
+  
+  const response = await fetch(`${API_BASE}/job/${jobId}/add-documents`, {
+    method: 'POST',
+    headers: buildHeaders(),
+    body: formData,
+  })
+  
+  if (!response.ok) {
+    let errorMessage = 'Failed to add documents'
+    try {
+      const error = await response.json()
+      errorMessage = error.detail || error.message || errorMessage
+    } catch {
+      // If response is not JSON, try to get text
+      try {
+        const text = await response.text()
+        if (text) errorMessage = text
+      } catch {
+        // Ignore
+      }
+    }
+    throw new Error(errorMessage)
+  }
+  
+  return response.json()
 }
 
 /**

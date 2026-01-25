@@ -23,16 +23,28 @@ from typing import TYPE_CHECKING, Union
 
 from src.documents.models import (
     DocumentType,
+    Form1098,
+    Form1098T,
     Form1099DIV,
+    Form1099G,
     Form1099INT,
     Form1099NEC,
+    Form1099R,
+    Form1099S,
+    Form5498,
     W2Batch,
     W2Data,
 )
 from src.documents.prompts import (
+    FORM_1098_PROMPT,
+    FORM_1098_T_PROMPT,
     FORM_1099_DIV_PROMPT,
+    FORM_1099_G_PROMPT,
     FORM_1099_INT_PROMPT,
     FORM_1099_NEC_PROMPT,
+    FORM_1099_R_PROMPT,
+    FORM_1099_S_PROMPT,
+    FORM_5498_PROMPT,
     W2_MULTI_EXTRACTION_PROMPT,
     W2_EXTRACTION_PROMPT,
 )
@@ -42,7 +54,19 @@ if TYPE_CHECKING:
 
 
 # Type alias for extraction results
-ExtractionResult = Union[W2Batch, W2Data, Form1099INT, Form1099DIV, Form1099NEC]
+ExtractionResult = Union[
+    W2Batch,
+    W2Data,
+    Form1099INT,
+    Form1099DIV,
+    Form1099NEC,
+    Form1098,
+    Form1099R,
+    Form1099G,
+    Form1098T,
+    Form5498,
+    Form1099S,
+]
 
 # Supported media types for document images
 SUPPORTED_MEDIA_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"}
@@ -87,6 +111,12 @@ async def extract_document(
         DocumentType.FORM_1099_INT: extract_1099_int,
         DocumentType.FORM_1099_DIV: extract_1099_div,
         DocumentType.FORM_1099_NEC: extract_1099_nec,
+        DocumentType.FORM_1098: extract_1098,
+        DocumentType.FORM_1099_R: extract_1099_r,
+        DocumentType.FORM_1099_G: extract_1099_g,
+        DocumentType.FORM_1098_T: extract_1098_t,
+        DocumentType.FORM_5498: extract_5498,
+        DocumentType.FORM_1099_S: extract_1099_s,
     }
 
     extractor = extractors.get(document_type)
@@ -218,6 +248,168 @@ async def extract_1099_nec(
     )
 
 
+async def extract_1098(
+    image_bytes: bytes,
+    media_type: str = "image/jpeg",
+    client: "AsyncAnthropic | None" = None,
+) -> Form1098:
+    """Extract 1098 Mortgage Interest Statement data using Claude Vision.
+
+    Args:
+        image_bytes: 1098 document image as bytes.
+        media_type: MIME type of the image.
+        client: Optional Anthropic client for dependency injection.
+
+    Returns:
+        Form1098 with all extracted fields and confidence metadata.
+
+    Raises:
+        ValueError: If media_type is not supported.
+    """
+    return await _extract_with_vision(
+        image_bytes=image_bytes,
+        media_type=media_type,
+        prompt=FORM_1098_PROMPT,
+        response_model=Form1098,
+        client=client,
+    )
+
+
+async def extract_1099_r(
+    image_bytes: bytes,
+    media_type: str = "image/jpeg",
+    client: "AsyncAnthropic | None" = None,
+) -> Form1099R:
+    """Extract 1099-R Retirement Distributions data using Claude Vision.
+
+    Args:
+        image_bytes: 1099-R document image as bytes.
+        media_type: MIME type of the image.
+        client: Optional Anthropic client for dependency injection.
+
+    Returns:
+        Form1099R with all extracted fields and confidence metadata.
+
+    Raises:
+        ValueError: If media_type is not supported.
+    """
+    return await _extract_with_vision(
+        image_bytes=image_bytes,
+        media_type=media_type,
+        prompt=FORM_1099_R_PROMPT,
+        response_model=Form1099R,
+        client=client,
+    )
+
+
+async def extract_1099_g(
+    image_bytes: bytes,
+    media_type: str = "image/jpeg",
+    client: "AsyncAnthropic | None" = None,
+) -> Form1099G:
+    """Extract 1099-G Government Payments data using Claude Vision.
+
+    Args:
+        image_bytes: 1099-G document image as bytes.
+        media_type: MIME type of the image.
+        client: Optional Anthropic client for dependency injection.
+
+    Returns:
+        Form1099G with all extracted fields and confidence metadata.
+
+    Raises:
+        ValueError: If media_type is not supported.
+    """
+    return await _extract_with_vision(
+        image_bytes=image_bytes,
+        media_type=media_type,
+        prompt=FORM_1099_G_PROMPT,
+        response_model=Form1099G,
+        client=client,
+    )
+
+
+async def extract_1098_t(
+    image_bytes: bytes,
+    media_type: str = "image/jpeg",
+    client: "AsyncAnthropic | None" = None,
+) -> Form1098T:
+    """Extract 1098-T Tuition Statement data using Claude Vision.
+
+    Args:
+        image_bytes: 1098-T document image as bytes.
+        media_type: MIME type of the image.
+        client: Optional Anthropic client for dependency injection.
+
+    Returns:
+        Form1098T with all extracted fields and confidence metadata.
+
+    Raises:
+        ValueError: If media_type is not supported.
+    """
+    return await _extract_with_vision(
+        image_bytes=image_bytes,
+        media_type=media_type,
+        prompt=FORM_1098_T_PROMPT,
+        response_model=Form1098T,
+        client=client,
+    )
+
+
+async def extract_5498(
+    image_bytes: bytes,
+    media_type: str = "image/jpeg",
+    client: "AsyncAnthropic | None" = None,
+) -> Form5498:
+    """Extract 5498 IRA Contribution Information data using Claude Vision.
+
+    Args:
+        image_bytes: 5498 document image as bytes.
+        media_type: MIME type of the image.
+        client: Optional Anthropic client for dependency injection.
+
+    Returns:
+        Form5498 with all extracted fields and confidence metadata.
+
+    Raises:
+        ValueError: If media_type is not supported.
+    """
+    return await _extract_with_vision(
+        image_bytes=image_bytes,
+        media_type=media_type,
+        prompt=FORM_5498_PROMPT,
+        response_model=Form5498,
+        client=client,
+    )
+
+
+async def extract_1099_s(
+    image_bytes: bytes,
+    media_type: str = "image/jpeg",
+    client: "AsyncAnthropic | None" = None,
+) -> Form1099S:
+    """Extract 1099-S Real Estate Proceeds data using Claude Vision.
+
+    Args:
+        image_bytes: 1099-S document image as bytes.
+        media_type: MIME type of the image.
+        client: Optional Anthropic client for dependency injection.
+
+    Returns:
+        Form1099S with all extracted fields and confidence metadata.
+
+    Raises:
+        ValueError: If media_type is not supported.
+    """
+    return await _extract_with_vision(
+        image_bytes=image_bytes,
+        media_type=media_type,
+        prompt=FORM_1099_S_PROMPT,
+        response_model=Form1099S,
+        client=client,
+    )
+
+
 async def _extract_with_vision(
     image_bytes: bytes,
     media_type: str,
@@ -248,14 +440,16 @@ async def _extract_with_vision(
     import instructor
     from anthropic import AsyncAnthropic as AnthropicClient
 
+    from src.core.config import settings
+
     # Use provided client or create new one
     if client is None:
-        from src.core.config import settings
-
         if settings.anthropic_api_key:
             client = AnthropicClient(api_key=settings.anthropic_api_key)
         else:
             client = AnthropicClient()
+
+    model_name = settings.anthropic_model or "claude-3-5-sonnet-20241022"
 
     # Wrap with instructor for structured output
     instructor_client = instructor.from_anthropic(client)
@@ -265,7 +459,7 @@ async def _extract_with_vision(
 
     # Call Claude Vision API
     result = await instructor_client.messages.create(
-        model="claude-sonnet-4-5-20250514",
+        model=model_name,
         max_tokens=2048,
         messages=[
             {

@@ -23,7 +23,18 @@ from src.agents.personal_tax.calculator import (
     TaxResult,
     VarianceItem,
 )
-from src.documents.models import Form1099DIV, Form1099INT, Form1099NEC, W2Data
+from src.documents.models import (
+    Form1098,
+    Form1098T,
+    Form1099DIV,
+    Form1099G,
+    Form1099INT,
+    Form1099NEC,
+    Form1099R,
+    Form1099S,
+    Form5498,
+    W2Data,
+)
 
 
 # =============================================================================

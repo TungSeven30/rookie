@@ -16,7 +16,18 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Union
 
-from src.documents.models import Form1099DIV, Form1099INT, Form1099NEC, W2Data
+from src.documents.models import (
+    Form1098,
+    Form1098T,
+    Form1099DIV,
+    Form1099G,
+    Form1099INT,
+    Form1099NEC,
+    Form1099R,
+    Form1099S,
+    Form5498,
+    W2Data,
+)
 
 
 # =============================================================================
@@ -34,6 +45,9 @@ class IncomeSummary:
         total_dividends: Sum of all 1099-DIV ordinary dividends.
         total_qualified_dividends: Sum of qualified dividends (taxed at lower rate).
         total_nec: Sum of all 1099-NEC nonemployee compensation.
+        total_retirement_distributions: Sum of taxable 1099-R distributions.
+        total_unemployment: Sum of 1099-G unemployment compensation.
+        total_state_tax_refund: Sum of 1099-G state tax refunds (may be taxable).
         total_other: Other income not categorized above.
         total_income: Grand total of all income.
         federal_withholding: Sum of all federal tax withheld.
@@ -44,9 +58,12 @@ class IncomeSummary:
     total_dividends: Decimal
     total_qualified_dividends: Decimal
     total_nec: Decimal
-    total_other: Decimal
-    total_income: Decimal
-    federal_withholding: Decimal
+    total_retirement_distributions: Decimal = field(default_factory=lambda: Decimal("0"))
+    total_unemployment: Decimal = field(default_factory=lambda: Decimal("0"))
+    total_state_tax_refund: Decimal = field(default_factory=lambda: Decimal("0"))
+    total_other: Decimal = field(default_factory=lambda: Decimal("0"))
+    total_income: Decimal = field(default_factory=lambda: Decimal("0"))
+    federal_withholding: Decimal = field(default_factory=lambda: Decimal("0"))
 
 
 @dataclass
@@ -313,7 +330,18 @@ EITC_INCOME_LIMITS_NO_CHILDREN = {
 
 
 # Type alias for document union
-TaxDocument = Union[W2Data, Form1099INT, Form1099DIV, Form1099NEC]
+TaxDocument = Union[
+    W2Data,
+    Form1099INT,
+    Form1099DIV,
+    Form1099NEC,
+    Form1098,
+    Form1099R,
+    Form1099G,
+    Form1098T,
+    Form5498,
+    Form1099S,
+]
 
 
 # =============================================================================
@@ -325,10 +353,16 @@ def aggregate_income(documents: list[TaxDocument]) -> IncomeSummary:
     """Aggregate income from all tax documents.
 
     Args:
-        documents: List of W2Data, Form1099INT, Form1099DIV, or Form1099NEC objects.
+        documents: List of supported tax document models.
 
     Returns:
         IncomeSummary with totals by income type.
+
+    Note:
+        Some forms (1098, 1098-T, 5498, 1099-S) do not directly contribute to
+        income but are tracked for deduction/credit calculation. 1099-R adds
+        to retirement distributions, and 1099-G adds to unemployment and
+        state tax refunds.
 
     Example:
         >>> w2 = W2Data(wages_tips_compensation=Decimal("50000"), ...)
@@ -341,6 +375,9 @@ def aggregate_income(documents: list[TaxDocument]) -> IncomeSummary:
     total_dividends = Decimal("0")
     total_qualified_dividends = Decimal("0")
     total_nec = Decimal("0")
+    total_retirement_distributions = Decimal("0")
+    total_unemployment = Decimal("0")
+    total_state_tax_refund = Decimal("0")
     total_other = Decimal("0")
     federal_withholding = Decimal("0")
 
@@ -358,8 +395,34 @@ def aggregate_income(documents: list[TaxDocument]) -> IncomeSummary:
         elif isinstance(doc, Form1099NEC):
             total_nec += doc.nonemployee_compensation
             federal_withholding += doc.federal_tax_withheld
+        elif isinstance(doc, Form1099R):
+            # Add taxable amount to retirement distributions
+            # If taxable_amount is not determined, use gross_distribution
+            if doc.taxable_amount is not None:
+                total_retirement_distributions += doc.taxable_amount
+            else:
+                # Taxable amount not determined - use gross distribution
+                # This should trigger an escalation in the agent
+                total_retirement_distributions += doc.gross_distribution
+            federal_withholding += doc.federal_tax_withheld
+        elif isinstance(doc, Form1099G):
+            total_unemployment += doc.unemployment_compensation
+            total_state_tax_refund += doc.state_local_tax_refund
+            federal_withholding += doc.federal_tax_withheld
+        # Form1098, Form1098T, Form5498, Form1099S are informational for
+        # deductions/credits and don't directly add to income totals
 
-    total_income = total_wages + total_interest + total_dividends + total_nec + total_other
+    total_income = (
+        total_wages
+        + total_interest
+        + total_dividends
+        + total_nec
+        + total_retirement_distributions
+        + total_unemployment
+        + total_other
+    )
+    # Note: state_tax_refund may be taxable if itemized in prior year,
+    # but this requires additional context - handle in escalation
 
     return IncomeSummary(
         total_wages=total_wages,
@@ -367,6 +430,9 @@ def aggregate_income(documents: list[TaxDocument]) -> IncomeSummary:
         total_dividends=total_dividends,
         total_qualified_dividends=total_qualified_dividends,
         total_nec=total_nec,
+        total_retirement_distributions=total_retirement_distributions,
+        total_unemployment=total_unemployment,
+        total_state_tax_refund=total_state_tax_refund,
         total_other=total_other,
         total_income=total_income,
         federal_withholding=federal_withholding,

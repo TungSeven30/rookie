@@ -24,7 +24,18 @@ from src.agents.personal_tax.calculator import calculate_deductions
 from src.api.deps import get_db, verify_demo_api_key
 from src.core.config import settings
 from src.core.logging import get_logger
-from src.documents.models import Form1099DIV, Form1099INT, Form1099NEC, W2Data
+from src.documents.models import (
+    Form1098,
+    Form1098T,
+    Form1099DIV,
+    Form1099G,
+    Form1099INT,
+    Form1099NEC,
+    Form1099R,
+    Form1099S,
+    Form5498,
+    W2Data,
+)
 from src.integrations.storage import build_full_path, get_filesystem, write_file
 from src.models.client import Client
 from src.models.task import Escalation, Task, TaskArtifact, TaskStatus
@@ -304,6 +315,33 @@ async def _get_metadata(session: AsyncSession, task_id: int) -> dict[str, Any]:
     return _json_loads(artifact.content if artifact else None)
 
 
+async def _get_user_form_type_overrides(
+    session: AsyncSession, task_id: int
+) -> dict[str, str]:
+    """Get user-selected form type overrides from uploaded document artifacts.
+    
+    Returns:
+        Dict mapping filename -> user-selected form type.
+        Only includes entries where user explicitly selected a form type.
+    """
+    result = await session.execute(
+        select(TaskArtifact)
+        .where(TaskArtifact.task_id == task_id)
+        .where(TaskArtifact.artifact_type == DEMO_ARTIFACT_UPLOADED)
+    )
+    artifacts = result.scalars().all()
+    
+    overrides: dict[str, str] = {}
+    for artifact in artifacts:
+        content = _json_loads(artifact.content)
+        filename = content.get("filename")
+        user_form_type = content.get("user_selected_form_type")
+        if filename and user_form_type:
+            overrides[filename] = user_form_type
+    
+    return overrides
+
+
 def _build_key_fields(extraction: dict[str, Any]) -> dict[str, str]:
     """Build CPA-friendly key fields for an extraction."""
     data = extraction.get("data")
@@ -328,6 +366,52 @@ def _build_key_fields(extraction: dict[str, Any]) -> dict[str, str]:
         key_fields = {
             "nonemployee_compensation": _format_currency(data.nonemployee_compensation),
             "federal_withholding": _format_currency(data.federal_tax_withheld),
+        }
+    elif isinstance(data, Form1098):
+        key_fields = {
+            "mortgage_interest": _format_currency(data.mortgage_interest),
+            "points_paid": _format_currency(data.points_paid),
+            "property_taxes": _format_currency(data.property_taxes_paid),
+        }
+    elif isinstance(data, Form1099R):
+        key_fields = {
+            "gross_distribution": _format_currency(data.gross_distribution),
+            "taxable_amount": (
+                _format_currency(data.taxable_amount)
+                if data.taxable_amount is not None
+                else "Not determined"
+            ),
+            "distribution_code": data.distribution_code,
+            "federal_withholding": _format_currency(data.federal_tax_withheld),
+        }
+    elif isinstance(data, Form1099G):
+        key_fields = {
+            "unemployment": _format_currency(data.unemployment_compensation),
+            "state_tax_refund": _format_currency(data.state_local_tax_refund),
+            "federal_withholding": _format_currency(data.federal_tax_withheld),
+        }
+    elif isinstance(data, Form1098T):
+        key_fields = {
+            "tuition_payments": _format_currency(data.payments_received),
+            "scholarships": _format_currency(data.scholarships_grants),
+            "half_time_student": "Yes" if data.at_least_half_time else "No",
+        }
+    elif isinstance(data, Form5498):
+        key_fields = {
+            "ira_contributions": _format_currency(data.ira_contributions),
+            "roth_contributions": _format_currency(data.roth_ira_contributions),
+            "rollover": _format_currency(data.rollover_contributions),
+            "fmv": _format_currency(data.fair_market_value),
+        }
+    elif isinstance(data, Form1099S):
+        key_fields = {
+            "gross_proceeds": _format_currency(data.gross_proceeds),
+            "closing_date": data.closing_date,
+            "property": (
+                data.property_address[:50] + "..."
+                if len(data.property_address) > 50
+                else data.property_address
+            ),
         }
 
     if extraction.get("multiple_forms_detected"):
@@ -514,6 +598,9 @@ async def _process_job(task_id: int, session_factory: Any) -> None:
                 output_dir=output_dir,
             )
 
+            # Build user form type overrides from uploaded document artifacts
+            user_form_type_overrides = await _get_user_form_type_overrides(session, task_id)
+
             await _emit_progress(
                 session,
                 task_id,
@@ -530,6 +617,7 @@ async def _process_job(task_id: int, session_factory: Any) -> None:
                 tax_year=tax_year,
                 session=session,
                 filing_status=filing_status,
+                user_form_type_overrides=user_form_type_overrides,
             )
 
             await _emit_progress(
@@ -701,9 +789,22 @@ async def upload_documents(
     client_name: str = Form("Demo Client"),
     tax_year: int = Form(2024),
     filing_status: str = Form("single"),
+    form_types: str | None = Form(None),
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> UploadResponse:
-    """Upload tax documents for processing."""
+    """Upload tax documents for processing.
+    
+    Args:
+        files: List of documents to upload.
+        client_name: Name of the client.
+        tax_year: Tax year for the documents.
+        filing_status: Filing status (single, mfj, mfs, hoh).
+        form_types: Optional JSON array of form types for each file.
+            e.g., '["auto", "W2", "1099-INT"]'
+            Valid values: auto, W2, 1099-INT, 1099-DIV, 1099-NEC,
+                         1098, 1099-R, 1099-G, 1098-T, 5498, 1099-S
+        db: Database session.
+    """
     if db is None:
         raise HTTPException(status_code=500, detail="Database not available")
 
@@ -717,11 +818,36 @@ async def upload_documents(
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
 
+    # Parse form_types if provided
+    parsed_form_types: list[str | None] = []
+    if form_types:
+        try:
+            parsed_form_types = orjson.loads(form_types)
+            if not isinstance(parsed_form_types, list):
+                raise HTTPException(
+                    status_code=400,
+                    detail="form_types must be a JSON array",
+                )
+        except orjson.JSONDecodeError:
+            raise HTTPException(
+                status_code=400,
+                detail="form_types must be a valid JSON array",
+            )
+    
+    # Pad with None if form_types is shorter than files
+    while len(parsed_form_types) < len(files):
+        parsed_form_types.append(None)
+
     task = await _create_task(db, client_name)
     storage_url = settings.default_storage_url
     storage_prefix = _build_storage_prefix(task.client_id, tax_year)
 
-    for upload in files:
+    valid_form_types = {
+        "auto", "W2", "1099-INT", "1099-DIV", "1099-NEC",
+        "1098", "1099-R", "1099-G", "1098-T", "5498", "1099-S",
+    }
+
+    for idx, upload in enumerate(files):
         if upload.content_type not in settings.allowed_upload_types:
             raise HTTPException(
                 status_code=400,
@@ -739,6 +865,17 @@ async def upload_documents(
         storage_path = f"{storage_prefix}/{safe_name}"
         checksum = hashlib.sha256(content).hexdigest()
 
+        # Get user-selected form type for this file
+        user_form_type = parsed_form_types[idx] if idx < len(parsed_form_types) else None
+        if user_form_type == "auto":
+            user_form_type = None  # Treat 'auto' as no selection
+        if user_form_type and user_form_type not in valid_form_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid form type: {user_form_type}. "
+                       f"Must be one of: {', '.join(sorted(valid_form_types))}",
+            )
+
         await write_file(storage_url, storage_path, content)
         await _create_artifact(
             session=db,
@@ -750,6 +887,7 @@ async def upload_documents(
                 "size": len(content),
                 "checksum": checksum,
                 "storage_path": storage_path,
+                "user_selected_form_type": user_form_type,
             },
             file_path=storage_path,
         )
@@ -792,6 +930,126 @@ async def upload_documents(
     )
 
 
+@router.post("/job/{job_id}/add-documents", response_model=UploadResponse)
+async def add_documents_to_job(
+    job_id: int,
+    files: list[UploadFile] = File(...),
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> UploadResponse:
+    """Add additional documents to an existing job."""
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not available")
+
+    task = await _get_task(db, job_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if task.status not in {TaskStatus.COMPLETED, TaskStatus.ESCALATED, TaskStatus.FAILED}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot add documents to job with status: {task.status.value}",
+        )
+
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+
+    metadata = await _get_metadata(db, job_id)
+    storage_url = metadata.get("storage_url", settings.default_storage_url)
+    tax_year = int(metadata.get("tax_year", datetime.utcnow().year))
+    storage_prefix = _build_storage_prefix(task.client_id, tax_year)
+
+    for upload in files:
+        # Handle missing content_type (some browsers don't send it)
+        content_type = upload.content_type
+        if not content_type:
+            # Infer from filename extension
+            filename = upload.filename or "upload"
+            if filename.lower().endswith('.pdf'):
+                content_type = 'application/pdf'
+            elif filename.lower().endswith(('.jpg', '.jpeg')):
+                content_type = 'image/jpeg'
+            elif filename.lower().endswith('.png'):
+                content_type = 'image/png'
+            else:
+                content_type = 'application/octet-stream'
+        
+        if content_type not in settings.allowed_upload_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type: {content_type}. Allowed types: {', '.join(settings.allowed_upload_types)}",
+            )
+
+        content = await upload.read()
+        if len(content) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File {upload.filename} is empty",
+            )
+        
+        if len(content) > settings.max_upload_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File {upload.filename} exceeds maximum upload size of {settings.max_upload_bytes} bytes",
+            )
+
+        safe_name = _sanitize_filename(upload.filename or "upload")
+        storage_path = f"{storage_prefix}/{safe_name}"
+        checksum = hashlib.sha256(content).hexdigest()
+
+        try:
+            await write_file(storage_url, storage_path, content)
+        except Exception as e:
+            logger.error(
+                "demo_file_write_failed",
+                task_id=task.id,
+                filename=safe_name,
+                error=str(e),
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to save file {safe_name}: {str(e)}",
+            )
+        
+        await _create_artifact(
+            session=db,
+            task_id=task.id,
+            artifact_type=DEMO_ARTIFACT_UPLOADED,
+            content={
+                "filename": safe_name,
+                "content_type": content_type,
+                "size": len(content),
+                "checksum": checksum,
+                "storage_path": storage_path,
+            },
+            file_path=storage_path,
+        )
+
+    # Reset task status to allow reprocessing
+    task.status = TaskStatus.PENDING
+    await _emit_progress(
+        session=db,
+        task_id=task.id,
+        event=ProgressEvent(
+            stage=ProcessingStage.UPLOADING,
+            progress=5,
+            message=f"Added {len(files)} additional document(s)",
+        ),
+    )
+    await db.commit()
+
+    logger.info(
+        "demo_documents_added",
+        task_id=task.id,
+        files=len(files),
+    )
+
+    return UploadResponse(
+        job_id=str(job_id),
+        message=f"Successfully added {len(files)} document(s)",
+        files_received=len(files),
+    )
+
+
 @router.post("/process/{job_id}", response_model=ProcessResponse)
 async def start_processing(
     job_id: int,
@@ -806,7 +1064,8 @@ async def start_processing(
     if not task:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    if task.status not in {TaskStatus.PENDING, TaskStatus.FAILED}:
+    # Allow reprocessing if job is completed, escalated, or failed (for adding new documents)
+    if task.status not in {TaskStatus.PENDING, TaskStatus.FAILED, TaskStatus.COMPLETED, TaskStatus.ESCALATED}:
         raise HTTPException(
             status_code=400,
             detail=f"Job cannot be started. Current status: {task.status.value}",

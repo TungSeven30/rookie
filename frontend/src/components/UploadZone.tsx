@@ -1,27 +1,49 @@
 import { useCallback, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { FileText, X, Upload, User, Calendar, Users } from 'lucide-react'
+import { FileText, X, Upload, User, Calendar, Users, ChevronDown } from 'lucide-react'
 import { cn } from '../lib/utils'
-import { FILING_STATUS_LABELS, type FilingStatus } from '../types/api'
+import {
+  FILING_STATUS_LABELS,
+  DOCUMENT_TYPE_LABELS,
+  type FilingStatus,
+  type DocumentTypeOption,
+  type UploadFile,
+} from '../types/api'
 import * as Select from '@radix-ui/react-select'
 
 interface UploadZoneProps {
-  onSubmit: (files: File[], clientName: string, taxYear: number, filingStatus: FilingStatus) => void
+  onSubmit: (
+    files: File[],
+    clientName: string,
+    taxYear: number,
+    filingStatus: FilingStatus,
+    formTypes: DocumentTypeOption[]
+  ) => void
   isLoading?: boolean
 }
 
 export function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
-  const [files, setFiles] = useState<File[]>([])
+  const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([])
   const [clientName, setClientName] = useState('')
   const [taxYear, setTaxYear] = useState(2024)
   const [filingStatus, setFilingStatus] = useState<FilingStatus>('single')
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    setFiles(prev => [...prev, ...acceptedFiles])
+    const newFiles: UploadFile[] = acceptedFiles.map(file => ({
+      file,
+      formType: 'auto' as DocumentTypeOption,
+    }))
+    setUploadFiles(prev => [...prev, ...newFiles])
   }, [])
 
   const removeFile = (index: number) => {
-    setFiles(prev => prev.filter((_, i) => i !== index))
+    setUploadFiles(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const updateFormType = (index: number, formType: DocumentTypeOption) => {
+    setUploadFiles(prev =>
+      prev.map((uf, i) => (i === index ? { ...uf, formType } : uf))
+    )
   }
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -35,11 +57,13 @@ export function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
   })
 
   const handleSubmit = () => {
-    if (files.length === 0 || !clientName.trim()) return
-    onSubmit(files, clientName.trim(), taxYear, filingStatus)
+    if (uploadFiles.length === 0 || !clientName.trim()) return
+    const files = uploadFiles.map(uf => uf.file)
+    const formTypes = uploadFiles.map(uf => uf.formType)
+    onSubmit(files, clientName.trim(), taxYear, filingStatus, formTypes)
   }
 
-  const canSubmit = files.length > 0 && clientName.trim().length > 0 && !isLoading
+  const canSubmit = uploadFiles.length > 0 && clientName.trim().length > 0 && !isLoading
 
   return (
     <div className="card p-8">
@@ -81,23 +105,52 @@ export function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
       </div>
 
       {/* File list */}
-      {files.length > 0 && (
+      {uploadFiles.length > 0 && (
         <div className="mt-6 space-y-2">
           <p className="text-sm font-medium text-surface-700">
-            {files.length} document{files.length !== 1 ? 's' : ''} selected
+            {uploadFiles.length} document{uploadFiles.length !== 1 ? 's' : ''} selected
           </p>
-          <div className="space-y-2 max-h-48 overflow-y-auto">
-            {files.map((file, index) => (
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {uploadFiles.map((uploadFile, index) => (
               <div
-                key={`${file.name}-${index}`}
+                key={`${uploadFile.file.name}-${index}`}
                 className="flex items-center gap-3 p-3 bg-surface-50 rounded-lg group"
               >
                 <FileText className="w-5 h-5 text-surface-500 flex-shrink-0" />
-                <span className="text-sm text-surface-700 truncate flex-1">
-                  {file.name}
+                <span className="text-sm text-surface-700 truncate flex-1 min-w-0">
+                  {uploadFile.file.name}
                 </span>
-                <span className="text-xs text-surface-400">
-                  {(file.size / 1024).toFixed(0)} KB
+                <Select.Root
+                  value={uploadFile.formType}
+                  onValueChange={(value) => updateFormType(index, value as DocumentTypeOption)}
+                  disabled={isLoading}
+                >
+                  <Select.Trigger className="flex items-center gap-1 px-2 py-1 text-xs bg-white border border-surface-200 rounded hover:border-surface-300 focus:outline-none focus:ring-2 focus:ring-primary-500 min-w-[120px]">
+                    <Select.Value />
+                    <Select.Icon>
+                      <ChevronDown className="w-3 h-3 text-surface-400" />
+                    </Select.Icon>
+                  </Select.Trigger>
+                  <Select.Portal>
+                    <Select.Content className="bg-white rounded-lg shadow-lg border border-surface-200 overflow-hidden z-50">
+                      <Select.Viewport className="p-1">
+                        {(Object.entries(DOCUMENT_TYPE_LABELS) as [DocumentTypeOption, string][]).map(
+                          ([value, label]) => (
+                            <Select.Item
+                              key={value}
+                              value={value}
+                              className="px-2 py-1.5 text-xs cursor-pointer rounded hover:bg-surface-100 outline-none data-[highlighted]:bg-surface-100"
+                            >
+                              <Select.ItemText>{label}</Select.ItemText>
+                            </Select.Item>
+                          )
+                        )}
+                      </Select.Viewport>
+                    </Select.Content>
+                  </Select.Portal>
+                </Select.Root>
+                <span className="text-xs text-surface-400 flex-shrink-0">
+                  {(uploadFile.file.size / 1024).toFixed(0)} KB
                 </span>
                 <button
                   type="button"
@@ -105,8 +158,8 @@ export function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
                     e.stopPropagation()
                     removeFile(index)
                   }}
-                  className="p-1 rounded hover:bg-surface-200 opacity-0 group-hover:opacity-100 transition-opacity"
-                  aria-label={`Remove ${file.name}`}
+                  className="p-1 rounded hover:bg-surface-200 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                  aria-label={`Remove ${uploadFile.file.name}`}
                 >
                   <X className="w-4 h-4 text-surface-500" />
                 </button>

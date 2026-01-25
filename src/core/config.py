@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     """Anthropic API key for document extraction."""
 
+    anthropic_model: str = "claude-3-5-sonnet-20241022"
+    """Anthropic model name for vision tasks."""
+
+    document_processing_concurrency: int = 2
+    """Max concurrent document pages to classify/extract."""
+
     # Environment
     environment: str = "development"
     """Current environment (development, staging, production)."""

@@ -27,6 +27,12 @@ class DocumentType(str, Enum):
     FORM_1099_INT = "1099-INT"
     FORM_1099_DIV = "1099-DIV"
     FORM_1099_NEC = "1099-NEC"
+    FORM_1098 = "1098"
+    FORM_1099_R = "1099-R"
+    FORM_1099_G = "1099-G"
+    FORM_1098_T = "1098-T"
+    FORM_5498 = "5498"
+    FORM_1099_S = "1099-S"
     UNKNOWN = "UNKNOWN"
 
 
@@ -311,4 +317,344 @@ class Form1099NEC(BaseModel):
     @classmethod
     def validate_recipient_tin(cls, v: str) -> str:
         """Validate recipient TIN (SSN or EIN)."""
+        return validate_tin(v, default_format="ssn")
+
+
+class Form1098(BaseModel):
+    """1098 Mortgage Interest Statement data.
+
+    Represents extracted data from IRS Form 1098.
+    """
+
+    # Identity fields
+    lender_name: str = Field(description="Recipient/Lender name")
+    lender_tin: TIN = Field(description="Recipient/Lender TIN")
+    borrower_name: str = Field(description="Payer/Borrower name")
+    borrower_tin: TIN = Field(description="Payer/Borrower TIN")
+
+    # Mortgage fields
+    mortgage_interest: Decimal = Field(description="Box 1: Mortgage interest received")
+    points_paid: Decimal = Field(default=Decimal("0"), description="Box 6: Points paid on purchase")
+    mortgage_insurance_premiums: Decimal = Field(
+        default=Decimal("0"), description="Box 5: Mortgage insurance premiums"
+    )
+    property_taxes_paid: Decimal = Field(
+        default=Decimal("0"), description="Box 10: Property taxes paid (if reported)"
+    )
+    refund_of_overpaid_interest: Decimal = Field(
+        default=Decimal("0"), description="Box 4: Refund of overpaid interest"
+    )
+    outstanding_mortgage_principal: Decimal = Field(
+        default=Decimal("0"), description="Box 2: Outstanding mortgage principal"
+    )
+    mortgage_origination_date: str | None = Field(
+        default=None, description="Box 3: Mortgage origination date"
+    )
+    property_address: str | None = Field(
+        default=None, description="Box 8: Property address"
+    )
+
+    # Extraction metadata
+    confidence: ConfidenceLevel = Field(description="Extraction confidence level")
+    uncertain_fields: list[str] = Field(default_factory=list, description="Fields with low confidence")
+
+    @field_validator("lender_tin")
+    @classmethod
+    def validate_lender_tin(cls, v: str) -> str:
+        """Validate lender TIN."""
+        return validate_tin(v, default_format="ein")
+
+    @field_validator("borrower_tin")
+    @classmethod
+    def validate_borrower_tin(cls, v: str) -> str:
+        """Validate borrower TIN."""
+        return validate_tin(v, default_format="ssn")
+
+
+class Form1099R(BaseModel):
+    """1099-R Retirement Distributions data.
+
+    Represents extracted data from IRS Form 1099-R.
+    """
+
+    # Identity fields
+    payer_name: str = Field(description="Payer's name")
+    payer_tin: TIN = Field(description="Payer's TIN")
+    recipient_name: str = Field(description="Recipient's name")
+    recipient_tin: TIN = Field(description="Recipient's TIN")
+
+    # Distribution fields
+    gross_distribution: Decimal = Field(description="Box 1: Gross distribution")
+    taxable_amount: Decimal | None = Field(
+        default=None, description="Box 2a: Taxable amount (None if not determined)"
+    )
+    taxable_amount_not_determined: bool = Field(
+        default=False, description="Box 2b: Taxable amount not determined"
+    )
+    total_distribution: bool = Field(
+        default=False, description="Box 2b: Total distribution"
+    )
+    capital_gain: Decimal = Field(
+        default=Decimal("0"), description="Box 3: Capital gain (included in box 2a)"
+    )
+    federal_tax_withheld: Decimal = Field(
+        default=Decimal("0"), description="Box 4: Federal income tax withheld"
+    )
+    employee_contributions: Decimal = Field(
+        default=Decimal("0"), description="Box 5: Employee contributions/designated Roth"
+    )
+    net_unrealized_appreciation: Decimal = Field(
+        default=Decimal("0"), description="Box 6: Net unrealized appreciation in employer's securities"
+    )
+    distribution_code: str = Field(description="Box 7: Distribution code(s)")
+    ira_sep_simple: bool = Field(
+        default=False, description="Box 7: IRA/SEP/SIMPLE checkbox"
+    )
+    other_amount: Decimal = Field(
+        default=Decimal("0"), description="Box 8: Other amount"
+    )
+    total_employee_contributions: Decimal = Field(
+        default=Decimal("0"), description="Box 9b: Total employee contributions"
+    )
+    state_tax_withheld: Decimal = Field(
+        default=Decimal("0"), description="Box 12: State tax withheld"
+    )
+
+    # Extraction metadata
+    confidence: ConfidenceLevel = Field(description="Extraction confidence level")
+    uncertain_fields: list[str] = Field(default_factory=list, description="Fields with low confidence")
+
+    @field_validator("payer_tin")
+    @classmethod
+    def validate_payer_tin(cls, v: str) -> str:
+        """Validate payer TIN."""
+        return validate_tin(v, default_format="ein")
+
+    @field_validator("recipient_tin")
+    @classmethod
+    def validate_recipient_tin(cls, v: str) -> str:
+        """Validate recipient TIN."""
+        return validate_tin(v, default_format="ssn")
+
+
+class Form1099G(BaseModel):
+    """1099-G Government Payments data.
+
+    Represents extracted data from IRS Form 1099-G.
+    """
+
+    # Identity fields
+    payer_name: str = Field(description="Payer's name (government agency)")
+    payer_tin: TIN = Field(description="Payer's TIN")
+    recipient_name: str = Field(description="Recipient's name")
+    recipient_tin: TIN = Field(description="Recipient's TIN")
+
+    # Payment fields
+    unemployment_compensation: Decimal = Field(
+        default=Decimal("0"), description="Box 1: Unemployment compensation"
+    )
+    state_local_tax_refund: Decimal = Field(
+        default=Decimal("0"), description="Box 2: State or local income tax refunds, credits, or offsets"
+    )
+    box_2_year: int | None = Field(
+        default=None, description="Box 3: Box 2 amount is for tax year"
+    )
+    federal_tax_withheld: Decimal = Field(
+        default=Decimal("0"), description="Box 4: Federal income tax withheld"
+    )
+    reemployment_trade_adjustment: Decimal = Field(
+        default=Decimal("0"), description="Box 5: RTAA payments"
+    )
+    taxable_grants: Decimal = Field(
+        default=Decimal("0"), description="Box 6: Taxable grants"
+    )
+    agriculture_payments: Decimal = Field(
+        default=Decimal("0"), description="Box 7: Agriculture payments"
+    )
+    state_tax_withheld: Decimal = Field(
+        default=Decimal("0"), description="Box 11: State income tax withheld"
+    )
+
+    # Extraction metadata
+    confidence: ConfidenceLevel = Field(description="Extraction confidence level")
+    uncertain_fields: list[str] = Field(default_factory=list, description="Fields with low confidence")
+
+    @field_validator("payer_tin")
+    @classmethod
+    def validate_payer_tin(cls, v: str) -> str:
+        """Validate payer TIN."""
+        return validate_tin(v, default_format="ein")
+
+    @field_validator("recipient_tin")
+    @classmethod
+    def validate_recipient_tin(cls, v: str) -> str:
+        """Validate recipient TIN."""
+        return validate_tin(v, default_format="ssn")
+
+
+class Form1098T(BaseModel):
+    """1098-T Tuition Statement data.
+
+    Represents extracted data from IRS Form 1098-T.
+    """
+
+    # Identity fields
+    institution_name: str = Field(description="Filer's name (educational institution)")
+    institution_tin: TIN = Field(description="Filer's TIN")
+    student_name: str = Field(description="Student's name")
+    student_tin: TIN = Field(description="Student's TIN")
+
+    # Tuition fields
+    payments_received: Decimal = Field(
+        default=Decimal("0"), description="Box 1: Payments received for qualified tuition"
+    )
+    scholarships_grants: Decimal = Field(
+        default=Decimal("0"), description="Box 5: Scholarships or grants"
+    )
+    adjustments_prior_year: Decimal = Field(
+        default=Decimal("0"), description="Box 4: Adjustments made for a prior year"
+    )
+    scholarships_adjustments_prior_year: Decimal = Field(
+        default=Decimal("0"), description="Box 6: Adjustments to scholarships for prior year"
+    )
+    at_least_half_time: bool = Field(
+        default=False, description="Box 8: At least half-time student"
+    )
+    graduate_student: bool = Field(
+        default=False, description="Box 9: Graduate student"
+    )
+    insurance_contract_reimbursement: Decimal = Field(
+        default=Decimal("0"), description="Box 10: Ins. contract reimbursement/refund"
+    )
+
+    # Extraction metadata
+    confidence: ConfidenceLevel = Field(description="Extraction confidence level")
+    uncertain_fields: list[str] = Field(default_factory=list, description="Fields with low confidence")
+
+    @field_validator("institution_tin")
+    @classmethod
+    def validate_institution_tin(cls, v: str) -> str:
+        """Validate institution TIN."""
+        return validate_tin(v, default_format="ein")
+
+    @field_validator("student_tin")
+    @classmethod
+    def validate_student_tin(cls, v: str) -> str:
+        """Validate student TIN."""
+        return validate_tin(v, default_format="ssn")
+
+
+class Form5498(BaseModel):
+    """5498 IRA Contribution Information data.
+
+    Represents extracted data from IRS Form 5498.
+    """
+
+    # Identity fields
+    trustee_name: str = Field(description="Trustee's or issuer's name")
+    trustee_tin: TIN = Field(description="Trustee's TIN")
+    participant_name: str = Field(description="Participant's name")
+    participant_tin: TIN = Field(description="Participant's TIN")
+
+    # Contribution fields
+    ira_contributions: Decimal = Field(
+        default=Decimal("0"), description="Box 1: IRA contributions (other than rollover/Roth/SEP/SIMPLE)"
+    )
+    rollover_contributions: Decimal = Field(
+        default=Decimal("0"), description="Box 2: Rollover contributions"
+    )
+    roth_ira_conversion: Decimal = Field(
+        default=Decimal("0"), description="Box 3: Roth IRA conversion amount"
+    )
+    recharacterized_contributions: Decimal = Field(
+        default=Decimal("0"), description="Box 4: Recharacterized contributions"
+    )
+    fair_market_value: Decimal = Field(
+        default=Decimal("0"), description="Box 5: Fair market value of account"
+    )
+    life_insurance_cost: Decimal = Field(
+        default=Decimal("0"), description="Box 6: Life insurance cost included in box 1"
+    )
+    ira_type: str | None = Field(
+        default=None, description="Box 7: IRA type checkbox (IRA, SEP, SIMPLE, Roth IRA)"
+    )
+    sep_contributions: Decimal = Field(
+        default=Decimal("0"), description="Box 8: SEP contributions"
+    )
+    simple_contributions: Decimal = Field(
+        default=Decimal("0"), description="Box 9: SIMPLE contributions"
+    )
+    roth_ira_contributions: Decimal = Field(
+        default=Decimal("0"), description="Box 10: Roth IRA contributions"
+    )
+    rmd_required_next_year: bool = Field(
+        default=False, description="Box 11: Check if RMD required for next year"
+    )
+    rmd_date: str | None = Field(
+        default=None, description="Box 12: RMD date"
+    )
+    postponed_contribution: Decimal = Field(
+        default=Decimal("0"), description="Box 13a: Postponed contribution"
+    )
+    repayments: Decimal = Field(
+        default=Decimal("0"), description="Box 14a: Repayments"
+    )
+    fmv_specific_assets: Decimal = Field(
+        default=Decimal("0"), description="Box 15a: FMV of certain specified assets"
+    )
+
+    # Extraction metadata
+    confidence: ConfidenceLevel = Field(description="Extraction confidence level")
+    uncertain_fields: list[str] = Field(default_factory=list, description="Fields with low confidence")
+
+    @field_validator("trustee_tin")
+    @classmethod
+    def validate_trustee_tin(cls, v: str) -> str:
+        """Validate trustee TIN."""
+        return validate_tin(v, default_format="ein")
+
+    @field_validator("participant_tin")
+    @classmethod
+    def validate_participant_tin(cls, v: str) -> str:
+        """Validate participant TIN."""
+        return validate_tin(v, default_format="ssn")
+
+
+class Form1099S(BaseModel):
+    """1099-S Proceeds from Real Estate Transactions data.
+
+    Represents extracted data from IRS Form 1099-S.
+    """
+
+    # Identity fields
+    filer_name: str = Field(description="Filer's name")
+    filer_tin: TIN = Field(description="Filer's TIN")
+    transferor_name: str = Field(description="Transferor's name")
+    transferor_tin: TIN = Field(description="Transferor's TIN")
+
+    # Transaction fields
+    closing_date: str = Field(description="Box 1: Date of closing")
+    gross_proceeds: Decimal = Field(description="Box 2: Gross proceeds")
+    property_address: str = Field(description="Box 3: Address or legal description")
+    transferor_received_property: bool = Field(
+        default=False, description="Box 4: Transferor received property or services"
+    )
+    buyer_part_of_real_estate_tax: Decimal = Field(
+        default=Decimal("0"), description="Box 5: Buyer's part of real estate tax"
+    )
+
+    # Extraction metadata
+    confidence: ConfidenceLevel = Field(description="Extraction confidence level")
+    uncertain_fields: list[str] = Field(default_factory=list, description="Fields with low confidence")
+
+    @field_validator("filer_tin")
+    @classmethod
+    def validate_filer_tin(cls, v: str) -> str:
+        """Validate filer TIN."""
+        return validate_tin(v, default_format="ein")
+
+    @field_validator("transferor_tin")
+    @classmethod
+    def validate_transferor_tin(cls, v: str) -> str:
+        """Validate transferor TIN."""
         return validate_tin(v, default_format="ssn")

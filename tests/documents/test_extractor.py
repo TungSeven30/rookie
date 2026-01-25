@@ -14,9 +14,15 @@ from decimal import Decimal
 import pytest
 
 from src.documents.extractor import (
+    extract_1098,
+    extract_1098_t,
     extract_1099_div,
+    extract_1099_g,
     extract_1099_int,
     extract_1099_nec,
+    extract_1099_r,
+    extract_1099_s,
+    extract_5498,
     extract_document,
     extract_w2,
 )
@@ -24,16 +30,28 @@ from src.documents.models import (
     Box12Code,
     ConfidenceLevel,
     DocumentType,
+    Form1098,
+    Form1098T,
     Form1099DIV,
+    Form1099G,
     Form1099INT,
     Form1099NEC,
+    Form1099R,
+    Form1099S,
+    Form5498,
     W2Batch,
     W2Data,
 )
 from src.documents.prompts import (
+    FORM_1098_PROMPT,
+    FORM_1098_T_PROMPT,
     FORM_1099_DIV_PROMPT,
+    FORM_1099_G_PROMPT,
     FORM_1099_INT_PROMPT,
     FORM_1099_NEC_PROMPT,
+    FORM_1099_R_PROMPT,
+    FORM_1099_S_PROMPT,
+    FORM_5498_PROMPT,
     W2_MULTI_EXTRACTION_PROMPT,
     W2_EXTRACTION_PROMPT,
 )
@@ -115,6 +133,78 @@ def stub_extract_with_vision(monkeypatch: pytest.MonkeyPatch) -> None:
         confidence=ConfidenceLevel.MEDIUM,
         uncertain_fields=["state_tax_withheld"],
     )
+    sample_1098 = Form1098(
+        lender_name="ABC Mortgage Co",
+        lender_tin="11-1111111",
+        borrower_name="John Homeowner",
+        borrower_tin="123-45-6789",
+        mortgage_interest=Decimal("12500.00"),
+        points_paid=Decimal("500.00"),
+        mortgage_insurance_premiums=Decimal("1200.00"),
+        property_taxes_paid=Decimal("4500.00"),
+        outstanding_mortgage_principal=Decimal("250000.00"),
+        confidence=ConfidenceLevel.HIGH,
+        uncertain_fields=[],
+    )
+    sample_1099_r = Form1099R(
+        payer_name="Fidelity Investments",
+        payer_tin="04-3523567",
+        recipient_name="Retired Worker",
+        recipient_tin="123-45-6789",
+        gross_distribution=Decimal("15000.00"),
+        taxable_amount=Decimal("15000.00"),
+        distribution_code="7",
+        ira_sep_simple=True,
+        federal_tax_withheld=Decimal("2250.00"),
+        confidence=ConfidenceLevel.HIGH,
+        uncertain_fields=[],
+    )
+    sample_1099_g = Form1099G(
+        payer_name="State of California",
+        payer_tin="94-6000574",
+        recipient_name="John Taxpayer",
+        recipient_tin="123-45-6789",
+        unemployment_compensation=Decimal("8500.00"),
+        state_local_tax_refund=Decimal("1200.00"),
+        federal_tax_withheld=Decimal("850.00"),
+        confidence=ConfidenceLevel.HIGH,
+        uncertain_fields=[],
+    )
+    sample_1098_t = Form1098T(
+        institution_name="State University",
+        institution_tin="12-3456789",
+        student_name="Student Name",
+        student_tin="123-45-6789",
+        payments_received=Decimal("15000.00"),
+        scholarships_grants=Decimal("5000.00"),
+        at_least_half_time=True,
+        graduate_student=False,
+        confidence=ConfidenceLevel.HIGH,
+        uncertain_fields=[],
+    )
+    sample_5498 = Form5498(
+        trustee_name="Vanguard",
+        trustee_tin="23-1234567",
+        participant_name="IRA Owner",
+        participant_tin="123-45-6789",
+        ira_contributions=Decimal("6500.00"),
+        roth_ira_contributions=Decimal("0.00"),
+        rollover_contributions=Decimal("0.00"),
+        fair_market_value=Decimal("150000.00"),
+        confidence=ConfidenceLevel.HIGH,
+        uncertain_fields=[],
+    )
+    sample_1099_s = Form1099S(
+        filer_name="Title Company LLC",
+        filer_tin="55-5555555",
+        transferor_name="Home Seller",
+        transferor_tin="123-45-6789",
+        closing_date="2024-06-15",
+        gross_proceeds=Decimal("450000.00"),
+        property_address="123 Main St, Anytown, CA 90210",
+        confidence=ConfidenceLevel.HIGH,
+        uncertain_fields=[],
+    )
 
     async def fake_extract_with_vision(*, response_model, **kwargs):
         if response_model is W2Batch:
@@ -125,7 +215,19 @@ def stub_extract_with_vision(monkeypatch: pytest.MonkeyPatch) -> None:
             return sample_1099_div
         if response_model is Form1099NEC:
             return sample_1099_nec
-        raise AssertionError("Unexpected response_model")
+        if response_model is Form1098:
+            return sample_1098
+        if response_model is Form1099R:
+            return sample_1099_r
+        if response_model is Form1099G:
+            return sample_1099_g
+        if response_model is Form1098T:
+            return sample_1098_t
+        if response_model is Form5498:
+            return sample_5498
+        if response_model is Form1099S:
+            return sample_1099_s
+        raise AssertionError(f"Unexpected response_model: {response_model}")
 
     monkeypatch.setattr(
         "src.documents.extractor._extract_with_vision",
@@ -443,3 +545,164 @@ class TestEdgeCases:
         for media_type in ["image/jpeg", "image/png", "image/gif", "image/webp"]:
             result = await extract_w2(b"test", media_type)
             assert isinstance(result, W2Batch)
+
+
+# =============================================================================
+# New Form Extraction Tests
+# =============================================================================
+
+
+class TestExtract1098:
+    """Tests for Form 1098 extraction."""
+
+    @pytest.mark.asyncio
+    async def test_returns_form1098(self, fake_image_bytes: bytes) -> None:
+        """extract_1098 returns Form1098 instance."""
+        result = await extract_1098(fake_image_bytes, "image/jpeg")
+        assert isinstance(result, Form1098)
+
+    @pytest.mark.asyncio
+    async def test_1098_has_required_fields(self, fake_image_bytes: bytes) -> None:
+        """Form1098 has all required fields populated."""
+        result = await extract_1098(fake_image_bytes, "image/jpeg")
+        assert result.lender_name
+        assert result.lender_tin
+        assert result.borrower_name
+        assert result.borrower_tin
+        assert result.mortgage_interest >= Decimal("0")
+
+    @pytest.mark.asyncio
+    async def test_extract_document_routes_to_1098(self, fake_image_bytes: bytes) -> None:
+        """extract_document routes 1098 to extract_1098."""
+        result = await extract_document(fake_image_bytes, DocumentType.FORM_1098, "image/jpeg")
+        assert isinstance(result, Form1098)
+
+
+class TestExtract1099R:
+    """Tests for Form 1099-R extraction."""
+
+    @pytest.mark.asyncio
+    async def test_returns_form1099r(self, fake_image_bytes: bytes) -> None:
+        """extract_1099_r returns Form1099R instance."""
+        result = await extract_1099_r(fake_image_bytes, "image/jpeg")
+        assert isinstance(result, Form1099R)
+
+    @pytest.mark.asyncio
+    async def test_1099_r_has_required_fields(self, fake_image_bytes: bytes) -> None:
+        """Form1099R has all required fields populated."""
+        result = await extract_1099_r(fake_image_bytes, "image/jpeg")
+        assert result.payer_name
+        assert result.payer_tin
+        assert result.recipient_name
+        assert result.recipient_tin
+        assert result.gross_distribution >= Decimal("0")
+        assert result.distribution_code
+
+    @pytest.mark.asyncio
+    async def test_extract_document_routes_to_1099_r(self, fake_image_bytes: bytes) -> None:
+        """extract_document routes 1099-R to extract_1099_r."""
+        result = await extract_document(fake_image_bytes, DocumentType.FORM_1099_R, "image/jpeg")
+        assert isinstance(result, Form1099R)
+
+
+class TestExtract1099G:
+    """Tests for Form 1099-G extraction."""
+
+    @pytest.mark.asyncio
+    async def test_returns_form1099g(self, fake_image_bytes: bytes) -> None:
+        """extract_1099_g returns Form1099G instance."""
+        result = await extract_1099_g(fake_image_bytes, "image/jpeg")
+        assert isinstance(result, Form1099G)
+
+    @pytest.mark.asyncio
+    async def test_1099_g_has_required_fields(self, fake_image_bytes: bytes) -> None:
+        """Form1099G has all required fields populated."""
+        result = await extract_1099_g(fake_image_bytes, "image/jpeg")
+        assert result.payer_name
+        assert result.payer_tin
+        assert result.recipient_name
+        assert result.recipient_tin
+
+    @pytest.mark.asyncio
+    async def test_extract_document_routes_to_1099_g(self, fake_image_bytes: bytes) -> None:
+        """extract_document routes 1099-G to extract_1099_g."""
+        result = await extract_document(fake_image_bytes, DocumentType.FORM_1099_G, "image/jpeg")
+        assert isinstance(result, Form1099G)
+
+
+class TestExtract1098T:
+    """Tests for Form 1098-T extraction."""
+
+    @pytest.mark.asyncio
+    async def test_returns_form1098t(self, fake_image_bytes: bytes) -> None:
+        """extract_1098_t returns Form1098T instance."""
+        result = await extract_1098_t(fake_image_bytes, "image/jpeg")
+        assert isinstance(result, Form1098T)
+
+    @pytest.mark.asyncio
+    async def test_1098_t_has_required_fields(self, fake_image_bytes: bytes) -> None:
+        """Form1098T has all required fields populated."""
+        result = await extract_1098_t(fake_image_bytes, "image/jpeg")
+        assert result.institution_name
+        assert result.institution_tin
+        assert result.student_name
+        assert result.student_tin
+
+    @pytest.mark.asyncio
+    async def test_extract_document_routes_to_1098_t(self, fake_image_bytes: bytes) -> None:
+        """extract_document routes 1098-T to extract_1098_t."""
+        result = await extract_document(fake_image_bytes, DocumentType.FORM_1098_T, "image/jpeg")
+        assert isinstance(result, Form1098T)
+
+
+class TestExtract5498:
+    """Tests for Form 5498 extraction."""
+
+    @pytest.mark.asyncio
+    async def test_returns_form5498(self, fake_image_bytes: bytes) -> None:
+        """extract_5498 returns Form5498 instance."""
+        result = await extract_5498(fake_image_bytes, "image/jpeg")
+        assert isinstance(result, Form5498)
+
+    @pytest.mark.asyncio
+    async def test_5498_has_required_fields(self, fake_image_bytes: bytes) -> None:
+        """Form5498 has all required fields populated."""
+        result = await extract_5498(fake_image_bytes, "image/jpeg")
+        assert result.trustee_name
+        assert result.trustee_tin
+        assert result.participant_name
+        assert result.participant_tin
+
+    @pytest.mark.asyncio
+    async def test_extract_document_routes_to_5498(self, fake_image_bytes: bytes) -> None:
+        """extract_document routes 5498 to extract_5498."""
+        result = await extract_document(fake_image_bytes, DocumentType.FORM_5498, "image/jpeg")
+        assert isinstance(result, Form5498)
+
+
+class TestExtract1099S:
+    """Tests for Form 1099-S extraction."""
+
+    @pytest.mark.asyncio
+    async def test_returns_form1099s(self, fake_image_bytes: bytes) -> None:
+        """extract_1099_s returns Form1099S instance."""
+        result = await extract_1099_s(fake_image_bytes, "image/jpeg")
+        assert isinstance(result, Form1099S)
+
+    @pytest.mark.asyncio
+    async def test_1099_s_has_required_fields(self, fake_image_bytes: bytes) -> None:
+        """Form1099S has all required fields populated."""
+        result = await extract_1099_s(fake_image_bytes, "image/jpeg")
+        assert result.filer_name
+        assert result.filer_tin
+        assert result.transferor_name
+        assert result.transferor_tin
+        assert result.gross_proceeds >= Decimal("0")
+        assert result.closing_date
+        assert result.property_address
+
+    @pytest.mark.asyncio
+    async def test_extract_document_routes_to_1099_s(self, fake_image_bytes: bytes) -> None:
+        """extract_document routes 1099-S to extract_1099_s."""
+        result = await extract_document(fake_image_bytes, DocumentType.FORM_1099_S, "image/jpeg")
+        assert isinstance(result, Form1099S)

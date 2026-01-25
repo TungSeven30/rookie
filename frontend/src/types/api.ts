@@ -106,3 +106,37 @@ export const FILING_STATUS_LABELS: Record<FilingStatus, string> = {
   mfs: 'Married Filing Separately',
   hoh: 'Head of Household',
 }
+
+// Document type options for user selection
+export type DocumentTypeOption =
+  | 'auto'
+  | 'W2'
+  | '1099-INT'
+  | '1099-DIV'
+  | '1099-NEC'
+  | '1098'
+  | '1099-R'
+  | '1099-G'
+  | '1098-T'
+  | '5498'
+  | '1099-S'
+
+export const DOCUMENT_TYPE_LABELS: Record<DocumentTypeOption, string> = {
+  auto: 'Auto-detect',
+  W2: 'W-2 (Wages)',
+  '1099-INT': '1099-INT (Interest)',
+  '1099-DIV': '1099-DIV (Dividends)',
+  '1099-NEC': '1099-NEC (Self-Employment)',
+  '1098': '1098 (Mortgage Interest)',
+  '1099-R': '1099-R (Retirement Distribution)',
+  '1099-G': '1099-G (Government Payments)',
+  '1098-T': '1098-T (Tuition)',
+  '5498': '5498 (IRA Contribution)',
+  '1099-S': '1099-S (Real Estate)',
+}
+
+// File with selected form type
+export interface UploadFile {
+  file: File
+  formType: DocumentTypeOption
+}
