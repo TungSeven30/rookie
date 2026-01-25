@@ -162,13 +162,13 @@ Plans:
 **Plans:** 7 plans in 6 waves
 
 Plans:
-- [ ] 03-01-PLAN.md (Wave 1) — Document Pydantic models + Phase 3 dependencies
-- [ ] 03-02-PLAN.md (Wave 1) — Storage integration + client folder scanner
-- [ ] 03-03-PLAN.md (Wave 2) — Document classifier + confidence scoring
-- [ ] 03-04-PLAN.md (Wave 3) — Document extractor (Claude Vision + Instructor)
-- [ ] 03-05-PLAN.md (Wave 4) — Tax calculator (TDD: income, deductions, tax, variances)
-- [ ] 03-06-PLAN.md (Wave 5) — Output generators (Drake worksheet + preparer notes)
-- [ ] 03-07-PLAN.md (Wave 6) — Personal Tax Agent orchestration
+- [x] 03-01-PLAN.md (Wave 1) — Document Pydantic models + Phase 3 dependencies
+- [x] 03-02-PLAN.md (Wave 1) — Storage integration + client folder scanner
+- [x] 03-03-PLAN.md (Wave 2) — Document classifier + confidence scoring
+- [x] 03-04-PLAN.md (Wave 3) — Document extractor (Claude Vision + Instructor)
+- [x] 03-05-PLAN.md (Wave 4) — Tax calculator (TDD: income, deductions, tax, variances)
+- [x] 03-06-PLAN.md (Wave 5) — Output generators (Drake worksheet + preparer notes)
+- [x] 03-07-PLAN.md (Wave 6) — Personal Tax Agent orchestration
 
 ---
 
@@ -185,16 +185,30 @@ Plans:
 - PTAX-11: Agent handles Form 8962 ACA reconciliation (Premium Tax Credit)
 
 **Success Criteria:**
-1. Schedule C extraction from 1099-NEC + expenses works correctly
-2. Schedule E rental income/expense handling is accurate
-3. Schedule D capital gains from 1099-B are processed
-4. QBI deduction calculation matches manual verification
-5. Form 8962 ACA reconciliation (Premium Tax Credit) calculates correctly
-6. 5 complex test returns complete with >90% accuracy
+1. K-1 extraction accuracy >90% on test documents
+2. Schedule C extraction from 1099-NEC + expenses works correctly
+3. Schedule E rental income/expense handling is accurate
+4. Schedule D capital gains from 1099-B are processed
+5. QBI deduction calculation matches manual verification
+6. Form 8962 ACA reconciliation (Premium Tax Credit) calculates correctly
+7. 5 complex test returns complete with >90% accuracy
+8. All existing Phase 3 tests continue to pass
 
 **Dependencies:** Phase 3 (Personal Tax - Simple)
 
 **Rollback:** If Schedule C accuracy <85%, exclude self-employment from automation.
+
+**Plans:** 8 plans in 5 waves
+
+Plans:
+- [ ] 04-01-PLAN.md (Wave 1) — K-1 and 1099-B Document Models
+- [ ] 04-02-PLAN.md (Wave 1) — K-1 and 1099-B Extractors
+- [ ] 04-03-PLAN.md (Wave 2) — Schedule C Calculator and Self-Employment Tax
+- [ ] 04-04-PLAN.md (Wave 3) — Schedule E Calculator (Rental Income)
+- [ ] 04-05-PLAN.md (Wave 3) — Schedule D Calculator (Capital Gains)
+- [ ] 04-06-PLAN.md (Wave 4) — QBI Deduction (Section 199A)
+- [ ] 04-07-PLAN.md (Wave 4) — Form 8962 ACA Reconciliation
+- [ ] 04-08-PLAN.md (Wave 5) — Complex Return Agent Integration
 
 ---
 
@@ -312,14 +326,14 @@ Plans:
 |-------|--------|-------|----------|
 | 1 - Foundation | Complete | 5/5 | 100% |
 | 2 - Core Framework | Complete | 6/6 | 100% |
-| 3 - Personal Tax Simple | Planned | 0/7 | 0% |
-| 4 - Personal Tax Complex | Pending | 0/0 | 0% |
+| 3 - Personal Tax Simple | Complete | 7/7 | 100% |
+| 4 - Personal Tax Complex | Planned | 0/8 | 0% |
 | 5 - Review Infrastructure | Pending | 0/0 | 0% |
 | 6 - Business Tax | Pending | 0/0 | 0% |
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall:** 2/8 phases complete (25%)
+**Overall:** 3/8 phases complete (37.5%)
 
 ---
 
@@ -335,4 +349,4 @@ Plans:
 ---
 
 *Roadmap created: 2026-01-23*
-*Last updated: 2026-01-24 (Phase 3 planned)*
+*Last updated: 2026-01-25 (Phase 4 planned)*

@@ -19,7 +19,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 1 - Foundation | Complete | 5/5 | 100% |
 | 2 - Core Framework | Complete | 6/6 | 100% |
 | 3 - Personal Tax Simple | Complete | 7/7 | 100% |
-| 4 - Personal Tax Complex | Pending | 0/0 | 0% |
+| 4 - Personal Tax Complex | Planned | 0/8 | 0% |
 | 5 - Review Infrastructure | Pending | 0/0 | 0% |
 | 6 - Business Tax | Pending | 0/0 | 0% |
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 
 ## Current Position
 
-- **Phase:** 3 of 8 (Personal Tax Simple)
-- **Plan:** 03-07 complete (Personal Tax Agent)
-- **Status:** Phase Complete
-- **Last activity:** 2026-01-25 - Completed 03-07-PLAN.md (Personal Tax Agent)
+- **Phase:** 4 of 8 (Personal Tax Complex)
+- **Plan:** All 8 plans created (04-01 through 04-08)
+- **Status:** Phase Planned - Ready for Execution
+- **Last activity:** 2026-01-25 - Created Phase 4 plans
 
 ## Performance Metrics
 
@@ -138,7 +138,15 @@ None currently.
 - [x] Execute 03-05-PLAN.md (Tax Calculator)
 - [x] Execute 03-06-PLAN.md (Output Generators)
 - [x] Execute 03-07-PLAN.md (Personal Tax Agent)
-- [ ] Plan Phase 4 (Personal Tax Complex)
+- [x] Plan Phase 4 (Personal Tax Complex)
+- [ ] Execute 04-01-PLAN.md (K-1 and 1099-B Document Models)
+- [ ] Execute 04-02-PLAN.md (K-1 and 1099-B Extractors)
+- [ ] Execute 04-03-PLAN.md (Schedule C Calculator)
+- [ ] Execute 04-04-PLAN.md (Schedule E Calculator)
+- [ ] Execute 04-05-PLAN.md (Schedule D Calculator)
+- [ ] Execute 04-06-PLAN.md (QBI Deduction)
+- [ ] Execute 04-07-PLAN.md (Form 8962 ACA Reconciliation)
+- [ ] Execute 04-08-PLAN.md (Complex Return Agent Integration)
 
 ## Recent Activity
 
@@ -176,23 +184,24 @@ None currently.
 
 ### Last Session Summary
 
-Executed 03-07-PLAN.md (Personal Tax Agent):
-- PersonalTaxAgent class orchestrates complete tax preparation workflow
-  - Loads context, scans folder, classifies and extracts documents
-  - Detects missing expected documents (PTAX-15)
-  - Detects conflicts like SSN mismatches (PTAX-16)
-  - Aggregates income, calculates tax, evaluates credits
-  - Compares with prior year for >10% variances (PTAX-12)
-  - Generates Drake worksheet and preparer notes (PTAX-13, PTAX-14)
-- EscalationRequired exception for human intervention scenarios
-- personal_tax_handler integrates with TaskDispatcher
-- 30 tests passing with MOCK_LLM=true
+Created Phase 4 plans for Personal Tax Complex:
+- 04-01-PLAN.md: K-1 and 1099-B Document Models (FormK1, Form1099B Pydantic models)
+- 04-02-PLAN.md: K-1 and 1099-B Extractors (prompts and extraction functions)
+- 04-03-PLAN.md: Schedule C Calculator and Self-Employment Tax
+- 04-04-PLAN.md: Schedule E Calculator (Rental Income with passive loss rules)
+- 04-05-PLAN.md: Schedule D Calculator (Capital Gains with loss limitations)
+- 04-06-PLAN.md: QBI Deduction (Section 199A with thresholds/phaseouts)
+- 04-07-PLAN.md: Form 8962 ACA Reconciliation (Premium Tax Credit)
+- 04-08-PLAN.md: Complex Return Agent Integration
 
-**Phase 3 Complete** - All 7 plans executed successfully.
+Also created:
+- 04-RESEARCH.md: Research on K-1 fields, Schedule C/E/D rules, QBI thresholds, FPL tables
+
+**Phase 4 Planned** - 8 plans ready for execution.
 
 ### Next Session Starting Point
 
-Plan Phase 4 (Personal Tax Complex) - Schedule C, Schedule E, itemized deductions, and more complex tax scenarios.
+Execute Phase 4 (Personal Tax Complex) - Start with 04-01-PLAN.md (K-1 and 1099-B Document Models).
 
 ### Context to Preserve
 
@@ -324,6 +333,13 @@ Plan Phase 4 (Personal Tax Complex) - Schedule C, Schedule E, itemized deduction
 
 **Phase 3 Dependencies Added:**
 - anthropic, instructor, openpyxl, fsspec
+
+**Phase 4 Plan Structure:**
+- Wave 1: 04-01 (Document Models) + 04-02 (Extractors) - parallel
+- Wave 2: 04-03 (Schedule C + SE Tax)
+- Wave 3: 04-04 (Schedule E) + 04-05 (Schedule D) - parallel
+- Wave 4: 04-06 (QBI) + 04-07 (Form 8962/PTC) - parallel
+- Wave 5: 04-08 (Agent Integration)
 
 **Critical Path:**
 Phase 1 -> 2 -> 3 -> 4 -> 5 -> 7 -> 8
