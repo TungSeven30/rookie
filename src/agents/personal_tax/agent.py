@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
+from io import BytesIO
 from pathlib import Path
 import re
 from typing import TYPE_CHECKING, Any
@@ -68,15 +69,20 @@ class EscalationRequired(Exception):
 
     Attributes:
         reasons: List of reasons requiring escalation.
+        result: Optional result payload for CPA review.
     """
 
-    def __init__(self, reasons: list[str]) -> None:
+    def __init__(
+        self, reasons: list[str], result: "PersonalTaxResult | None" = None
+    ) -> None:
         """Initialize with escalation reasons.
 
         Args:
             reasons: List of reasons requiring human attention.
+            result: Optional result payload for CPA review.
         """
         self.reasons = reasons
+        self.result = result
         super().__init__(f"Escalation required: {', '.join(reasons)}")
 
 
@@ -216,25 +222,7 @@ class PersonalTaxAgent:
         # 9. Determine overall confidence
         overall_confidence = self._determine_overall_confidence(extractions)
 
-        # 10. Check for escalations
-        if self.escalations:
-            logger.warning(
-                "personal_tax_agent_escalation",
-                client_id=client_id,
-                tax_year=tax_year,
-                reasons=self.escalations,
-            )
-            raise EscalationRequired(self.escalations)
-
-        logger.info(
-            "personal_tax_agent_complete",
-            client_id=client_id,
-            tax_year=tax_year,
-            documents_processed=len(extractions),
-            overall_confidence=overall_confidence,
-        )
-
-        return PersonalTaxResult(
+        result = PersonalTaxResult(
             drake_worksheet_path=worksheet_path,
             preparer_notes_path=notes_path,
             income_summary=income_summary,
@@ -244,6 +232,26 @@ class PersonalTaxAgent:
             escalations=self.escalations,
             overall_confidence=overall_confidence,
         )
+
+        # 10. Check for escalations
+        if self.escalations:
+            logger.warning(
+                "personal_tax_agent_escalation",
+                client_id=client_id,
+                tax_year=tax_year,
+                reasons=self.escalations,
+            )
+            raise EscalationRequired(self.escalations, result=result)
+
+        logger.info(
+            "personal_tax_agent_complete",
+            client_id=client_id,
+            tax_year=tax_year,
+            documents_processed=len(extractions),
+            overall_confidence=overall_confidence,
+        )
+
+        return result
 
     async def _load_context(
         self,
@@ -330,7 +338,7 @@ class PersonalTaxAgent:
 
         Returns:
             List of extraction result dicts with type, filename,
-            confidence, and data.
+            confidence, and data. PDF files are processed per page.
         """
         extractions: list[dict[str, Any]] = []
 
@@ -342,41 +350,90 @@ class PersonalTaxAgent:
                 # Determine media type from extension
                 media_type = self._get_media_type(doc.extension)
 
-                # Classify document
-                classification = await classify_document(image_bytes, media_type)
+                if media_type == "application/pdf":
+                    pages = self._split_pdf_pages(image_bytes)
+                    page_media_type = "image/png"
+                else:
+                    pages = [image_bytes]
+                    page_media_type = media_type
 
-                if classification.document_type == DocumentType.UNKNOWN:
-                    logger.warning(
-                        "unknown_document_type",
-                        filename=doc.name,
-                        confidence=classification.confidence,
+                for page_number, page_bytes in enumerate(pages, start=1):
+                    page_filename = (
+                        doc.name
+                        if len(pages) == 1
+                        else f"{doc.name} (page {page_number})"
                     )
-                    continue
 
-                # Extract data
-                data = await extract_document(
-                    image_bytes,
-                    classification.document_type,
-                    media_type,
-                )
+                    # Classify document
+                    classification = await classify_document(page_bytes, page_media_type)
+                    original_type = classification.document_type
+                    original_confidence = classification.confidence
+                    original_reasoning = classification.reasoning
+                    classification_overridden = False
 
-                extractions.append(
-                    {
-                        "type": classification.document_type,
-                        "document_type": classification.document_type.value,
-                        "filename": doc.name,
-                        "confidence": data.confidence.value,
-                        "data": data,
-                        "classification": classification,
-                    }
-                )
+                    filename_hint = self._infer_document_type_from_filename(page_filename)
+                    if (
+                        filename_hint is not None
+                        and filename_hint != classification.document_type
+                    ):
+                        logger.warning(
+                            "classification_overridden_by_filename",
+                            filename=page_filename,
+                            classified=classification.document_type.value,
+                            inferred=filename_hint.value,
+                            confidence=classification.confidence,
+                        )
+                        classification = ClassificationResult(
+                            document_type=filename_hint,
+                            confidence=min(0.65, classification.confidence),
+                            reasoning=f"Filename hint: {page_filename}",
+                        )
+                        classification_overridden = True
 
-                logger.info(
-                    "document_extracted",
-                    filename=doc.name,
-                    document_type=classification.document_type.value,
-                    confidence=data.confidence.value,
-                )
+                    if classification.document_type == DocumentType.UNKNOWN:
+                        logger.warning(
+                            "unknown_document_type",
+                            filename=page_filename,
+                            confidence=classification.confidence,
+                        )
+                        continue
+
+                    # Extract data
+                    data = await extract_document(
+                        page_bytes,
+                        classification.document_type,
+                        page_media_type,
+                    )
+
+                    extractions.append(
+                        {
+                            "type": classification.document_type,
+                            "document_type": classification.document_type.value,
+                            "filename": page_filename,
+                            "confidence": data.confidence.value,
+                            "data": data,
+                            "classification": classification,
+                            "classification_confidence": classification.confidence,
+                            "classification_reasoning": classification.reasoning,
+                            "classification_overridden": classification_overridden,
+                            "classification_original_type": (
+                                original_type.value if classification_overridden else None
+                            ),
+                            "classification_original_confidence": (
+                                original_confidence if classification_overridden else None
+                            ),
+                            "classification_original_reasoning": (
+                                original_reasoning if classification_overridden else None
+                            ),
+                        }
+                    )
+
+                    logger.info(
+                        "document_extracted",
+                        filename=page_filename,
+                        document_type=classification.document_type.value,
+                        confidence=data.confidence.value,
+                    )
 
             except Exception as e:
                 logger.error(
@@ -404,6 +461,55 @@ class PersonalTaxAgent:
             "png": "image/png",
         }
         return media_types.get(extension.lower(), "image/jpeg")
+
+    def _infer_document_type_from_filename(
+        self, filename: str
+    ) -> DocumentType | None:
+        """Infer document type from filename hints.
+
+        Args:
+            filename: Original filename (may include page suffix).
+
+        Returns:
+            DocumentType inferred from filename or None if no match.
+        """
+        normalized = filename.lower()
+        if "w-2" in normalized or "w2" in normalized:
+            return DocumentType.W2
+        return None
+
+    def _split_pdf_pages(self, pdf_bytes: bytes) -> list[bytes]:
+        """Convert PDF bytes into a list of PNG page bytes.
+
+        Args:
+            pdf_bytes: Raw PDF bytes.
+
+        Returns:
+            List of PNG-encoded page images.
+
+        Raises:
+            RuntimeError: If pdf2image is not installed.
+            ValueError: If the PDF contains no pages.
+        """
+        try:
+            from pdf2image import convert_from_bytes
+        except ImportError as exc:
+            raise RuntimeError(
+                "pdf2image is required for PDF extraction. "
+                "Install pdf2image and pillow, and ensure poppler is available."
+            ) from exc
+
+        images = convert_from_bytes(pdf_bytes, fmt="png")
+        if not images:
+            raise ValueError("No pages found in PDF for extraction")
+
+        page_bytes: list[bytes] = []
+        for image in images:
+            buffer = BytesIO()
+            image.save(buffer, format="PNG")
+            page_bytes.append(buffer.getvalue())
+
+        return page_bytes
 
     def _get_expected_document_types(
         self,
@@ -460,6 +566,24 @@ class PersonalTaxAgent:
                     "missing_expected_document",
                     document_type=doc_type.value,
                 )
+
+        if DocumentType.W2 in missing:
+            for ext in extractions:
+                filename = ext.get("filename", "")
+                inferred = self._infer_document_type_from_filename(filename)
+                if inferred == DocumentType.W2 and ext.get("type") != DocumentType.W2:
+                    classified = ext.get("document_type", "unknown")
+                    reason = (
+                        "Filename suggests W-2 but classified as "
+                        f"{classified}: {filename}"
+                    )
+                    if reason not in self.escalations:
+                        self.escalations.append(reason)
+                        logger.warning(
+                            "missing_w2_filename_hint",
+                            filename=filename,
+                            classified=classified,
+                        )
 
     def _check_conflicts(
         self,

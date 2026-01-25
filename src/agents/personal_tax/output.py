@@ -531,7 +531,8 @@ def generate_preparer_notes(
         tax_result: Tax calculation from calculator.
         variances: List of variance items from year comparison.
         extractions: List of extraction info dicts with keys:
-            document_type, filename, confidence.
+            document_type, filename, confidence, and optional
+            classification fields for CPA review.
         filing_status: Filing status (single, mfj, mfs, hoh).
         output_path: Where to save the markdown file.
 
@@ -645,6 +646,34 @@ def generate_preparer_notes(
             lines.append(f"- {doc_type} ({filename}): {confidence} confidence")
     else:
         lines.append("No extraction concerns.")
+    lines.append("")
+
+    # Classification notes subsection
+    lines.append("### Classification Notes")
+    lines.append("")
+    classification_notes: list[str] = []
+    for ext in extractions:
+        doc_type = ext.get("document_type", "Unknown")
+        filename = ext.get("filename", "Unknown")
+        if ext.get("classification_overridden"):
+            original = ext.get("classification_original_type", "unknown")
+            classification_notes.append(
+                f"- {filename}: filename suggests {doc_type}, "
+                f"but classifier predicted {original}"
+            )
+        elif ext.get("classification_reasoning") and ext.get("confidence") in (
+            "MEDIUM",
+            "LOW",
+        ):
+            reasoning = ext.get("classification_reasoning", "")
+            classification_notes.append(
+                f"- {doc_type} ({filename}): {reasoning}"
+            )
+
+    if classification_notes:
+        lines.extend(classification_notes)
+    else:
+        lines.append("No classification concerns.")
     lines.append("")
 
     # Assumptions section

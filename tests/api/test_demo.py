@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 import tempfile
@@ -13,7 +14,14 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from src.api.demo import DEMO_ARTIFACT_METADATA, DEMO_ARTIFACT_RESULTS, DEMO_TASK_TYPE
+from src.agents.personal_tax.agent import PersonalTaxResult
+from src.agents.personal_tax.calculator import IncomeSummary, TaxResult
+from src.api.demo import (
+    DEMO_ARTIFACT_METADATA,
+    DEMO_ARTIFACT_RESULTS,
+    DEMO_TASK_TYPE,
+    _build_results_payload,
+)
 from src.api.deps import get_db
 from src.core.config import settings
 from src.main import app
@@ -207,6 +215,63 @@ async def test_results_escalated_response(
     data = response.json()
     assert data["status"] == "escalated"
     assert data["escalations"] == ["Missing W-2"]
+
+
+@pytest.mark.asyncio
+async def test_build_results_payload_includes_classification_details() -> None:
+    """Results payload surfaces classification details for CPA review."""
+    income_summary = IncomeSummary(
+        total_wages=Decimal("0"),
+        total_interest=Decimal("0"),
+        total_dividends=Decimal("0"),
+        total_qualified_dividends=Decimal("0"),
+        total_nec=Decimal("0"),
+        total_other=Decimal("0"),
+        total_income=Decimal("0"),
+        federal_withholding=Decimal("0"),
+    )
+    tax_result = TaxResult(
+        gross_tax=Decimal("0"),
+        bracket_breakdown=[],
+        effective_rate=Decimal("0"),
+        credits_applied=Decimal("0"),
+        final_liability=Decimal("0"),
+        refundable_credits=Decimal("0"),
+    )
+    result = PersonalTaxResult(
+        drake_worksheet_path=Path("worksheet.xlsx"),
+        preparer_notes_path=Path("notes.md"),
+        income_summary=income_summary,
+        tax_result=tax_result,
+        variances=[],
+        extractions=[
+            {
+                "filename": "2024_W-2__2_.pdf (page 1)",
+                "document_type": "W2",
+                "confidence": "MEDIUM",
+                "classification_confidence": 0.88,
+                "classification_reasoning": "Mock classification",
+                "classification_overridden": True,
+                "classification_original_type": "1099-NEC",
+            }
+        ],
+        escalations=["Missing expected document: W2"],
+        overall_confidence="LOW",
+    )
+
+    payload = await _build_results_payload(
+        task_id=1,
+        client_name="Test Client",
+        tax_year=2024,
+        filing_status="single",
+        result=result,
+        escalations=["Missing expected document: W2"],
+    )
+
+    extraction = payload["extractions"][0]
+    assert extraction["classification_reasoning"] == "Mock classification"
+    assert extraction["classification_original_type"] == "1099-NEC"
+    assert payload["escalations"] == ["Missing expected document: W2"]
 
 
 @pytest.mark.asyncio

@@ -350,6 +350,11 @@ async def _build_results_payload(
         result.income_summary.total_income - deduction_result.amount,
     )
 
+    combined_escalations: list[str] = []
+    for reason in [*escalations, *result.escalations]:
+        if reason and reason not in combined_escalations:
+            combined_escalations.append(reason)
+
     return {
         "task_id": task_id,
         "client_name": client_name,
@@ -378,6 +383,16 @@ async def _build_results_payload(
                 "filename": ext.get("filename", "unknown"),
                 "document_type": ext.get("document_type", "unknown"),
                 "confidence": ext.get("confidence", "HIGH"),
+                "classification_confidence": ext.get("classification_confidence"),
+                "classification_reasoning": ext.get("classification_reasoning"),
+                "classification_overridden": ext.get("classification_overridden", False),
+                "classification_original_type": ext.get("classification_original_type"),
+                "classification_original_confidence": ext.get(
+                    "classification_original_confidence"
+                ),
+                "classification_original_reasoning": ext.get(
+                    "classification_original_reasoning"
+                ),
                 "key_fields": {},
             }
             for ext in result.extractions
@@ -392,7 +407,7 @@ async def _build_results_payload(
             }
             for v in result.variances
         ],
-        "escalations": result.escalations if result.escalations else escalations,
+        "escalations": combined_escalations,
         "drake_worksheet_path": drake_path,
         "preparer_notes_path": notes_path,
     }
@@ -560,13 +575,56 @@ async def _process_job(task_id: int, session_factory: Any) -> None:
             )
             session.add(escalation)
 
+            worksheet_path = None
+            notes_path = None
+            payload_result = exc.result
+
+            if payload_result is not None:
+                output_prefix = _build_output_prefix(client_id, tax_year)
+                worksheet_path = await _upload_output(
+                    storage_url,
+                    output_prefix,
+                    payload_result.drake_worksheet_path,
+                )
+                notes_path = await _upload_output(
+                    storage_url,
+                    output_prefix,
+                    payload_result.preparer_notes_path,
+                )
+                for local_path in (
+                    payload_result.drake_worksheet_path,
+                    payload_result.preparer_notes_path,
+                ):
+                    try:
+                        local_path.unlink(missing_ok=True)
+                    except OSError:
+                        logger.warning(
+                            "demo_output_cleanup_failed",
+                            task_id=task_id,
+                            path=str(local_path),
+                        )
+                await _create_artifact(
+                    session,
+                    task_id,
+                    DEMO_ARTIFACT_WORKSHEET,
+                    file_path=worksheet_path,
+                )
+                await _create_artifact(
+                    session,
+                    task_id,
+                    DEMO_ARTIFACT_NOTES,
+                    file_path=notes_path,
+                )
+
             payload = await _build_results_payload(
                 task_id=task_id,
                 client_name=client_name,
                 tax_year=tax_year,
                 filing_status=filing_status,
-                result=None,
+                result=payload_result,
                 escalations=exc.reasons,
+                drake_path=worksheet_path,
+                notes_path=notes_path,
             )
             await _save_results(session, task_id, payload)
 

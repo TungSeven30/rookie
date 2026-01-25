@@ -586,6 +586,209 @@ class TestAgentProcessWorkflow:
         assert result.overall_confidence == "HIGH"
         assert len(result.extractions) == 1
 
+    async def test_extract_documents_splits_pdf_pages(
+        self, temp_output_dir, sample_w2
+    ) -> None:
+        """PDFs with multiple pages should yield multiple extractions."""
+        agent = PersonalTaxAgent(
+            storage_url="/tmp/storage",
+            output_dir=temp_output_dir,
+        )
+
+        mock_doc = ClientDocument(
+            path="client123/2024/w2.pdf",
+            name="w2.pdf",
+            size=1000,
+            modified=datetime.now(),
+            extension="pdf",
+        )
+
+        second_w2 = W2Data(
+            employee_ssn="987-65-4321",
+            employer_ein="98-7654321",
+            employer_name="Beta Corp",
+            employee_name="Jane Doe",
+            wages_tips_compensation=Decimal("55000"),
+            federal_tax_withheld=Decimal("8000"),
+            social_security_wages=Decimal("55000"),
+            social_security_tax=Decimal("3410"),
+            medicare_wages=Decimal("55000"),
+            medicare_tax=Decimal("797.50"),
+            confidence=ConfidenceLevel.HIGH,
+        )
+
+        classifications = [
+            ClassificationResult(
+                document_type=DocumentType.W2, confidence=0.95, reasoning="W-2"
+            ),
+            ClassificationResult(
+                document_type=DocumentType.W2, confidence=0.95, reasoning="W-2"
+            ),
+        ]
+        extractions = [sample_w2, second_w2]
+        classify_calls = [0]
+        extract_calls = [0]
+
+        async def mock_classify(*args, **kwargs):
+            idx = classify_calls[0]
+            classify_calls[0] += 1
+            return classifications[idx]
+
+        async def mock_extract(*args, **kwargs):
+            idx = extract_calls[0]
+            extract_calls[0] += 1
+            return extractions[idx]
+
+        with patch(
+            "src.agents.personal_tax.agent.read_file",
+            return_value=b"dummy content",
+        ):
+            with patch.object(
+                agent, "_split_pdf_pages", return_value=[b"page1", b"page2"]
+            ):
+                with patch(
+                    "src.agents.personal_tax.agent.classify_document",
+                    side_effect=mock_classify,
+                ):
+                    with patch(
+                        "src.agents.personal_tax.agent.extract_document",
+                        side_effect=mock_extract,
+                    ):
+                        result = await agent._extract_documents([mock_doc])
+
+        assert [ext["filename"] for ext in result] == [
+            "w2.pdf (page 1)",
+            "w2.pdf (page 2)",
+        ]
+        assert len(result) == 2
+        assert classify_calls[0] == 2
+        assert extract_calls[0] == 2
+
+    async def test_extract_documents_overrides_w2_filename_hint(
+        self, temp_output_dir, sample_w2
+    ) -> None:
+        """Filename W-2 hints should override misclassification."""
+        agent = PersonalTaxAgent(
+            storage_url="/tmp/storage",
+            output_dir=temp_output_dir,
+        )
+
+        mock_doc = ClientDocument(
+            path="client123/2024/2024_W-2__2_.jpg",
+            name="2024_W-2__2_.jpg",
+            size=1000,
+            modified=datetime.now(),
+            extension="jpg",
+        )
+
+        mock_classification = ClassificationResult(
+            document_type=DocumentType.FORM_1099_NEC,
+            confidence=0.88,
+            reasoning="Mock 1099-NEC",
+        )
+
+        with patch(
+            "src.agents.personal_tax.agent.read_file",
+            return_value=b"dummy content",
+        ):
+            with patch(
+                "src.agents.personal_tax.agent.classify_document",
+                new=AsyncMock(return_value=mock_classification),
+            ):
+                with patch(
+                    "src.agents.personal_tax.agent.extract_document",
+                    new=AsyncMock(return_value=sample_w2),
+                ) as mock_extract:
+                    result = await agent._extract_documents([mock_doc])
+
+        assert len(result) == 1
+        assert result[0]["document_type"] == DocumentType.W2.value
+        assert result[0]["classification"].document_type == DocumentType.W2
+        args, _ = mock_extract.call_args
+        assert args[1] == DocumentType.W2
+
+    async def test_missing_w2_includes_filename_hint(
+        self, temp_output_dir
+    ) -> None:
+        """Missing W-2 escalations include filename hint when available."""
+        agent = PersonalTaxAgent(
+            storage_url="/tmp/storage",
+            output_dir=temp_output_dir,
+        )
+        context = AgentContext(
+            client_id=1,
+            client_name="John Doe",
+            tax_year=2024,
+            task_type="personal_tax",
+        )
+        extractions = [
+            {
+                "type": DocumentType.FORM_1099_NEC,
+                "document_type": DocumentType.FORM_1099_NEC.value,
+                "filename": "2024_W-2__2_.pdf (page 1)",
+            }
+        ]
+
+        agent._check_missing_documents(context, extractions)
+
+        assert any("Filename suggests W-2" in reason for reason in agent.escalations)
+
+    async def test_process_escalation_includes_result(
+        self, temp_output_dir, mock_session, sample_1099_int
+    ) -> None:
+        """EscalationRequired includes a result payload for CPAs."""
+        agent = PersonalTaxAgent(
+            storage_url="/tmp/storage",
+            output_dir=temp_output_dir,
+        )
+
+        mock_doc = ClientDocument(
+            path="client123/2024/1099int.jpg",
+            name="1099int.jpg",
+            size=1000,
+            modified=datetime.now(),
+            extension="jpg",
+        )
+
+        mock_context = AgentContext(
+            client_id=1,
+            client_name="John Doe",
+            tax_year=2024,
+            task_type="personal_tax",
+        )
+
+        mock_classification = ClassificationResult(
+            document_type=DocumentType.FORM_1099_INT,
+            confidence=0.92,
+            reasoning="1099-INT",
+        )
+
+        with patch(
+            "src.agents.personal_tax.agent.build_agent_context",
+            return_value=mock_context,
+        ):
+            with patch(
+                "src.agents.personal_tax.agent.scan_client_folder",
+                return_value=[mock_doc],
+            ):
+                with patch(
+                    "src.agents.personal_tax.agent.read_file",
+                    return_value=b"dummy content",
+                ):
+                    with patch(
+                        "src.agents.personal_tax.agent.classify_document",
+                        return_value=mock_classification,
+                    ):
+                        with patch(
+                            "src.agents.personal_tax.agent.extract_document",
+                            return_value=sample_1099_int,
+                        ):
+                            with pytest.raises(EscalationRequired) as exc_info:
+                                await agent.process("client123", 2024, mock_session)
+
+        assert exc_info.value.result is not None
+        assert exc_info.value.result.extractions
+
     async def test_agent_process_multiple_documents(
         self, temp_output_dir, mock_session, sample_w2, sample_1099_int
     ):

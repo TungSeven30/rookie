@@ -1025,6 +1025,40 @@ class TestPreparerNotesContent:
             content = path.read_text()
             assert "**Overall Confidence:** LOW" in content
 
+    def test_notes_classification_override_included(
+        self,
+        sample_income_summary: IncomeSummary,
+        sample_deduction_result: DeductionResult,
+        sample_tax_result: TaxResult,
+    ) -> None:
+        """Classification override notes are included for CPA review."""
+        extractions = [
+            {
+                "document_type": "W-2",
+                "filename": "2024_W-2.pdf",
+                "confidence": "MEDIUM",
+                "classification_overridden": True,
+                "classification_original_type": "1099-NEC",
+            }
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = generate_preparer_notes(
+                "John Doe",
+                2024,
+                sample_income_summary,
+                sample_deduction_result,
+                sample_tax_result,
+                [],
+                extractions,
+                "single",
+                Path(tmpdir) / "notes.md",
+            )
+
+            content = path.read_text()
+            assert "Classification Notes" in content
+            assert "classifier predicted 1099-NEC" in content
+
     def test_notes_review_focus_with_variances(
         self,
         sample_income_summary: IncomeSummary,

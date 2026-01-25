@@ -78,6 +78,116 @@ Corrections are captured (implicit diff + optional explicit tags) and inform fut
 
 ---
 
+## Demo Quickstart (Production-Ready)
+
+This demo is built for real use with simple personal tax prep (W-2, 1099-INT/DIV/NEC).
+It uses API-key auth, durable job storage, and file storage via local disk or S3.
+
+### Prerequisites
+- Python 3.11+
+- `uv` installed
+- PostgreSQL running
+- Redis running
+- Node.js 18+ (for the demo UI)
+
+### 1) Configure environment
+
+Create a `.env` file from `.env.example` and set the required values:
+
+```
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/rookie
+REDIS_URL=redis://localhost:6379/0
+DEMO_API_KEY=your-demo-key
+DEFAULT_STORAGE_URL=/tmp/rookie-demo
+OUTPUT_DIR=/tmp/rookie-output
+MAX_UPLOAD_BYTES=52428800
+ALLOWED_UPLOAD_TYPES=application/pdf,image/jpeg,image/png,image/jpg
+DEMO_RETENTION_DAYS=7
+```
+
+If you want S3 storage:
+```
+DEFAULT_STORAGE_URL=s3://your-bucket/rookie-demo
+```
+Make sure AWS credentials are available in the environment.
+
+### 2) Install backend dependencies
+```
+uv sync
+```
+
+### 3) Initialize the database
+Run migrations (if this is your first run):
+```
+uv run alembic upgrade head
+```
+
+### 4) Start the API
+```
+uv run uvicorn src.main:app --reload
+```
+
+The API runs at `http://127.0.0.1:8000`.
+
+### 5) Start the demo UI
+```
+cd frontend
+npm install
+VITE_DEMO_API_KEY=your-demo-key npm run dev
+```
+
+Open `http://localhost:5173` in a browser.
+
+### 6) Use the demo
+1. Upload W-2 and 1099 files (PDF/JPG/PNG).
+2. Start processing.
+3. Watch progress in the UI.
+4. Download outputs:
+   - Drake worksheet (Excel)
+   - Preparer notes (Markdown)
+
+### Optional: API usage (curl)
+
+Upload:
+```
+curl -X POST "http://127.0.0.1:8000/api/demo/upload" \
+  -H "X-Demo-Api-Key: your-demo-key" \
+  -F "files=@/path/to/w2.pdf" \
+  -F "files=@/path/to/1099int.jpg" \
+  -F "client_name=Demo Client" \
+  -F "tax_year=2024" \
+  -F "filing_status=single"
+```
+
+Start processing:
+```
+curl -X POST "http://127.0.0.1:8000/api/demo/process/<job_id>" \
+  -H "X-Demo-Api-Key: your-demo-key"
+```
+
+Check status:
+```
+curl -X GET "http://127.0.0.1:8000/api/demo/status/<job_id>" \
+  -H "X-Demo-Api-Key: your-demo-key"
+```
+
+Get results:
+```
+curl -X GET "http://127.0.0.1:8000/api/demo/results/<job_id>" \
+  -H "X-Demo-Api-Key: your-demo-key"
+```
+
+Download files:
+```
+curl -X GET "http://127.0.0.1:8000/api/demo/download/<job_id>/worksheet" \
+  -H "X-Demo-Api-Key: your-demo-key" -o drake_worksheet.xlsx
+
+curl -X GET "http://127.0.0.1:8000/api/demo/download/<job_id>/notes" \
+  -H "X-Demo-Api-Key: your-demo-key" -o preparer_notes.md
+```
+
+---
+
 ## Client Profile System
 
 Each client has a living profile stored as an append-only log in the database,
