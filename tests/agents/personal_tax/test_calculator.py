@@ -729,6 +729,14 @@ class TestCalculateTax:
         expected = Decimal("2320") + Decimal("3216")
         assert result.gross_tax == expected
 
+    def test_tax_mfj_2023_brackets(self) -> None:
+        """MFJ 2023 brackets should be available."""
+        # 2023 MFJ: 10% up to $22,000, 12% up to $89,450
+        result = calculate_tax(Decimal("50000"), "mfj", 2023)
+
+        expected = Decimal("2200") + Decimal("3360")
+        assert result.gross_tax == expected
+
 
 # =============================================================================
 # Prior Year Variance Tests (PTAX-12)

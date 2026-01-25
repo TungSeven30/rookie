@@ -224,6 +224,42 @@ TAX_BRACKETS: dict[tuple[int, str], list[tuple[Decimal | None, Decimal]]] = {
         (Decimal("609350"), Decimal("0.35")),
         (None, Decimal("0.37")),
     ],
+    (2023, "single"): [
+        (Decimal("11000"), Decimal("0.10")),
+        (Decimal("44725"), Decimal("0.12")),
+        (Decimal("95375"), Decimal("0.22")),
+        (Decimal("182100"), Decimal("0.24")),
+        (Decimal("231250"), Decimal("0.32")),
+        (Decimal("578125"), Decimal("0.35")),
+        (None, Decimal("0.37")),
+    ],
+    (2023, "mfj"): [
+        (Decimal("22000"), Decimal("0.10")),
+        (Decimal("89450"), Decimal("0.12")),
+        (Decimal("190750"), Decimal("0.22")),
+        (Decimal("364200"), Decimal("0.24")),
+        (Decimal("462500"), Decimal("0.32")),
+        (Decimal("693750"), Decimal("0.35")),
+        (None, Decimal("0.37")),
+    ],
+    (2023, "mfs"): [
+        (Decimal("11000"), Decimal("0.10")),
+        (Decimal("44725"), Decimal("0.12")),
+        (Decimal("95375"), Decimal("0.22")),
+        (Decimal("182100"), Decimal("0.24")),
+        (Decimal("231250"), Decimal("0.32")),
+        (Decimal("346875"), Decimal("0.35")),
+        (None, Decimal("0.37")),
+    ],
+    (2023, "hoh"): [
+        (Decimal("15700"), Decimal("0.10")),
+        (Decimal("59850"), Decimal("0.12")),
+        (Decimal("95350"), Decimal("0.22")),
+        (Decimal("182100"), Decimal("0.24")),
+        (Decimal("231250"), Decimal("0.32")),
+        (Decimal("578100"), Decimal("0.35")),
+        (None, Decimal("0.37")),
+    ],
 }
 
 # Child Tax Credit constants (2024)
