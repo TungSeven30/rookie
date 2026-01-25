@@ -572,6 +572,56 @@ class TestDrakeWorksheetDataPopulation:
                     assert ws.cell(row=row, column=2).value == 56500.0
                     break
 
+    def test_worksheet_refund_includes_refundable_credits(
+        self,
+        sample_w2: W2Data,
+        sample_deduction_result: DeductionResult,
+    ) -> None:
+        """Refund/amount due includes refundable credits."""
+        income_summary = IncomeSummary(
+            total_wages=Decimal("50000"),
+            total_interest=Decimal("0"),
+            total_dividends=Decimal("0"),
+            total_qualified_dividends=Decimal("0"),
+            total_nec=Decimal("0"),
+            total_other=Decimal("0"),
+            total_income=Decimal("50000"),
+            federal_withholding=Decimal("3000"),
+        )
+        tax_result = TaxResult(
+            gross_tax=Decimal("5000"),
+            bracket_breakdown=[],
+            effective_rate=Decimal("0.10"),
+            credits_applied=Decimal("1000"),
+            final_liability=Decimal("4000"),
+            refundable_credits=Decimal("1500"),
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = generate_drake_worksheet(
+                "John Doe",
+                2024,
+                [sample_w2],
+                [],
+                [],
+                [],
+                income_summary,
+                sample_deduction_result,
+                tax_result,
+                Path(tmpdir) / "test.xlsx",
+            )
+
+            wb = load_workbook(path)
+            ws = wb["Summary"]
+
+            refund_value = None
+            for row in range(1, 40):
+                if ws.cell(row=row, column=1).value == "Refund/(Amount Due)":
+                    refund_value = ws.cell(row=row, column=2).value
+                    break
+
+            assert refund_value == 500.0
+
     def test_worksheet_multiple_w2s(
         self,
         sample_w2: W2Data,
@@ -805,6 +855,46 @@ class TestPreparerNotesContent:
             assert "increase 25%" in content
             assert "interest" in content
             assert "decrease 50%" in content
+
+    def test_notes_refund_includes_refundable_credits(
+        self,
+        sample_deduction_result: DeductionResult,
+    ) -> None:
+        """Refund reflects refundable credits in summary."""
+        income_summary = IncomeSummary(
+            total_wages=Decimal("50000"),
+            total_interest=Decimal("0"),
+            total_dividends=Decimal("0"),
+            total_qualified_dividends=Decimal("0"),
+            total_nec=Decimal("0"),
+            total_other=Decimal("0"),
+            total_income=Decimal("50000"),
+            federal_withholding=Decimal("3000"),
+        )
+        tax_result = TaxResult(
+            gross_tax=Decimal("5000"),
+            bracket_breakdown=[],
+            effective_rate=Decimal("0.10"),
+            credits_applied=Decimal("1000"),
+            final_liability=Decimal("4000"),
+            refundable_credits=Decimal("1500"),
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = generate_preparer_notes(
+                "John Doe",
+                2024,
+                income_summary,
+                sample_deduction_result,
+                tax_result,
+                [],
+                [],
+                "single",
+                Path(tmpdir) / "notes.md",
+            )
+
+            content = path.read_text()
+            assert "**Refund:** $500.00" in content
 
     def test_notes_includes_documents(
         self,

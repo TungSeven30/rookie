@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+import re
 from typing import TYPE_CHECKING, Any
 
 from src.agents.personal_tax.calculator import (
@@ -422,16 +423,17 @@ class PersonalTaxAgent:
         if prior_year_return is None:
             return expected
 
-        # Check prior year for other income types
-        prior_income = prior_year_return.get("income", {})
+        # Check prior year for other income types (nested or flat schema)
+        prior_income = prior_year_return.get("income")
+        income_data = prior_income if isinstance(prior_income, dict) else prior_year_return
 
-        if prior_income.get("interest", 0) > 0:
+        if income_data.get("interest", 0) > 0:
             expected.add(DocumentType.FORM_1099_INT)
 
-        if prior_income.get("dividends", 0) > 0:
+        if income_data.get("dividends", 0) > 0:
             expected.add(DocumentType.FORM_1099_DIV)
 
-        if prior_income.get("self_employment", 0) > 0:
+        if income_data.get("self_employment", 0) > 0:
             expected.add(DocumentType.FORM_1099_NEC)
 
         return expected
@@ -475,6 +477,20 @@ class PersonalTaxAgent:
         """
         conflicts: list[str] = []
 
+        def _normalize_ssn(value: str | None) -> str | None:
+            """Normalize SSN format and ignore EINs."""
+            if not value:
+                return None
+            cleaned = value.strip()
+            if re.fullmatch(r"\d{2}-\d{7}", cleaned):
+                return None
+            if re.fullmatch(r"\d{3}-\d{2}-\d{4}", cleaned):
+                return cleaned
+            digits = re.sub(r"\D", "", cleaned)
+            if len(digits) == 9:
+                return f"{digits[:3]}-{digits[3:5]}-{digits[5:]}"
+            return None
+
         # Collect SSNs from all documents
         ssns: dict[str, list[str]] = {}  # SSN -> list of filenames
         names: dict[str, list[str]] = {}  # name -> list of filenames
@@ -500,10 +516,11 @@ class PersonalTaxAgent:
                 continue
 
             # Track SSNs
-            if ssn:
-                if ssn not in ssns:
-                    ssns[ssn] = []
-                ssns[ssn].append(filename)
+            normalized_ssn = _normalize_ssn(ssn)
+            if normalized_ssn:
+                if normalized_ssn not in ssns:
+                    ssns[normalized_ssn] = []
+                ssns[normalized_ssn].append(filename)
 
             # Track names
             if name:
@@ -564,17 +581,18 @@ class PersonalTaxAgent:
             income_summary.total_income - deduction_result.amount,
         )
 
-        # Evaluate credits
+        # Calculate tax
+        tax_result = calculate_tax(taxable_income, filing_status, tax_year)
+
+        # Evaluate credits (requires pre-credit tax liability for ACTC)
         situation = TaxSituation(
             agi=income_summary.total_income,
             filing_status=filing_status,
             tax_year=tax_year,
             earned_income=income_summary.total_wages,
+            tax_liability=tax_result.gross_tax,
         )
         credits_result = evaluate_credits(situation)
-
-        # Calculate tax
-        tax_result = calculate_tax(taxable_income, filing_status, tax_year)
 
         # Apply credits
         tax_result.credits_applied = min(

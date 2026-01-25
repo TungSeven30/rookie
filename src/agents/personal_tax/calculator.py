@@ -76,8 +76,10 @@ class TaxSituation:
         tax_year: Tax year (e.g., 2024).
         num_qualifying_children: Number of children under 17.
         education_expenses: Qualified education expenses.
+        education_credit_type: Education credit type ("aoc" or "llc").
         retirement_contributions: Eligible retirement contributions.
         earned_income: Earned income for EITC calculation.
+        tax_liability: Pre-credit tax liability for ACTC calculation.
     """
 
     agi: Decimal
@@ -85,8 +87,10 @@ class TaxSituation:
     tax_year: int
     num_qualifying_children: int = 0
     education_expenses: Decimal = field(default_factory=lambda: Decimal("0"))
+    education_credit_type: str = "aoc"
     retirement_contributions: Decimal = field(default_factory=lambda: Decimal("0"))
     earned_income: Decimal = field(default_factory=lambda: Decimal("0"))
+    tax_liability: Decimal | None = None
 
 
 @dataclass
@@ -227,6 +231,14 @@ CTC_AMOUNT = Decimal("2000")
 CTC_PHASEOUT_SINGLE = Decimal("200000")
 CTC_PHASEOUT_MFJ = Decimal("400000")
 CTC_PHASEOUT_RATE = Decimal("50")  # $50 reduction per $1000 over threshold
+ACTC_MAX_PER_CHILD = Decimal("1700")
+
+# Education credit constants
+AOC_REFUNDABLE_RATE = Decimal("0.40")
+AOC_REFUNDABLE_CAP = Decimal("1000")
+LLC_RATE = Decimal("0.20")
+LLC_MAX_EXPENSES = Decimal("10000")
+LLC_MAX_CREDIT = Decimal("2000")
 
 # Saver's Credit rates by (year, filing_status) - list of (agi_limit, rate)
 SAVERS_CREDIT_RATES: dict[tuple[int, str], list[tuple[Decimal, Decimal]]] = {
@@ -256,6 +268,12 @@ SAVERS_CREDIT_MAX_CONTRIBUTION = Decimal("2000")
 # EITC simplified thresholds (2024, no children)
 EITC_MAX_NO_CHILDREN = Decimal("632")
 EITC_INCOME_LIMIT_SINGLE_NO_CHILDREN = Decimal("18591")
+EITC_INCOME_LIMITS_NO_CHILDREN = {
+    "single": EITC_INCOME_LIMIT_SINGLE_NO_CHILDREN,
+    "mfj": EITC_INCOME_LIMIT_SINGLE_NO_CHILDREN,
+    "mfs": EITC_INCOME_LIMIT_SINGLE_NO_CHILDREN,
+    "hoh": EITC_INCOME_LIMIT_SINGLE_NO_CHILDREN,
+}
 
 
 # Type alias for document union
@@ -429,40 +447,65 @@ def _calculate_child_tax_credit(situation: TaxSituation) -> Decimal:
     return credit
 
 
-def _calculate_education_credit(situation: TaxSituation) -> CreditItem:
-    """Calculate American Opportunity Credit.
+def _calculate_education_credits(situation: TaxSituation) -> list[CreditItem]:
+    """Calculate education credits (AOC or LLC).
 
     AOC: 100% of first $2,000 + 25% of next $2,000 = max $2,500.
-    40% is refundable (up to $1,000).
+    40% is refundable (up to $1,000). LLC: 20% of up to $10,000 (max $2,000).
 
     Args:
-        situation: TaxSituation with education expenses.
+        situation: TaxSituation with education expenses and credit type.
 
     Returns:
-        CreditItem for education credit.
+        List of CreditItem entries for education credits.
     """
     expenses = situation.education_expenses
-
     if expenses <= Decimal("0"):
-        return CreditItem(
-            name="American Opportunity Credit",
-            amount=Decimal("0"),
-            refundable=False,
-            form="Form 8863",
-        )
+        return []
 
-    # AOC calculation: 100% of first $2000, 25% of next $2000
+    credit_type = situation.education_credit_type.lower().strip()
+    if credit_type == "llc":
+        qualified_expenses = min(expenses, LLC_MAX_EXPENSES)
+        credit_amount = min(qualified_expenses * LLC_RATE, LLC_MAX_CREDIT)
+        if credit_amount <= Decimal("0"):
+            return []
+        return [
+            CreditItem(
+                name="Lifetime Learning Credit",
+                amount=credit_amount,
+                refundable=False,
+                form="Form 8863",
+            )
+        ]
+
+    # Default to American Opportunity Credit
     first_portion = min(expenses, Decimal("2000"))
     second_portion = min(max(expenses - Decimal("2000"), Decimal("0")), Decimal("2000"))
+    total_credit = first_portion + (second_portion * Decimal("0.25"))
 
-    credit = first_portion + (second_portion * Decimal("0.25"))
+    refundable = min(total_credit * AOC_REFUNDABLE_RATE, AOC_REFUNDABLE_CAP)
+    nonrefundable = total_credit - refundable
 
-    return CreditItem(
-        name="American Opportunity Credit",
-        amount=credit,
-        refundable=False,  # Simplified - 40% is actually refundable
-        form="Form 8863",
-    )
+    credits: list[CreditItem] = []
+    if nonrefundable > Decimal("0"):
+        credits.append(
+            CreditItem(
+                name="American Opportunity Credit",
+                amount=nonrefundable,
+                refundable=False,
+                form="Form 8863",
+            )
+        )
+    if refundable > Decimal("0"):
+        credits.append(
+            CreditItem(
+                name="American Opportunity Credit (Refundable)",
+                amount=refundable,
+                refundable=True,
+                form="Form 8863",
+            )
+        )
+    return credits
 
 
 def _calculate_savers_credit(situation: TaxSituation) -> Decimal:
@@ -518,10 +561,13 @@ def _calculate_eitc(situation: TaxSituation) -> Decimal:
         # Would need full EITC tables - return simplified estimate
         return Decimal("0")
 
-    # Check income limit
-    if situation.filing_status.lower() in ("single", "mfs", "hoh"):
-        if situation.agi > EITC_INCOME_LIMIT_SINGLE_NO_CHILDREN:
-            return Decimal("0")
+    # Check income limit by filing status
+    status = situation.filing_status.lower()
+    limit = EITC_INCOME_LIMITS_NO_CHILDREN.get(
+        status, EITC_INCOME_LIMIT_SINGLE_NO_CHILDREN
+    )
+    if situation.agi > limit:
+        return Decimal("0")
 
     # Simplified credit calculation - phase in and phase out
     # Max credit for no children in 2024 is $632
@@ -549,7 +595,8 @@ def _calculate_eitc(situation: TaxSituation) -> Decimal:
 def evaluate_credits(situation: TaxSituation) -> CreditsResult:
     """Evaluate all applicable tax credits.
 
-    Evaluates Child Tax Credit, Education Credits (AOC), Saver's Credit, and EITC.
+    Evaluates Child Tax Credit (and ACTC when liability is provided),
+    Education Credits (AOC/LLC), Saver's Credit, and EITC.
 
     Args:
         situation: TaxSituation with all relevant data.
@@ -569,20 +616,38 @@ def evaluate_credits(situation: TaxSituation) -> CreditsResult:
     # Child Tax Credit
     ctc_amount = _calculate_child_tax_credit(situation)
     if ctc_amount > Decimal("0"):
-        credits.append(
-            CreditItem(
-                name="Child Tax Credit",
-                amount=ctc_amount,
-                refundable=False,
-                form="Schedule 8812",
+        ctc_nonrefundable = ctc_amount
+        actc_amount = Decimal("0")
+        if situation.tax_liability is not None:
+            tax_liability = max(Decimal("0"), situation.tax_liability)
+            ctc_nonrefundable = min(ctc_amount, tax_liability)
+            unused_ctc = ctc_amount - ctc_nonrefundable
+            actc_cap = ACTC_MAX_PER_CHILD * situation.num_qualifying_children
+            actc_amount = min(unused_ctc, actc_cap)
+
+        if ctc_nonrefundable > Decimal("0"):
+            credits.append(
+                CreditItem(
+                    name="Child Tax Credit",
+                    amount=ctc_nonrefundable,
+                    refundable=False,
+                    form="Schedule 8812",
+                )
             )
-        )
+
+        if actc_amount > Decimal("0"):
+            credits.append(
+                CreditItem(
+                    name="Additional Child Tax Credit",
+                    amount=actc_amount,
+                    refundable=True,
+                    form="Schedule 8812",
+                )
+            )
 
     # Education Credit (AOC)
     if situation.education_expenses > Decimal("0"):
-        edu_credit = _calculate_education_credit(situation)
-        if edu_credit.amount > Decimal("0"):
-            credits.append(edu_credit)
+        credits.extend(_calculate_education_credits(situation))
 
     # Saver's Credit
     savers_amount = _calculate_savers_credit(situation)

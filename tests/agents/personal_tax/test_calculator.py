@@ -394,8 +394,36 @@ class TestChildTaxCredit:
         assert ctc is None
 
 
+class TestAdditionalChildTaxCredit:
+    """Tests for Additional Child Tax Credit (ACTC)."""
+
+    def test_actc_refundable_when_tax_liability_low(self) -> None:
+        """ACTC provides refundable credit when CTC exceeds liability."""
+        situation = TaxSituation(
+            agi=Decimal("60000"),
+            filing_status="single",
+            tax_year=2024,
+            num_qualifying_children=1,
+            tax_liability=Decimal("500"),
+        )
+
+        result = evaluate_credits(situation)
+
+        ctc = next((c for c in result.credits if c.name == "Child Tax Credit"), None)
+        actc = next(
+            (c for c in result.credits if c.name == "Additional Child Tax Credit"),
+            None,
+        )
+        assert ctc is not None
+        assert ctc.amount == Decimal("500")
+        assert actc is not None
+        assert actc.refundable is True
+        assert actc.amount == Decimal("1500")
+        assert result.total_nonrefundable == Decimal("500")
+        assert result.total_refundable == Decimal("1500")
+
 class TestEducationCredit:
-    """Tests for Education Credits (American Opportunity Credit)."""
+    """Tests for Education Credits (AOC and LLC)."""
 
     def test_education_credit_aoc_full(self) -> None:
         """AOC is up to $2,500 for first $4,000 in expenses."""
@@ -408,14 +436,14 @@ class TestEducationCredit:
 
         result = evaluate_credits(situation)
 
-        edu = next(
-            (c for c in result.credits if "Education" in c.name or "Opportunity" in c.name),
-            None,
-        )
-        assert edu is not None
         # AOC: 100% of first $2000 + 25% of next $2000 = $2000 + $500 = $2500
-        assert edu.amount == Decimal("2500")
-        assert edu.form == "Form 8863"
+        assert result.total_credits == Decimal("2500")
+        # 40% refundable (max $1000), 60% non-refundable
+        assert result.total_refundable == Decimal("1000")
+        assert result.total_nonrefundable == Decimal("1500")
+        assert any(
+            "American Opportunity Credit" in credit.name for credit in result.credits
+        )
 
     def test_education_credit_aoc_partial(self) -> None:
         """AOC for less than $4,000 in expenses."""
@@ -428,13 +456,32 @@ class TestEducationCredit:
 
         result = evaluate_credits(situation)
 
-        edu = next(
-            (c for c in result.credits if "Education" in c.name or "Opportunity" in c.name),
+        # AOC: 100% of first $2000 = $2000
+        assert result.total_credits == Decimal("2000")
+        assert result.total_refundable == Decimal("800")
+        assert result.total_nonrefundable == Decimal("1200")
+
+    def test_education_credit_llc(self) -> None:
+        """LLC is 20% of up to $10,000 of expenses (max $2,000)."""
+        situation = TaxSituation(
+            agi=Decimal("50000"),
+            filing_status="single",
+            tax_year=2024,
+            education_expenses=Decimal("5000"),
+            education_credit_type="llc",
+        )
+
+        result = evaluate_credits(situation)
+
+        assert result.total_credits == Decimal("1000")
+        assert result.total_refundable == Decimal("0")
+        assert result.total_nonrefundable == Decimal("1000")
+        llc = next(
+            (c for c in result.credits if "Lifetime Learning Credit" in c.name),
             None,
         )
-        assert edu is not None
-        # AOC: 100% of first $2000 = $2000
-        assert edu.amount == Decimal("2000")
+        assert llc is not None
+        assert llc.form == "Form 8863"
 
     def test_education_credit_no_expenses(self) -> None:
         """No education credit when no expenses."""
@@ -525,6 +572,21 @@ class TestEITC:
         assert eitc.refundable is True
         assert eitc.amount > Decimal("0")
         assert eitc.form == "Schedule EIC"
+
+    def test_eitc_mfj_agi_above_limit(self) -> None:
+        """MFJ should not qualify when AGI exceeds the income limit."""
+        situation = TaxSituation(
+            agi=Decimal("30000"),
+            filing_status="mfj",
+            tax_year=2024,
+            earned_income=Decimal("15000"),
+            num_qualifying_children=0,
+        )
+
+        result = evaluate_credits(situation)
+
+        eitc = next((c for c in result.credits if c.name == "Earned Income Credit"), None)
+        assert eitc is None
 
     def test_eitc_above_income_limit(self) -> None:
         """No EITC above income limit."""
@@ -992,12 +1054,9 @@ class TestEdgeCases:
 
         result = evaluate_credits(situation)
 
-        edu = next(
-            (c for c in result.credits if "Opportunity" in c.name),
-            None,
-        )
-        assert edu is not None
-        assert edu.amount == Decimal("2500")
+        assert result.total_credits == Decimal("2500")
+        assert result.total_refundable == Decimal("1000")
+        assert result.total_nonrefundable == Decimal("1500")
 
     def test_savers_credit_above_limit(self) -> None:
         """No Saver's Credit above AGI threshold."""

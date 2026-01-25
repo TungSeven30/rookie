@@ -296,6 +296,19 @@ class TestMissingDocuments:
         assert DocumentType.W2 in expected
         assert DocumentType.FORM_1099_INT in expected
 
+    def test_get_expected_types_with_flat_interest(self, temp_output_dir):
+        """Flat prior year schema with interest expects 1099-INT."""
+        agent = PersonalTaxAgent(
+            storage_url="/tmp",
+            output_dir=temp_output_dir,
+        )
+        prior = {"interest": 500}
+
+        expected = agent._get_expected_document_types(prior)
+
+        assert DocumentType.W2 in expected
+        assert DocumentType.FORM_1099_INT in expected
+
     def test_get_expected_types_with_dividends(self, temp_output_dir):
         """Prior year with dividends expects 1099-DIV."""
         agent = PersonalTaxAgent(
@@ -392,6 +405,33 @@ class TestConflictDetection:
         assert len(conflicts) >= 1
         assert len(agent.escalations) >= 1
         assert any("SSN" in e for e in agent.escalations)
+
+    def test_check_conflicts_ignores_ein_recipient_tin(
+        self, temp_output_dir, sample_w2
+    ):
+        """EIN recipient TINs should not trigger SSN conflicts."""
+        agent = PersonalTaxAgent(
+            storage_url="/tmp",
+            output_dir=temp_output_dir,
+        )
+        nec_with_ein = Form1099NEC(
+            payer_name="Client LLC",
+            payer_tin="12-3456789",
+            recipient_name="John Doe",
+            recipient_tin="12-3456789",
+            nonemployee_compensation=Decimal("1000"),
+            confidence=ConfidenceLevel.HIGH,
+        )
+
+        extractions = [
+            {"data": sample_w2, "filename": "w2.pdf"},
+            {"data": nec_with_ein, "filename": "1099nec.pdf"},
+        ]
+
+        conflicts = agent._check_conflicts(extractions)
+
+        assert conflicts == []
+        assert agent.escalations == []
 
     def test_check_conflicts_handles_empty_extractions(self, temp_output_dir):
         """Handles empty extractions list gracefully."""

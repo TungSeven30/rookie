@@ -173,7 +173,11 @@ def _add_summary_sheet(
     row += 1
 
     taxable_income = income_summary.total_income - deduction_result.amount
-    refund_due = income_summary.federal_withholding - tax_result.final_liability
+    refund_due = (
+        income_summary.federal_withholding
+        + tax_result.refundable_credits
+        - tax_result.final_liability
+    )
 
     tax_items = [
         ("Adjusted Gross Income", income_summary.total_income),
@@ -548,7 +552,11 @@ def generate_preparer_notes(
     taxable_income = max(
         Decimal("0"), income_summary.total_income - deduction_result.amount
     )
-    refund_due = income_summary.federal_withholding - tax_result.final_liability
+    refund_due = (
+        income_summary.federal_withholding
+        + tax_result.refundable_credits
+        - tax_result.final_liability
+    )
 
     lines: list[str] = []
 
