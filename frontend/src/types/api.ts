@@ -71,6 +71,12 @@ export interface ExtractionItem {
   filename: string
   document_type: string
   confidence: 'HIGH' | 'MEDIUM' | 'LOW'
+  classification_confidence?: number | null
+  classification_reasoning?: string | null
+  classification_overridden?: boolean
+  classification_original_type?: string | null
+  classification_original_confidence?: number | null
+  classification_original_reasoning?: string | null
   key_fields: Record<string, string>
 }
 

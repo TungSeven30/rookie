@@ -24,6 +24,7 @@ from src.agents.personal_tax.calculator import calculate_deductions
 from src.api.deps import get_db, verify_demo_api_key
 from src.core.config import settings
 from src.core.logging import get_logger
+from src.documents.models import Form1099DIV, Form1099INT, Form1099NEC, W2Data
 from src.integrations.storage import build_full_path, get_filesystem, write_file
 from src.models.client import Client
 from src.models.task import Escalation, Task, TaskArtifact, TaskStatus
@@ -134,6 +135,12 @@ class ExtractionItem(BaseModel):
     filename: str
     document_type: str
     confidence: str
+    classification_confidence: float | None = None
+    classification_reasoning: str | None = None
+    classification_overridden: bool = False
+    classification_original_type: str | None = None
+    classification_original_confidence: float | None = None
+    classification_original_reasoning: str | None = None
     key_fields: dict[str, str]
 
 
@@ -297,6 +304,38 @@ async def _get_metadata(session: AsyncSession, task_id: int) -> dict[str, Any]:
     return _json_loads(artifact.content if artifact else None)
 
 
+def _build_key_fields(extraction: dict[str, Any]) -> dict[str, str]:
+    """Build CPA-friendly key fields for an extraction."""
+    data = extraction.get("data")
+    key_fields: dict[str, str] = {}
+
+    if isinstance(data, W2Data):
+        key_fields = {
+            "wages": _format_currency(data.wages_tips_compensation),
+            "federal_withholding": _format_currency(data.federal_tax_withheld),
+        }
+    elif isinstance(data, Form1099INT):
+        key_fields = {
+            "interest_income": _format_currency(data.interest_income),
+            "federal_withholding": _format_currency(data.federal_tax_withheld),
+        }
+    elif isinstance(data, Form1099DIV):
+        key_fields = {
+            "ordinary_dividends": _format_currency(data.total_ordinary_dividends),
+            "qualified_dividends": _format_currency(data.qualified_dividends),
+        }
+    elif isinstance(data, Form1099NEC):
+        key_fields = {
+            "nonemployee_compensation": _format_currency(data.nonemployee_compensation),
+            "federal_withholding": _format_currency(data.federal_tax_withheld),
+        }
+
+    if extraction.get("multiple_forms_detected"):
+        key_fields["flags"] = "multiple_forms_detected"
+
+    return key_fields
+
+
 async def _build_results_payload(
     task_id: int,
     client_name: str,
@@ -393,7 +432,7 @@ async def _build_results_payload(
                 "classification_original_reasoning": ext.get(
                     "classification_original_reasoning"
                 ),
-                "key_fields": {},
+                "key_fields": _build_key_fields(ext),
             }
             for ext in result.extractions
         ],
@@ -942,6 +981,16 @@ async def get_results(
                 filename=e.get("filename", "unknown"),
                 document_type=e.get("document_type", "unknown"),
                 confidence=e.get("confidence", "HIGH"),
+                classification_confidence=e.get("classification_confidence"),
+                classification_reasoning=e.get("classification_reasoning"),
+                classification_overridden=e.get("classification_overridden", False),
+                classification_original_type=e.get("classification_original_type"),
+                classification_original_confidence=e.get(
+                    "classification_original_confidence"
+                ),
+                classification_original_reasoning=e.get(
+                    "classification_original_reasoning"
+                ),
                 key_fields=e.get("key_fields", {}),
             )
             for e in results.get("extractions", [])
@@ -976,7 +1025,7 @@ async def download_file(
     if not task:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    if task.status != TaskStatus.COMPLETED:
+    if task.status not in {TaskStatus.COMPLETED, TaskStatus.ESCALATED}:
         raise HTTPException(status_code=400, detail="Job not completed")
 
     if file_type == "worksheet":

@@ -193,6 +193,17 @@ export function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
         </div>
       </div>
 
+      <div className="mt-6 rounded-xl border border-surface-200 bg-surface-50 p-4">
+        <div className="text-sm font-medium text-surface-700 mb-2">
+          What you will get
+        </div>
+        <ul className="text-sm text-surface-500 space-y-1">
+          <li>• Extraction summary with confidence and source files</li>
+          <li>• CPA-ready Drake worksheet and preparer notes</li>
+          <li>• Escalation notes when a document needs review</li>
+        </ul>
+      </div>
+
       {/* Submit button */}
       <div className="mt-8">
         <button

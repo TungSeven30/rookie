@@ -19,8 +19,7 @@ interface StageInfo {
 
 const STAGES: StageInfo[] = [
   { key: 'scanning', label: 'Scanning documents', icon: FileSearch },
-  { key: 'classifying', label: 'Classifying documents', icon: FileText },
-  { key: 'extracting', label: 'Extracting data', icon: FileText },
+  { key: 'extracting', label: 'Extracting fields', icon: FileText },
   { key: 'calculating', label: 'Calculating tax', icon: Calculator },
   { key: 'generating', label: 'Generating outputs', icon: FileOutput },
 ]
@@ -58,6 +57,9 @@ export function ProcessingProgress({ jobId, onComplete, onError }: ProcessingPro
           setStageStatuses(prev => {
             const updated = { ...prev }
             const stageIndex = STAGES.findIndex(s => s.key === event.stage)
+            if (stageIndex < 0) {
+              return updated
+            }
             
             STAGES.forEach((s, i) => {
               if (i < stageIndex) {

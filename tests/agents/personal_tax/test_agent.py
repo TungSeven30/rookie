@@ -789,6 +789,65 @@ class TestAgentProcessWorkflow:
         assert exc_info.value.result is not None
         assert exc_info.value.result.extractions
 
+    async def test_extract_documents_flags_multiple_w2_forms(
+        self, temp_output_dir, sample_w2
+    ) -> None:
+        """Multiple W-2 forms on a page should trigger escalation."""
+        agent = PersonalTaxAgent(
+            storage_url="/tmp/storage",
+            output_dir=temp_output_dir,
+        )
+
+        mock_doc = ClientDocument(
+            path="client123/2024/w2.pdf",
+            name="w2.pdf",
+            size=1000,
+            modified=datetime.now(),
+            extension="pdf",
+        )
+
+        flagged_w2 = W2Data(
+            employee_ssn=sample_w2.employee_ssn,
+            employer_ein=sample_w2.employer_ein,
+            employer_name=sample_w2.employer_name,
+            employee_name=sample_w2.employee_name,
+            wages_tips_compensation=sample_w2.wages_tips_compensation,
+            federal_tax_withheld=sample_w2.federal_tax_withheld,
+            social_security_wages=sample_w2.social_security_wages,
+            social_security_tax=sample_w2.social_security_tax,
+            medicare_wages=sample_w2.medicare_wages,
+            medicare_tax=sample_w2.medicare_tax,
+            confidence=sample_w2.confidence,
+            uncertain_fields=["multiple_forms_detected"],
+        )
+
+        mock_classification = ClassificationResult(
+            document_type=DocumentType.W2,
+            confidence=0.95,
+            reasoning="W-2",
+        )
+
+        with patch(
+            "src.agents.personal_tax.agent.read_file",
+            return_value=b"dummy content",
+        ):
+            with patch.object(
+                agent, "_split_pdf_pages", return_value=[b"page1"]
+            ):
+                with patch(
+                    "src.agents.personal_tax.agent.classify_document",
+                    return_value=mock_classification,
+                ):
+                    with patch(
+                        "src.agents.personal_tax.agent.extract_document",
+                        return_value=flagged_w2,
+                    ):
+                        await agent._extract_documents([mock_doc])
+
+        assert any(
+            "Multiple W-2 forms detected" in reason for reason in agent.escalations
+        )
+
     async def test_agent_process_multiple_documents(
         self, temp_output_dir, mock_session, sample_w2, sample_1099_int
     ):

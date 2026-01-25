@@ -38,8 +38,8 @@ export default {
         },
       },
       fontFamily: {
-        display: ['DM Sans', 'system-ui', 'sans-serif'],
-        body: ['Inter', 'system-ui', 'sans-serif'],
+        display: ['Lexend', 'system-ui', 'sans-serif'],
+        body: ['IBM Plex Sans', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
     },

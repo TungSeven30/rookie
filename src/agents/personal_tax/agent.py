@@ -404,6 +404,21 @@ class PersonalTaxAgent:
                         classification.document_type,
                         page_media_type,
                     )
+                    multiple_forms_detected = (
+                        isinstance(data, W2Data)
+                        and "multiple_forms_detected" in data.uncertain_fields
+                    )
+                    if multiple_forms_detected:
+                        reason = (
+                            "Multiple W-2 forms detected on a single page. "
+                            f"Split the file and re-upload: {page_filename}"
+                        )
+                        if reason not in self.escalations:
+                            self.escalations.append(reason)
+                            logger.warning(
+                                "multiple_w2_forms_detected",
+                                filename=page_filename,
+                            )
 
                     extractions.append(
                         {
@@ -416,6 +431,7 @@ class PersonalTaxAgent:
                             "classification_confidence": classification.confidence,
                             "classification_reasoning": classification.reasoning,
                             "classification_overridden": classification_overridden,
+                            "multiple_forms_detected": multiple_forms_detected,
                             "classification_original_type": (
                                 original_type.value if classification_overridden else None
                             ),

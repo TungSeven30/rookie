@@ -661,6 +661,10 @@ def generate_preparer_notes(
                 f"- {filename}: filename suggests {doc_type}, "
                 f"but classifier predicted {original}"
             )
+        elif ext.get("multiple_forms_detected"):
+            classification_notes.append(
+                f"- {filename}: multiple W-2 forms detected on one page; split file"
+            )
         elif ext.get("classification_reasoning") and ext.get("confidence") in (
             "MEDIUM",
             "LOW",

@@ -60,7 +60,13 @@ Set confidence level based on document quality:
 
 Add any field names you're uncertain about to the uncertain_fields list.
 For empty monetary boxes, use 0 (zero).
-For missing optional fields, use default values."""
+For missing optional fields, use default values.
+
+IMPORTANT:
+- Do not round. Preserve cents exactly as shown (e.g., 78321.05).
+- If multiple W-2 forms appear on the same page, do not sum or average values.
+  Extract a single complete W-2 (prefer the largest/most complete copy) and
+  add "multiple_forms_detected" to the uncertain_fields list."""
 
 FORM_1099_INT_PROMPT = """Extract all data from this 1099-INT Interest Income form.
 

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from src.agents.personal_tax.agent import PersonalTaxResult
 from src.agents.personal_tax.calculator import IncomeSummary, TaxResult
+from src.documents.models import W2Data
 from src.api.demo import (
     DEMO_ARTIFACT_METADATA,
     DEMO_ARTIFACT_RESULTS,
@@ -272,6 +273,71 @@ async def test_build_results_payload_includes_classification_details() -> None:
     assert extraction["classification_reasoning"] == "Mock classification"
     assert extraction["classification_original_type"] == "1099-NEC"
     assert payload["escalations"] == ["Missing expected document: W2"]
+
+
+@pytest.mark.asyncio
+async def test_build_results_payload_includes_w2_key_fields() -> None:
+    """Results payload includes key W-2 fields for review."""
+    income_summary = IncomeSummary(
+        total_wages=Decimal("0"),
+        total_interest=Decimal("0"),
+        total_dividends=Decimal("0"),
+        total_qualified_dividends=Decimal("0"),
+        total_nec=Decimal("0"),
+        total_other=Decimal("0"),
+        total_income=Decimal("0"),
+        federal_withholding=Decimal("0"),
+    )
+    tax_result = TaxResult(
+        gross_tax=Decimal("0"),
+        bracket_breakdown=[],
+        effective_rate=Decimal("0"),
+        credits_applied=Decimal("0"),
+        final_liability=Decimal("0"),
+        refundable_credits=Decimal("0"),
+    )
+    w2 = W2Data(
+        employee_ssn="123-45-6789",
+        employer_ein="12-3456789",
+        employer_name="Test Corp",
+        employee_name="John Doe",
+        wages_tips_compensation=Decimal("78321.05"),
+        federal_tax_withheld=Decimal("13120.45"),
+        social_security_wages=Decimal("78321.05"),
+        social_security_tax=Decimal("4857.91"),
+        medicare_wages=Decimal("78321.05"),
+        medicare_tax=Decimal("1135.75"),
+        confidence="HIGH",
+    )
+    result = PersonalTaxResult(
+        drake_worksheet_path=Path("worksheet.xlsx"),
+        preparer_notes_path=Path("notes.md"),
+        income_summary=income_summary,
+        tax_result=tax_result,
+        variances=[],
+        extractions=[
+            {
+                "filename": "2024_W-2.pdf",
+                "document_type": "W2",
+                "confidence": "HIGH",
+                "data": w2,
+            }
+        ],
+        escalations=[],
+        overall_confidence="HIGH",
+    )
+
+    payload = await _build_results_payload(
+        task_id=1,
+        client_name="Test Client",
+        tax_year=2024,
+        filing_status="single",
+        result=result,
+    )
+
+    key_fields = payload["extractions"][0]["key_fields"]
+    assert key_fields["wages"] == "$78,321.05"
+    assert key_fields["federal_withholding"] == "$13,120.45"
 
 
 @pytest.mark.asyncio

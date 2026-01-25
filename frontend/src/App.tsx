@@ -62,12 +62,12 @@ export default function App() {
   }, [])
 
   return (
-    <div className="min-h-dvh bg-surface-50">
+    <div className="min-h-dvh bg-gradient-to-br from-surface-50 via-white to-primary-50/60">
       {/* Header */}
-      <header className="border-b border-surface-200 bg-white">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <header className="border-b border-surface-200 bg-white/80 backdrop-blur-sm">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary-600 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-primary-600 flex items-center justify-center shadow-sm">
               <svg
                 className="w-6 h-6 text-white"
                 viewBox="0 0 24 24"
@@ -89,7 +89,7 @@ export default function App() {
                 Rookie
               </h1>
               <p className="text-sm text-surface-500">
-                Personal Tax Demo
+                Personal Tax Demo • CPA-ready outputs
               </p>
             </div>
           </div>
@@ -97,7 +97,7 @@ export default function App() {
       </header>
 
       {/* Main content */}
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Upload state */}
         {state === 'upload' && (
           <div className="max-w-2xl mx-auto">
@@ -166,8 +166,8 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-surface-200 bg-white mt-auto">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <footer className="border-t border-surface-200 bg-white/80 backdrop-blur-sm mt-auto">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <p className="text-sm text-surface-400 text-center">
             Rookie • Your AI junior accountant • Demo Mode
           </p>
