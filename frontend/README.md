@@ -8,10 +8,6 @@ Production-quality React SPA for demonstrating the Personal Tax Agent to CPAs.
 
 1. **Backend**: Start the FastAPI server (from project root):
    ```bash
-   # Set mock mode for demo without Anthropic API key
-   export MOCK_LLM=true
-   
-   # Start the server on port 8001
    uv run uvicorn src.main:app --reload --port 8001
    ```
 
@@ -50,7 +46,7 @@ Production-quality React SPA for demonstrating the Personal Tax Agent to CPAs.
 
 Following the Rookie Website Design Brief:
 - Warm amber/gold accent (#d97706) - NOT blue
-- DM Sans headlines, Inter body, JetBrains Mono for numbers
+- Lexend headlines, IBM Plex Sans body, JetBrains Mono for numbers
 - Professional but approachable aesthetic
 - Shows actual work output, not AI hype
 

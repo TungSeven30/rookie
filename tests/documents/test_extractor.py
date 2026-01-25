@@ -9,7 +9,6 @@ Tests cover:
 
 from __future__ import annotations
 
-import os
 from decimal import Decimal
 
 import pytest
@@ -22,6 +21,7 @@ from src.documents.extractor import (
     extract_w2,
 )
 from src.documents.models import (
+    Box12Code,
     ConfidenceLevel,
     DocumentType,
     Form1099DIV,
@@ -34,6 +34,7 @@ from src.documents.prompts import (
     FORM_1099_DIV_PROMPT,
     FORM_1099_INT_PROMPT,
     FORM_1099_NEC_PROMPT,
+    W2_MULTI_EXTRACTION_PROMPT,
     W2_EXTRACTION_PROMPT,
 )
 
@@ -44,9 +45,92 @@ from src.documents.prompts import (
 
 
 @pytest.fixture(autouse=True)
-def mock_llm_mode(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Enable mock LLM mode for all tests."""
-    monkeypatch.setenv("MOCK_LLM", "true")
+def stub_extract_with_vision(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub vision extraction for unit tests."""
+    sample_w2 = W2Data(
+        employee_ssn="123-45-6789",
+        employer_ein="12-3456789",
+        employer_name="Acme Corporation",
+        employee_name="John Q. Taxpayer",
+        wages_tips_compensation=Decimal("75000.00"),
+        federal_tax_withheld=Decimal("12500.00"),
+        social_security_wages=Decimal("75000.00"),
+        social_security_tax=Decimal("4650.00"),
+        medicare_wages=Decimal("75000.00"),
+        medicare_tax=Decimal("1087.50"),
+        box_12_codes=[
+            Box12Code(code="D", amount=Decimal("5000.00")),
+            Box12Code(code="DD", amount=Decimal("8500.00")),
+        ],
+        statutory_employee=False,
+        retirement_plan=True,
+        third_party_sick_pay=False,
+        state_wages=Decimal("75000.00"),
+        state_tax_withheld=Decimal("3750.00"),
+        confidence=ConfidenceLevel.HIGH,
+        uncertain_fields=[],
+    )
+    sample_1099_int = Form1099INT(
+        payer_name="First National Bank",
+        payer_tin="98-7654321",
+        recipient_tin="123-45-6789",
+        interest_income=Decimal("1250.75"),
+        early_withdrawal_penalty=Decimal("0"),
+        interest_us_savings_bonds=Decimal("125.00"),
+        federal_tax_withheld=Decimal("0"),
+        investment_expenses=Decimal("0"),
+        foreign_tax_paid=Decimal("0"),
+        tax_exempt_interest=Decimal("0"),
+        private_activity_bond_interest=Decimal("0"),
+        confidence=ConfidenceLevel.HIGH,
+        uncertain_fields=[],
+    )
+    sample_1099_div = Form1099DIV(
+        payer_name="Vanguard Brokerage Services",
+        payer_tin="23-1234567",
+        recipient_tin="123-45-6789",
+        total_ordinary_dividends=Decimal("3500.00"),
+        qualified_dividends=Decimal("2800.00"),
+        total_capital_gain_distributions=Decimal("500.00"),
+        unrecaptured_1250_gain=Decimal("0"),
+        section_1202_gain=Decimal("0"),
+        collectibles_gain=Decimal("0"),
+        nondividend_distributions=Decimal("0"),
+        federal_tax_withheld=Decimal("0"),
+        section_199a_dividends=Decimal("350.00"),
+        foreign_tax_paid=Decimal("25.00"),
+        exempt_interest_dividends=Decimal("0"),
+        confidence=ConfidenceLevel.HIGH,
+        uncertain_fields=[],
+    )
+    sample_1099_nec = Form1099NEC(
+        payer_name="Tech Consulting LLC",
+        payer_tin="45-6789012",
+        recipient_name="Jane Contractor",
+        recipient_tin="987-65-4321",
+        nonemployee_compensation=Decimal("25000.00"),
+        direct_sales=False,
+        federal_tax_withheld=Decimal("0"),
+        state_tax_withheld=Decimal("0"),
+        confidence=ConfidenceLevel.MEDIUM,
+        uncertain_fields=["state_tax_withheld"],
+    )
+
+    async def fake_extract_with_vision(*, response_model, **kwargs):
+        if response_model is W2Batch:
+            return W2Batch(forms=[sample_w2])
+        if response_model is Form1099INT:
+            return sample_1099_int
+        if response_model is Form1099DIV:
+            return sample_1099_div
+        if response_model is Form1099NEC:
+            return sample_1099_nec
+        raise AssertionError("Unexpected response_model")
+
+    monkeypatch.setattr(
+        "src.documents.extractor._extract_with_vision",
+        fake_extract_with_vision,
+    )
 
 
 @pytest.fixture
@@ -298,6 +382,11 @@ class TestPrompts:
         assert "SSN" in W2_EXTRACTION_PROMPT or "Social Security Number" in W2_EXTRACTION_PROMPT
         assert "EIN" in W2_EXTRACTION_PROMPT or "Employer Identification Number" in W2_EXTRACTION_PROMPT
 
+    def test_w2_multi_prompt_mentions_multiple_forms(self) -> None:
+        """Multi W-2 prompt requires extracting all forms."""
+        assert "Extract ALL W-2 forms" in W2_MULTI_EXTRACTION_PROMPT
+        assert "multiple" in W2_MULTI_EXTRACTION_PROMPT.lower()
+
     def test_1099_int_prompt_mentions_interest(self) -> None:
         """1099-INT prompt mentions interest income."""
         assert "interest" in FORM_1099_INT_PROMPT.lower()
@@ -339,17 +428,18 @@ class TestEdgeCases:
     async def test_w2_uncertain_fields_is_list(self, fake_image_bytes: bytes) -> None:
         """uncertain_fields is always a list."""
         result = await extract_w2(fake_image_bytes, "image/jpeg")
-        assert isinstance(result.uncertain_fields, list)
+        w2 = result.forms[0]
+        assert isinstance(w2.uncertain_fields, list)
 
     @pytest.mark.asyncio
-    async def test_empty_bytes_still_works_in_mock(self) -> None:
-        """Empty bytes work in mock mode."""
+    async def test_empty_bytes_still_works(self) -> None:
+        """Empty bytes still return a W-2 batch."""
         result = await extract_w2(b"", "image/jpeg")
         assert isinstance(result, W2Batch)
 
     @pytest.mark.asyncio
-    async def test_different_media_types_work_in_mock(self) -> None:
-        """Different media types work in mock mode."""
+    async def test_different_media_types_work(self) -> None:
+        """Different media types work for W-2 extraction."""
         for media_type in ["image/jpeg", "image/png", "image/gif", "image/webp"]:
             result = await extract_w2(b"test", media_type)
             assert isinstance(result, W2Batch)

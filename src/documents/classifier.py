@@ -13,7 +13,6 @@ Example:
 from __future__ import annotations
 
 import base64
-import os
 from io import BytesIO
 from typing import TYPE_CHECKING
 
@@ -110,10 +109,6 @@ async def classify_document(
         ...     result = await classify_document(f.read(), "image/jpeg")
         >>> print(result.document_type)  # DocumentType.W2
     """
-    # Check for mock mode (for testing without API key)
-    if os.environ.get("MOCK_LLM", "").lower() == "true":
-        return _mock_classify(image_bytes)
-
     # Convert PDFs to images for classification
     if media_type == "application/pdf":
         image_bytes = _convert_pdf_to_image_bytes(image_bytes)
@@ -196,45 +191,3 @@ def _convert_pdf_to_image_bytes(pdf_bytes: bytes) -> bytes:
     return buffer.getvalue()
 
 
-def _mock_classify(image_bytes: bytes) -> ClassificationResult:
-    """Mock classification for testing without API calls.
-
-    Uses a deterministic algorithm based on image bytes length
-    to return consistent results for testing.
-
-    Args:
-        image_bytes: Document image as bytes.
-
-    Returns:
-        ClassificationResult with mock values.
-    """
-    # Use hash of bytes length for deterministic mock response
-    byte_length = len(image_bytes)
-    type_index = byte_length % 5
-
-    document_types = [
-        DocumentType.W2,
-        DocumentType.FORM_1099_INT,
-        DocumentType.FORM_1099_DIV,
-        DocumentType.FORM_1099_NEC,
-        DocumentType.UNKNOWN,
-    ]
-
-    selected_type = document_types[type_index]
-
-    # Generate confidence based on type (UNKNOWN gets lower confidence)
-    confidence = 0.50 if selected_type == DocumentType.UNKNOWN else 0.85 + (byte_length % 10) / 100
-
-    reasoning_map = {
-        DocumentType.W2: "Mock: Document appears to be a W-2 based on wage and tax statement format.",
-        DocumentType.FORM_1099_INT: "Mock: Document appears to be a 1099-INT based on interest income fields.",
-        DocumentType.FORM_1099_DIV: "Mock: Document appears to be a 1099-DIV based on dividend distribution fields.",
-        DocumentType.FORM_1099_NEC: "Mock: Document appears to be a 1099-NEC based on nonemployee compensation box.",
-        DocumentType.UNKNOWN: "Mock: Unable to determine document type with confidence.",
-    }
-
-    return ClassificationResult(
-        document_type=selected_type,
-        confidence=min(confidence, 1.0),
-        reasoning=reasoning_map[selected_type],
-    )

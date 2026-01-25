@@ -19,13 +19,9 @@ Example:
 from __future__ import annotations
 
 import base64
-import os
-from decimal import Decimal
 from typing import TYPE_CHECKING, Union
 
 from src.documents.models import (
-    Box12Code,
-    ConfidenceLevel,
     DocumentType,
     Form1099DIV,
     Form1099INT,
@@ -126,10 +122,6 @@ async def extract_w2(
     Raises:
         ValueError: If media_type is not supported.
     """
-    # Check for mock mode
-    if os.environ.get("MOCK_LLM", "").lower() == "true":
-        return W2Batch(forms=[_mock_w2()])
-
     return await _extract_with_vision(
         image_bytes=image_bytes,
         media_type=media_type,
@@ -159,10 +151,6 @@ async def extract_1099_int(
     Raises:
         ValueError: If media_type is not supported.
     """
-    # Check for mock mode
-    if os.environ.get("MOCK_LLM", "").lower() == "true":
-        return _mock_1099_int()
-
     return await _extract_with_vision(
         image_bytes=image_bytes,
         media_type=media_type,
@@ -192,10 +180,6 @@ async def extract_1099_div(
     Raises:
         ValueError: If media_type is not supported.
     """
-    # Check for mock mode
-    if os.environ.get("MOCK_LLM", "").lower() == "true":
-        return _mock_1099_div()
-
     return await _extract_with_vision(
         image_bytes=image_bytes,
         media_type=media_type,
@@ -225,10 +209,6 @@ async def extract_1099_nec(
     Raises:
         ValueError: If media_type is not supported.
     """
-    # Check for mock mode
-    if os.environ.get("MOCK_LLM", "").lower() == "true":
-        return _mock_1099_nec()
-
     return await _extract_with_vision(
         image_bytes=image_bytes,
         media_type=media_type,
@@ -307,105 +287,3 @@ async def _extract_with_vision(
     return result
 
 
-# =============================================================================
-# Mock functions for testing without API calls
-# =============================================================================
-
-
-def _mock_w2() -> W2Data:
-    """Generate mock W2Data for testing.
-
-    Returns realistic mock data with proper formatting and validation.
-    """
-    return W2Data(
-        employee_ssn="123-45-6789",
-        employer_ein="12-3456789",
-        employer_name="Acme Corporation",
-        employee_name="John Q. Taxpayer",
-        wages_tips_compensation=Decimal("75000.00"),
-        federal_tax_withheld=Decimal("12500.00"),
-        social_security_wages=Decimal("75000.00"),
-        social_security_tax=Decimal("4650.00"),
-        medicare_wages=Decimal("75000.00"),
-        medicare_tax=Decimal("1087.50"),
-        social_security_tips=Decimal("0"),
-        allocated_tips=Decimal("0"),
-        dependent_care_benefits=Decimal("0"),
-        box_12_codes=[
-            Box12Code(code="D", amount=Decimal("5000.00")),
-            Box12Code(code="DD", amount=Decimal("8500.00")),
-        ],
-        statutory_employee=False,
-        retirement_plan=True,
-        third_party_sick_pay=False,
-        state_wages=Decimal("75000.00"),
-        state_tax_withheld=Decimal("3750.00"),
-        confidence=ConfidenceLevel.HIGH,
-        uncertain_fields=[],
-    )
-
-
-def _mock_1099_int() -> Form1099INT:
-    """Generate mock Form1099INT for testing.
-
-    Returns realistic mock data for interest income form.
-    """
-    return Form1099INT(
-        payer_name="First National Bank",
-        payer_tin="98-7654321",
-        recipient_tin="123-45-6789",
-        interest_income=Decimal("1250.75"),
-        early_withdrawal_penalty=Decimal("0"),
-        interest_us_savings_bonds=Decimal("125.00"),
-        federal_tax_withheld=Decimal("0"),
-        investment_expenses=Decimal("0"),
-        foreign_tax_paid=Decimal("0"),
-        tax_exempt_interest=Decimal("0"),
-        private_activity_bond_interest=Decimal("0"),
-        confidence=ConfidenceLevel.HIGH,
-        uncertain_fields=[],
-    )
-
-
-def _mock_1099_div() -> Form1099DIV:
-    """Generate mock Form1099DIV for testing.
-
-    Returns realistic mock data for dividend income form.
-    """
-    return Form1099DIV(
-        payer_name="Vanguard Brokerage Services",
-        payer_tin="23-1234567",
-        recipient_tin="123-45-6789",
-        total_ordinary_dividends=Decimal("3500.00"),
-        qualified_dividends=Decimal("2800.00"),
-        total_capital_gain_distributions=Decimal("500.00"),
-        unrecaptured_1250_gain=Decimal("0"),
-        section_1202_gain=Decimal("0"),
-        collectibles_gain=Decimal("0"),
-        nondividend_distributions=Decimal("0"),
-        federal_tax_withheld=Decimal("0"),
-        section_199a_dividends=Decimal("350.00"),
-        foreign_tax_paid=Decimal("25.00"),
-        exempt_interest_dividends=Decimal("0"),
-        confidence=ConfidenceLevel.HIGH,
-        uncertain_fields=[],
-    )
-
-
-def _mock_1099_nec() -> Form1099NEC:
-    """Generate mock Form1099NEC for testing.
-
-    Returns realistic mock data for nonemployee compensation form.
-    """
-    return Form1099NEC(
-        payer_name="Tech Consulting LLC",
-        payer_tin="45-6789012",
-        recipient_name="Jane Contractor",
-        recipient_tin="987-65-4321",
-        nonemployee_compensation=Decimal("25000.00"),
-        direct_sales=False,
-        federal_tax_withheld=Decimal("0"),
-        state_tax_withheld=Decimal("0"),
-        confidence=ConfidenceLevel.MEDIUM,
-        uncertain_fields=["state_tax_withheld"],
-    )
