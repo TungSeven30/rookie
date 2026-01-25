@@ -36,6 +36,7 @@ from src.documents.models import (
     Form1099DIV,
     Form1099INT,
     Form1099NEC,
+    W2Batch,
     W2Data,
 )
 from src.documents.scanner import ClientDocument
@@ -792,7 +793,7 @@ class TestAgentProcessWorkflow:
     async def test_extract_documents_flags_multiple_w2_forms(
         self, temp_output_dir, sample_w2
     ) -> None:
-        """Multiple W-2 forms on a page should trigger escalation."""
+        """Multiple W-2 forms on a page with single output should escalate."""
         agent = PersonalTaxAgent(
             storage_url="/tmp/storage",
             output_dir=temp_output_dir,
@@ -820,6 +821,7 @@ class TestAgentProcessWorkflow:
             confidence=sample_w2.confidence,
             uncertain_fields=["multiple_forms_detected"],
         )
+        batch = W2Batch(forms=[flagged_w2])
 
         mock_classification = ClassificationResult(
             document_type=DocumentType.W2,
@@ -840,13 +842,75 @@ class TestAgentProcessWorkflow:
                 ):
                     with patch(
                         "src.agents.personal_tax.agent.extract_document",
-                        return_value=flagged_w2,
+                        return_value=batch,
                     ):
                         await agent._extract_documents([mock_doc])
 
         assert any(
             "Multiple W-2 forms detected" in reason for reason in agent.escalations
         )
+
+    async def test_extract_documents_flattens_w2_batch(
+        self, temp_output_dir, sample_w2
+    ) -> None:
+        """W-2 batch results are flattened into separate extractions."""
+        agent = PersonalTaxAgent(
+            storage_url="/tmp/storage",
+            output_dir=temp_output_dir,
+        )
+
+        mock_doc = ClientDocument(
+            path="client123/2024/w2.pdf",
+            name="w2.pdf",
+            size=1000,
+            modified=datetime.now(),
+            extension="pdf",
+        )
+
+        second_w2 = W2Data(
+            employee_ssn="987-65-4321",
+            employer_ein="98-7654321",
+            employer_name="Beta Corp",
+            employee_name="Jane Doe",
+            wages_tips_compensation=Decimal("72250.99"),
+            federal_tax_withheld=Decimal("12692.76"),
+            social_security_wages=Decimal("72250.99"),
+            social_security_tax=Decimal("4489.56"),
+            medicare_wages=Decimal("72250.99"),
+            medicare_tax=Decimal("1047.64"),
+            confidence=ConfidenceLevel.HIGH,
+        )
+
+        batch = W2Batch(forms=[sample_w2, second_w2])
+
+        mock_classification = ClassificationResult(
+            document_type=DocumentType.W2,
+            confidence=0.95,
+            reasoning="W-2",
+        )
+
+        with patch(
+            "src.agents.personal_tax.agent.read_file",
+            return_value=b"dummy content",
+        ):
+            with patch.object(
+                agent, "_split_pdf_pages", return_value=[b"page1"]
+            ):
+                with patch(
+                    "src.agents.personal_tax.agent.classify_document",
+                    return_value=mock_classification,
+                ):
+                    with patch(
+                        "src.agents.personal_tax.agent.extract_document",
+                        return_value=batch,
+                    ):
+                        results = await agent._extract_documents([mock_doc])
+
+        assert len(results) == 2
+        wages = [ext["data"].wages_tips_compensation for ext in results]
+        withholdings = [ext["data"].federal_tax_withheld for ext in results]
+        assert Decimal("72250.99") in wages
+        assert Decimal("12692.76") in withholdings
 
     async def test_agent_process_multiple_documents(
         self, temp_output_dir, mock_session, sample_w2, sample_1099_int

@@ -192,6 +192,14 @@ class W2Data(BaseModel):
         return validate_ein(v)
 
 
+class W2Batch(BaseModel):
+    """Batch of W-2 forms extracted from a single page."""
+
+    forms: list[W2Data] = Field(
+        default_factory=list, description="Extracted W-2 forms from the page."
+    )
+
+
 class Form1099INT(BaseModel):
     """1099-INT Interest Income data.
 

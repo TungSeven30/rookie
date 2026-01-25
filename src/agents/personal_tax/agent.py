@@ -51,6 +51,7 @@ from src.documents.models import (
     Form1099DIV,
     Form1099INT,
     Form1099NEC,
+    W2Batch,
     W2Data,
 )
 from src.documents.scanner import ClientDocument, scan_client_folder
@@ -404,21 +405,75 @@ class PersonalTaxAgent:
                         classification.document_type,
                         page_media_type,
                     )
-                    multiple_forms_detected = (
-                        isinstance(data, W2Data)
-                        and "multiple_forms_detected" in data.uncertain_fields
-                    )
-                    if multiple_forms_detected:
-                        reason = (
-                            "Multiple W-2 forms detected on a single page. "
-                            f"Split the file and re-upload: {page_filename}"
+
+                    w2_forms: list[W2Data] | None = None
+                    if isinstance(data, W2Batch):
+                        w2_forms = data.forms
+                    elif isinstance(data, W2Data):
+                        w2_forms = [data]
+
+                    if w2_forms is not None:
+                        flagged_multiple = any(
+                            "multiple_forms_detected" in form.uncertain_fields
+                            for form in w2_forms
                         )
-                        if reason not in self.escalations:
-                            self.escalations.append(reason)
-                            logger.warning(
-                                "multiple_w2_forms_detected",
-                                filename=page_filename,
+                        if flagged_multiple and len(w2_forms) <= 1:
+                            reason = (
+                                "Multiple W-2 forms detected on a single page. "
+                                f"Split the file and re-upload: {page_filename}"
                             )
+                            if reason not in self.escalations:
+                                self.escalations.append(reason)
+                                logger.warning(
+                                    "multiple_w2_forms_detected",
+                                    filename=page_filename,
+                                )
+
+                        for form_index, form in enumerate(w2_forms, start=1):
+                            form_filename = (
+                                page_filename
+                                if len(w2_forms) == 1
+                                else f"{page_filename} (form {form_index})"
+                            )
+                            multiple_forms_detected = (
+                                "multiple_forms_detected" in form.uncertain_fields
+                            )
+                            extractions.append(
+                                {
+                                    "type": classification.document_type,
+                                    "document_type": classification.document_type.value,
+                                    "filename": form_filename,
+                                    "confidence": form.confidence.value,
+                                    "data": form,
+                                    "classification": classification,
+                                    "classification_confidence": classification.confidence,
+                                    "classification_reasoning": classification.reasoning,
+                                    "classification_overridden": classification_overridden,
+                                    "multiple_forms_detected": multiple_forms_detected,
+                                    "classification_original_type": (
+                                        original_type.value
+                                        if classification_overridden
+                                        else None
+                                    ),
+                                    "classification_original_confidence": (
+                                        original_confidence
+                                        if classification_overridden
+                                        else None
+                                    ),
+                                    "classification_original_reasoning": (
+                                        original_reasoning
+                                        if classification_overridden
+                                        else None
+                                    ),
+                                }
+                            )
+                            logger.info(
+                                "document_extracted",
+                                filename=form_filename,
+                                document_type=classification.document_type.value,
+                                confidence=form.confidence.value,
+                            )
+                        continue
 
                     extractions.append(
                         {
@@ -431,7 +486,7 @@ class PersonalTaxAgent:
                             "classification_confidence": classification.confidence,
                             "classification_reasoning": classification.reasoning,
                             "classification_overridden": classification_overridden,
-                            "multiple_forms_detected": multiple_forms_detected,
+                            "multiple_forms_detected": False,
                             "classification_original_type": (
                                 original_type.value if classification_overridden else None
                             ),

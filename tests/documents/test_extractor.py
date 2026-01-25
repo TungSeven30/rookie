@@ -27,6 +27,7 @@ from src.documents.models import (
     Form1099DIV,
     Form1099INT,
     Form1099NEC,
+    W2Batch,
     W2Data,
 )
 from src.documents.prompts import (
@@ -66,27 +67,30 @@ class TestExtractW2:
     async def test_returns_w2_data(self, fake_image_bytes: bytes) -> None:
         """extract_w2 returns W2Data instance."""
         result = await extract_w2(fake_image_bytes, "image/jpeg")
-        assert isinstance(result, W2Data)
+        assert isinstance(result, W2Batch)
+        assert isinstance(result.forms[0], W2Data)
 
     @pytest.mark.asyncio
     async def test_w2_has_required_identity_fields(self, fake_image_bytes: bytes) -> None:
         """W2Data has all required identity fields populated."""
         result = await extract_w2(fake_image_bytes, "image/jpeg")
-        assert result.employee_ssn  # Non-empty
-        assert result.employer_ein
-        assert result.employer_name
-        assert result.employee_name
+        w2 = result.forms[0]
+        assert w2.employee_ssn  # Non-empty
+        assert w2.employer_ein
+        assert w2.employer_name
+        assert w2.employee_name
 
     @pytest.mark.asyncio
     async def test_w2_has_required_compensation_fields(self, fake_image_bytes: bytes) -> None:
         """W2Data has all required compensation fields."""
         result = await extract_w2(fake_image_bytes, "image/jpeg")
-        assert result.wages_tips_compensation >= Decimal("0")
-        assert result.federal_tax_withheld >= Decimal("0")
-        assert result.social_security_wages >= Decimal("0")
-        assert result.social_security_tax >= Decimal("0")
-        assert result.medicare_wages >= Decimal("0")
-        assert result.medicare_tax >= Decimal("0")
+        w2 = result.forms[0]
+        assert w2.wages_tips_compensation >= Decimal("0")
+        assert w2.federal_tax_withheld >= Decimal("0")
+        assert w2.social_security_wages >= Decimal("0")
+        assert w2.social_security_tax >= Decimal("0")
+        assert w2.medicare_wages >= Decimal("0")
+        assert w2.medicare_tax >= Decimal("0")
 
     @pytest.mark.asyncio
     async def test_w2_ssn_properly_formatted(self, fake_image_bytes: bytes) -> None:
@@ -94,7 +98,8 @@ class TestExtractW2:
         result = await extract_w2(fake_image_bytes, "image/jpeg")
         import re
 
-        assert re.match(r"^\d{3}-\d{2}-\d{4}$", result.employee_ssn)
+        w2 = result.forms[0]
+        assert re.match(r"^\d{3}-\d{2}-\d{4}$", w2.employee_ssn)
 
     @pytest.mark.asyncio
     async def test_w2_ein_properly_formatted(self, fake_image_bytes: bytes) -> None:
@@ -102,22 +107,25 @@ class TestExtractW2:
         result = await extract_w2(fake_image_bytes, "image/jpeg")
         import re
 
-        assert re.match(r"^\d{2}-\d{7}$", result.employer_ein)
+        w2 = result.forms[0]
+        assert re.match(r"^\d{2}-\d{7}$", w2.employer_ein)
 
     @pytest.mark.asyncio
     async def test_w2_has_confidence(self, fake_image_bytes: bytes) -> None:
         """W2Data includes confidence level."""
         result = await extract_w2(fake_image_bytes, "image/jpeg")
-        assert result.confidence in [ConfidenceLevel.HIGH, ConfidenceLevel.MEDIUM, ConfidenceLevel.LOW]
+        w2 = result.forms[0]
+        assert w2.confidence in [ConfidenceLevel.HIGH, ConfidenceLevel.MEDIUM, ConfidenceLevel.LOW]
 
     @pytest.mark.asyncio
     async def test_w2_box_12_codes(self, fake_image_bytes: bytes) -> None:
         """W2Data can contain Box 12 codes."""
         result = await extract_w2(fake_image_bytes, "image/jpeg")
+        w2 = result.forms[0]
         # Mock data has box 12 codes
-        assert isinstance(result.box_12_codes, list)
-        if result.box_12_codes:
-            code = result.box_12_codes[0]
+        assert isinstance(w2.box_12_codes, list)
+        if w2.box_12_codes:
+            code = w2.box_12_codes[0]
             assert hasattr(code, "code")
             assert hasattr(code, "amount")
 
@@ -245,7 +253,8 @@ class TestExtractDocument:
     async def test_routes_to_w2(self, fake_image_bytes: bytes) -> None:
         """extract_document routes W2 to extract_w2."""
         result = await extract_document(fake_image_bytes, DocumentType.W2, "image/jpeg")
-        assert isinstance(result, W2Data)
+        assert isinstance(result, W2Batch)
+        assert isinstance(result.forms[0], W2Data)
 
     @pytest.mark.asyncio
     async def test_routes_to_1099_int(self, fake_image_bytes: bytes) -> None:
@@ -336,11 +345,11 @@ class TestEdgeCases:
     async def test_empty_bytes_still_works_in_mock(self) -> None:
         """Empty bytes work in mock mode."""
         result = await extract_w2(b"", "image/jpeg")
-        assert isinstance(result, W2Data)
+        assert isinstance(result, W2Batch)
 
     @pytest.mark.asyncio
     async def test_different_media_types_work_in_mock(self) -> None:
         """Different media types work in mock mode."""
         for media_type in ["image/jpeg", "image/png", "image/gif", "image/webp"]:
             result = await extract_w2(b"test", media_type)
-            assert isinstance(result, W2Data)
+            assert isinstance(result, W2Batch)

@@ -68,6 +68,23 @@ IMPORTANT:
   Extract a single complete W-2 (prefer the largest/most complete copy) and
   add "multiple_forms_detected" to the uncertain_fields list."""
 
+W2_MULTI_EXTRACTION_PROMPT = """Extract ALL W-2 forms visible on this page.
+
+For each W-2 form, capture the same fields as a standard W-2:
+- Box a (SSN), Box b (EIN), Box c (employer name), Box e (employee name)
+- Box 1 wages, Box 2 federal withheld, Box 3/4 Social Security, Box 5/6 Medicare
+- Box 7/8 tips, Box 10 dependent care, Box 12 codes, Box 13 checkboxes
+- Box 16/17 state wages/tax
+
+Rules:
+- If the page contains multiple copies of the SAME W-2, keep only the most complete copy.
+- If the page contains multiple distinct W-2s, return each as a separate entry.
+- Do not sum or average values across forms.
+- Preserve cents exactly as shown (e.g., 78321.05).
+- If multiple W-2 forms appear on the page, add "multiple_forms_detected" to uncertain_fields.
+
+Return a list named "forms" containing each W-2."""
+
 FORM_1099_INT_PROMPT = """Extract all data from this 1099-INT Interest Income form.
 
 For each field, extract the exact value shown. Box locations on a standard 1099-INT:
@@ -167,6 +184,7 @@ Nonemployee compensation (Box 1) is the most critical field - this is the total 
 
 __all__ = [
     "W2_EXTRACTION_PROMPT",
+    "W2_MULTI_EXTRACTION_PROMPT",
     "FORM_1099_INT_PROMPT",
     "FORM_1099_DIV_PROMPT",
     "FORM_1099_NEC_PROMPT",

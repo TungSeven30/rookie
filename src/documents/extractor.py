@@ -30,12 +30,14 @@ from src.documents.models import (
     Form1099DIV,
     Form1099INT,
     Form1099NEC,
+    W2Batch,
     W2Data,
 )
 from src.documents.prompts import (
     FORM_1099_DIV_PROMPT,
     FORM_1099_INT_PROMPT,
     FORM_1099_NEC_PROMPT,
+    W2_MULTI_EXTRACTION_PROMPT,
     W2_EXTRACTION_PROMPT,
 )
 
@@ -44,7 +46,7 @@ if TYPE_CHECKING:
 
 
 # Type alias for extraction results
-ExtractionResult = Union[W2Data, Form1099INT, Form1099DIV, Form1099NEC]
+ExtractionResult = Union[W2Batch, W2Data, Form1099INT, Form1099DIV, Form1099NEC]
 
 # Supported media types for document images
 SUPPORTED_MEDIA_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"}
@@ -69,7 +71,7 @@ async def extract_document(
 
     Returns:
         Extracted data model based on document_type:
-        - W2Data for DocumentType.W2
+        - W2Batch for DocumentType.W2
         - Form1099INT for DocumentType.FORM_1099_INT
         - Form1099DIV for DocumentType.FORM_1099_DIV
         - Form1099NEC for DocumentType.FORM_1099_NEC
@@ -102,8 +104,8 @@ async def extract_w2(
     image_bytes: bytes,
     media_type: str = "image/jpeg",
     client: "AsyncAnthropic | None" = None,
-) -> W2Data:
-    """Extract W-2 form data using Claude Vision.
+) -> W2Batch:
+    """Extract one or more W-2 forms using Claude Vision.
 
     Extracts all data fields from a W-2 Wage and Tax Statement image.
     The prompt instructs Claude to:
@@ -119,20 +121,20 @@ async def extract_w2(
         client: Optional Anthropic client for dependency injection.
 
     Returns:
-        W2Data with all extracted fields and confidence metadata.
+        W2Batch with one or more extracted W-2 forms.
 
     Raises:
         ValueError: If media_type is not supported.
     """
     # Check for mock mode
     if os.environ.get("MOCK_LLM", "").lower() == "true":
-        return _mock_w2()
+        return W2Batch(forms=[_mock_w2()])
 
     return await _extract_with_vision(
         image_bytes=image_bytes,
         media_type=media_type,
-        prompt=W2_EXTRACTION_PROMPT,
-        response_model=W2Data,
+        prompt=W2_MULTI_EXTRACTION_PROMPT,
+        response_model=W2Batch,
         client=client,
     )
 
