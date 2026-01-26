@@ -22,6 +22,7 @@ from typing import Union
 from src.documents.models import (
     Form1098,
     Form1098T,
+    Form1099B,
     Form1099DIV,
     Form1099G,
     Form1099INT,
@@ -108,6 +109,12 @@ class IncomeSummary:
     schedule_e_expenses: Decimal = field(default_factory=lambda: Decimal("0"))
     schedule_e_net: Decimal = field(default_factory=lambda: Decimal("0"))
     schedule_e_suspended_loss: Decimal = field(default_factory=lambda: Decimal("0"))
+
+    # Capital gains fields (Schedule D)
+    capital_gains_short_term: Decimal = field(default_factory=lambda: Decimal("0"))
+    capital_gains_long_term: Decimal = field(default_factory=lambda: Decimal("0"))
+    capital_gains_net: Decimal = field(default_factory=lambda: Decimal("0"))
+    capital_loss_carryforward: Decimal = field(default_factory=lambda: Decimal("0"))
 
 
 @dataclass
@@ -443,6 +450,184 @@ class ScheduleEResult:
     net_rental_income_loss: Decimal
     qbi_rental_income: Decimal
     property_results: list[dict]
+
+
+@dataclass
+class CapitalTransaction:
+    """Single capital gain/loss transaction from 1099-B or other source.
+
+    Represents a single sale of stock, mutual fund, or other capital asset.
+    Tracks holding period, basis, and special tax treatments.
+
+    Attributes:
+        description: Security description (e.g., "100 sh AAPL").
+        date_acquired: Acquisition date or "Various" for multiple lots.
+        date_sold: Sale date.
+        proceeds: Sale proceeds (Box 1d of 1099-B).
+        cost_basis: Cost or other basis (None if not reported to IRS).
+        is_short_term: Held 1 year or less (ordinary rates).
+        is_long_term: Held more than 1 year (preferential rates).
+        basis_reported_to_irs: Whether broker reported basis to IRS.
+        wash_sale_disallowed: Wash sale loss adjustment (Box 1g).
+        is_collectibles: Subject to 28% max rate.
+        is_section_1202: QSBS exclusion eligible.
+        is_section_1250: Unrecaptured depreciation gain.
+    """
+
+    description: str
+    date_acquired: str | None  # May be "Various"
+    date_sold: str
+    proceeds: Decimal
+    cost_basis: Decimal | None  # None if not reported to IRS
+
+    # Classification
+    is_short_term: bool = False  # Held ≤1 year
+    is_long_term: bool = False  # Held >1 year
+    basis_reported_to_irs: bool = True  # Box 12 from 1099-B
+
+    # Adjustments
+    wash_sale_disallowed: Decimal = field(default_factory=lambda: Decimal("0"))
+
+    # Special types
+    is_collectibles: bool = False  # 28% max rate
+    is_section_1202: bool = False  # QSBS exclusion
+    is_section_1250: bool = False  # Unrecaptured depreciation
+
+    @property
+    def requires_basis_escalation(self) -> bool:
+        """Transaction requires escalation due to missing basis."""
+        return self.cost_basis is None
+
+    @property
+    def gain_loss(self) -> Decimal | None:
+        """Calculate gain or loss. Returns None if basis unknown."""
+        if self.cost_basis is None:
+            return None  # Cannot calculate - needs escalation
+        return self.proceeds - self.cost_basis + self.wash_sale_disallowed
+
+    @property
+    def adjusted_gain_loss(self) -> Decimal | None:
+        """Gain/loss after wash sale adjustment."""
+        return self.gain_loss
+
+
+@dataclass
+class ScheduleDData:
+    """Schedule D - Capital Gains and Losses.
+
+    Aggregates all capital transactions for the tax year and tracks
+    prior year carryovers.
+
+    Attributes:
+        transactions: List of all capital transactions.
+        prior_year_loss_carryover: Capital loss carryforward from prior year.
+    """
+
+    transactions: list[CapitalTransaction] = field(default_factory=list)
+
+    # Prior year carryover
+    prior_year_loss_carryover: Decimal = field(default_factory=lambda: Decimal("0"))
+
+    @property
+    def short_term_transactions(self) -> list[CapitalTransaction]:
+        """Filter short-term transactions."""
+        return [t for t in self.transactions if t.is_short_term]
+
+    @property
+    def long_term_transactions(self) -> list[CapitalTransaction]:
+        """Filter long-term transactions."""
+        return [t for t in self.transactions if t.is_long_term]
+
+    @property
+    def net_short_term(self) -> Decimal:
+        """Net short-term capital gain/loss (excluding missing basis)."""
+        return sum(
+            t.adjusted_gain_loss
+            for t in self.short_term_transactions
+            if t.adjusted_gain_loss is not None
+        )
+
+    @property
+    def net_long_term(self) -> Decimal:
+        """Net long-term capital gain/loss (excluding missing basis)."""
+        return sum(
+            t.adjusted_gain_loss
+            for t in self.long_term_transactions
+            if t.adjusted_gain_loss is not None
+        )
+
+    @property
+    def transactions_with_missing_basis(self) -> list[CapitalTransaction]:
+        """Transactions that require basis escalation."""
+        return [t for t in self.transactions if t.requires_basis_escalation]
+
+    @property
+    def collectibles_gain(self) -> Decimal:
+        """Total collectibles gain (28% rate)."""
+        return sum(
+            t.adjusted_gain_loss
+            for t in self.long_term_transactions
+            if t.is_collectibles
+            and t.adjusted_gain_loss is not None
+            and t.adjusted_gain_loss > Decimal("0")
+        )
+
+    @property
+    def net_capital_gain_loss(self) -> Decimal:
+        """Combined net capital gain/loss before carryover."""
+        return self.net_short_term + self.net_long_term
+
+
+@dataclass
+class ScheduleDResult:
+    """Result of Schedule D calculation.
+
+    Contains final figures after applying loss limitations and carryovers.
+
+    Attributes:
+        net_short_term_gain_loss: Post-carryover short-term net.
+        net_long_term_gain_loss: Post-carryover long-term net.
+        collectibles_gain: Total gain from collectibles (28% rate).
+        unrecaptured_1250_gain: Unrecaptured Section 1250 gain.
+        gross_short_term: Pre-carryover short-term net.
+        gross_long_term: Pre-carryover long-term net.
+        net_capital_gain_loss: Combined net after carryover.
+        capital_loss_carryover_used: Amount of prior carryover applied.
+        capital_loss_limitation_applied: Whether $3k limit was applied.
+        allowed_capital_loss: Allowed loss this year (max $3k/$1.5k).
+        net_included_in_income: Amount included in AGI.
+        new_loss_carryforward: Loss to carry to next year.
+        qualified_dividends_and_ltcg: For preferential rate calculation.
+        transactions_missing_basis: Count needing escalation.
+    """
+
+    # Part I: Short-term (after carryover)
+    net_short_term_gain_loss: Decimal
+
+    # Part II: Long-term (after carryover)
+    net_long_term_gain_loss: Decimal
+    collectibles_gain: Decimal
+    unrecaptured_1250_gain: Decimal
+
+    # Pre-carryover values for audit trail
+    gross_short_term: Decimal
+    gross_long_term: Decimal
+
+    # Part III: Summary
+    net_capital_gain_loss: Decimal
+    capital_loss_carryover_used: Decimal
+    capital_loss_limitation_applied: bool
+
+    # Final figures
+    allowed_capital_loss: Decimal
+    net_included_in_income: Decimal
+    new_loss_carryforward: Decimal
+
+    # For tax calculation
+    qualified_dividends_and_ltcg: Decimal
+
+    # Escalation tracking
+    transactions_missing_basis: int = 0
 
 
 @dataclass
@@ -1015,6 +1200,229 @@ def calculate_schedule_e(
 
 
 # =============================================================================
+# Schedule D Calculation (PTAX-04-05)
+# =============================================================================
+
+
+def get_capital_gains_rate(
+    taxable_income: Decimal,
+    filing_status: FilingStatus,
+    tax_year: int = 2024,
+) -> Decimal:
+    """Determine the applicable long-term capital gains tax rate.
+
+    2024 Rates:
+    - 0%: Below threshold (depends on filing status)
+    - 15%: Middle income
+    - 20%: High income
+
+    Args:
+        taxable_income: Total taxable income (not just capital gains).
+        filing_status: Filing status for threshold determination.
+        tax_year: Tax year for thresholds (default 2024).
+
+    Returns:
+        Rate as decimal (e.g., Decimal("0.15") for 15%).
+
+    Example:
+        >>> rate = get_capital_gains_rate(Decimal("40000"), FilingStatus.SINGLE)
+        >>> rate
+        Decimal('0')  # 0% rate
+    """
+    config = get_tax_year_config(tax_year)
+
+    # Get thresholds from TaxYearConfig
+    if filing_status in (
+        FilingStatus.MARRIED_FILING_JOINTLY,
+        FilingStatus.QUALIFYING_WIDOW,
+    ):
+        low_threshold = config.ltcg_0_threshold_mfj
+        high_threshold = config.ltcg_15_threshold_mfj
+    elif filing_status == FilingStatus.MARRIED_FILING_SEPARATELY:
+        # MFS has half of MFJ thresholds
+        low_threshold = config.ltcg_0_threshold_mfj / 2
+        high_threshold = config.ltcg_15_threshold_mfj / 2
+    elif filing_status == FilingStatus.HEAD_OF_HOUSEHOLD:
+        # HOH has specific thresholds (between single and MFJ)
+        low_threshold = Decimal("63000")  # 2024 HOH 0% threshold
+        high_threshold = Decimal("551350")  # 2024 HOH 15% threshold
+    else:
+        # Single
+        low_threshold = config.ltcg_0_threshold_single
+        high_threshold = config.ltcg_15_threshold_single
+
+    if taxable_income <= low_threshold:
+        return Decimal("0")
+    elif taxable_income <= high_threshold:
+        return Decimal("0.15")
+    else:
+        return Decimal("0.20")
+
+
+def calculate_schedule_d(
+    data: ScheduleDData,
+    filing_status: FilingStatus,
+) -> ScheduleDResult:
+    """Calculate Schedule D capital gains/losses with limitations.
+
+    Capital Loss Rules:
+    - Net capital loss limited to $3,000/year ($1,500 MFS)
+    - Excess loss carries forward to future years
+    - Short-term losses offset short-term gains first
+    - Long-term losses offset long-term gains first
+    - Then net against each other
+    - Prior year carryover applies to short-term gains first
+
+    Args:
+        data: ScheduleDData with all transactions.
+        filing_status: For loss limitation amount.
+
+    Returns:
+        ScheduleDResult with final figures.
+
+    Example:
+        >>> sch_d = ScheduleDData(transactions=[txn1, txn2])
+        >>> result = calculate_schedule_d(sch_d, FilingStatus.SINGLE)
+        >>> result.net_included_in_income
+        Decimal('2000')
+    """
+    config = get_tax_year_config(2024)
+
+    # Get gross short-term and long-term before carryover
+    gross_st = data.net_short_term
+    gross_lt = data.net_long_term
+
+    # Start with gross values for post-carryover calculation
+    net_st = gross_st
+    net_lt = gross_lt
+
+    # Special long-term categories
+    collectibles_gain = data.collectibles_gain
+    unrecaptured_1250 = Decimal("0")  # Would need depreciation data
+
+    # Apply prior year carryover to short-term first, then long-term
+    carryover_used = Decimal("0")
+    remaining_carryover = data.prior_year_loss_carryover
+
+    if remaining_carryover > Decimal("0") and net_st > Decimal("0"):
+        st_offset = min(net_st, remaining_carryover)
+        net_st -= st_offset
+        remaining_carryover -= st_offset
+        carryover_used += st_offset
+
+    if remaining_carryover > Decimal("0") and net_lt > Decimal("0"):
+        lt_offset = min(net_lt, remaining_carryover)
+        net_lt -= lt_offset
+        remaining_carryover -= lt_offset
+        carryover_used += lt_offset
+
+    # Combined net gain/loss
+    net_combined = net_st + net_lt
+
+    # Apply loss limitation
+    loss_limit = config.capital_loss_limit
+    if filing_status == FilingStatus.MARRIED_FILING_SEPARATELY:
+        loss_limit = config.capital_loss_limit_mfs
+
+    if net_combined < Decimal("0"):
+        # Net loss - apply limitation
+        total_loss = abs(net_combined)
+        allowed_loss = min(total_loss, loss_limit)
+        new_carryforward = total_loss - allowed_loss
+        net_included = -allowed_loss
+        loss_limited = total_loss > loss_limit
+    else:
+        # Net gain - no limitation
+        allowed_loss = Decimal("0")
+        new_carryforward = Decimal("0")
+        net_included = net_combined
+        loss_limited = False
+
+    # Qualified dividends and LTCG for preferential rates
+    qualified_ltcg = max(Decimal("0"), net_lt)
+
+    # Count transactions missing basis for escalation
+    missing_basis_count = len(data.transactions_with_missing_basis)
+
+    return ScheduleDResult(
+        net_short_term_gain_loss=net_st,
+        net_long_term_gain_loss=net_lt,
+        collectibles_gain=collectibles_gain,
+        unrecaptured_1250_gain=unrecaptured_1250,
+        gross_short_term=gross_st,
+        gross_long_term=gross_lt,
+        net_capital_gain_loss=net_combined,
+        capital_loss_carryover_used=carryover_used,
+        capital_loss_limitation_applied=loss_limited,
+        allowed_capital_loss=allowed_loss,
+        net_included_in_income=net_included,
+        new_loss_carryforward=new_carryforward,
+        qualified_dividends_and_ltcg=qualified_ltcg,
+        transactions_missing_basis=missing_basis_count,
+    )
+
+
+def convert_1099b_to_transactions(
+    forms_1099b: list[Form1099B],
+) -> tuple[list[CapitalTransaction], list[Form1099B]]:
+    """Convert Form 1099-B documents to CapitalTransaction objects.
+
+    Transforms broker-reported 1099-B data into standardized CapitalTransaction
+    objects for Schedule D processing. Tracks forms with missing cost basis
+    for escalation/client follow-up.
+
+    Args:
+        forms_1099b: List of Form1099B from document extraction.
+
+    Returns:
+        Tuple of:
+        - List of CapitalTransaction objects ready for Schedule D
+        - List of Form1099B with missing basis (needs escalation)
+
+    Example:
+        >>> form = Form1099B(
+        ...     payer_name="Broker Inc",
+        ...     payer_tin="12-3456789",
+        ...     recipient_tin="123-45-6789",
+        ...     description="100 sh AAPL",
+        ...     date_sold="2024-06-15",
+        ...     proceeds=Decimal("15000"),
+        ...     cost_basis=Decimal("10000"),
+        ...     is_long_term=True,
+        ...     basis_reported_to_irs=True,
+        ... )
+        >>> transactions, missing = convert_1099b_to_transactions([form])
+        >>> len(transactions)
+        1
+        >>> transactions[0].gain_loss
+        Decimal('5000')
+    """
+    transactions: list[CapitalTransaction] = []
+    missing_basis: list[Form1099B] = []
+
+    for form in forms_1099b:
+        txn = CapitalTransaction(
+            description=form.description,
+            date_acquired=form.date_acquired,
+            date_sold=form.date_sold,
+            proceeds=form.proceeds,
+            cost_basis=form.cost_basis,
+            is_short_term=form.is_short_term,
+            is_long_term=form.is_long_term,
+            basis_reported_to_irs=form.basis_reported_to_irs,
+            wash_sale_disallowed=form.wash_sale_loss_disallowed,
+            is_collectibles=form.is_collectibles,
+        )
+        transactions.append(txn)
+
+        # Track forms needing basis lookup from client
+        if form.cost_basis is None and not form.basis_reported_to_irs:
+            missing_basis.append(form)
+
+    return transactions, missing_basis
+
+
+# =============================================================================
 # Income Aggregation (PTAX-03)
 # =============================================================================
 
@@ -1023,6 +1431,7 @@ def aggregate_income(
     documents: list[TaxDocument],
     schedule_c_data: list[ScheduleCData] | None = None,
     schedule_e_data: ScheduleEData | None = None,
+    schedule_d_data: ScheduleDData | None = None,
     filing_status: FilingStatus = FilingStatus.SINGLE,
     modified_agi_for_pal: Decimal | None = None,
 ) -> IncomeSummary:
@@ -1032,11 +1441,12 @@ def aggregate_income(
         documents: List of supported tax document models (W-2, 1099s, K-1).
         schedule_c_data: Optional list of Schedule C business data.
         schedule_e_data: Optional Schedule E rental property data.
-        filing_status: Filing status for SE tax calculation.
+        schedule_d_data: Optional Schedule D capital gains/losses data.
+        filing_status: Filing status for SE tax and capital loss limits.
         modified_agi_for_pal: MAGI for passive activity loss calculation.
 
     Returns:
-        IncomeSummary with totals by income type including business income.
+        IncomeSummary with totals by income type including business and capital gains.
 
     Note:
         - Some forms (1098, 1098-T, 5498, 1099-S) do not directly contribute to
@@ -1045,6 +1455,7 @@ def aggregate_income(
         - S-corp K-1s do NOT generate SE tax (shareholders receive W-2 wages).
         - Guaranteed payments (Box 4) are included in Box 14 when subject to SE.
         - Schedule E losses may be limited by passive activity rules.
+        - Capital losses limited to $3,000/year ($1,500 MFS); excess carries forward.
 
     Example:
         >>> w2 = W2Data(wages_tips_compensation=Decimal("50000"), ...)
@@ -1156,6 +1567,18 @@ def aggregate_income(
         schedule_e_net = sch_e_result.net_rental_income_loss
         schedule_e_suspended_loss = sch_e_result.suspended_loss
 
+    # Schedule D capital gains/losses (with $3k/$1.5k loss limitation)
+    capital_gains_short_term = Decimal("0")
+    capital_gains_long_term = Decimal("0")
+    capital_gains_net = Decimal("0")
+    capital_loss_carryforward = Decimal("0")
+    if schedule_d_data:
+        sch_d_result = calculate_schedule_d(schedule_d_data, filing_status)
+        capital_gains_short_term = sch_d_result.net_short_term_gain_loss
+        capital_gains_long_term = sch_d_result.net_long_term_gain_loss
+        capital_gains_net = sch_d_result.net_included_in_income  # After loss limit
+        capital_loss_carryforward = sch_d_result.new_loss_carryforward
+
     total_income = (
         total_wages
         + total_interest
@@ -1166,6 +1589,7 @@ def aggregate_income(
         + total_other
         + schedule_c_profit  # Schedule C net profit is part of total income
         + schedule_e_net  # Schedule E net rental income/loss (after PAL limits)
+        + capital_gains_net  # Schedule D capital gains/losses (after loss limit)
     )
     # Note: state_tax_refund may be taxable if itemized in prior year,
     # but this requires additional context - handle in escalation
@@ -1192,6 +1616,10 @@ def aggregate_income(
         schedule_e_expenses=schedule_e_expenses,
         schedule_e_net=schedule_e_net,
         schedule_e_suspended_loss=schedule_e_suspended_loss,
+        capital_gains_short_term=capital_gains_short_term,
+        capital_gains_long_term=capital_gains_long_term,
+        capital_gains_net=capital_gains_net,
+        capital_loss_carryforward=capital_loss_carryforward,
     )
 
 

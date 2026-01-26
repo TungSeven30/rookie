@@ -14,6 +14,7 @@ from decimal import Decimal
 import pytest
 
 from src.agents.personal_tax.calculator import (
+    CapitalTransaction,
     CreditItem,
     CreditsResult,
     DeductionResult,
@@ -24,6 +25,8 @@ from src.agents.personal_tax.calculator import (
     RentalProperty,
     ScheduleCData,
     ScheduleCExpenses,
+    ScheduleDData,
+    ScheduleDResult,
     ScheduleEData,
     TaxResult,
     TaxSituation,
@@ -32,18 +35,22 @@ from src.agents.personal_tax.calculator import (
     build_credit_inputs,
     calculate_deductions,
     calculate_schedule_c,
+    calculate_schedule_d,
     calculate_schedule_e,
     calculate_self_employment_tax,
     calculate_tax,
     compute_itemized_deductions,
     compare_years,
+    convert_1099b_to_transactions,
     evaluate_credits,
+    get_capital_gains_rate,
     get_standard_deduction,
 )
 from src.documents.models import (
     ConfidenceLevel,
     Form1098,
     Form1098T,
+    Form1099B,
     Form1099DIV,
     Form1099G,
     Form1099INT,
@@ -2342,3 +2349,706 @@ class TestAggregateIncomeWithScheduleE:
         assert result.total_income == Decimal("90000")
         # SE tax on Schedule C profit
         assert result.se_tax > Decimal("0")
+
+
+# =============================================================================
+# Schedule D (Capital Gains/Losses) Tests - PTAX-04-05
+# =============================================================================
+
+
+class TestCapitalTransaction:
+    """Tests for CapitalTransaction dataclass."""
+
+    def test_capital_transaction_long_term_gain(self) -> None:
+        """CapitalTransaction calculates long-term gain correctly."""
+        txn = CapitalTransaction(
+            description="100 sh AAPL",
+            date_acquired="2023-01-15",
+            date_sold="2024-06-15",
+            proceeds=Decimal("15000"),
+            cost_basis=Decimal("10000"),
+            is_long_term=True,
+        )
+        assert txn.gain_loss == Decimal("5000")
+        assert txn.is_long_term is True
+        assert txn.is_short_term is False
+        assert txn.requires_basis_escalation is False
+
+    def test_capital_transaction_short_term_gain(self) -> None:
+        """CapitalTransaction calculates short-term gain correctly."""
+        txn = CapitalTransaction(
+            description="50 sh TSLA",
+            date_acquired="2024-03-01",
+            date_sold="2024-06-15",
+            proceeds=Decimal("8000"),
+            cost_basis=Decimal("6000"),
+            is_short_term=True,
+        )
+        assert txn.gain_loss == Decimal("2000")
+        assert txn.is_short_term is True
+        assert txn.is_long_term is False
+
+    def test_capital_transaction_loss(self) -> None:
+        """CapitalTransaction calculates loss correctly."""
+        txn = CapitalTransaction(
+            description="100 sh GOOG",
+            date_acquired="2023-06-01",
+            date_sold="2024-01-15",
+            proceeds=Decimal("12000"),
+            cost_basis=Decimal("15000"),
+            is_long_term=True,
+        )
+        assert txn.gain_loss == Decimal("-3000")
+
+    def test_capital_transaction_with_wash_sale(self) -> None:
+        """CapitalTransaction adjusts gain/loss for wash sale disallowed."""
+        txn = CapitalTransaction(
+            description="100 sh NVDA",
+            date_acquired="2024-01-01",
+            date_sold="2024-03-15",
+            proceeds=Decimal("10000"),
+            cost_basis=Decimal("12000"),
+            is_short_term=True,
+            wash_sale_disallowed=Decimal("500"),  # $500 loss disallowed
+        )
+        # Loss is -2000 but 500 disallowed, so adjusted = -1500
+        assert txn.gain_loss == Decimal("-1500")
+
+    def test_capital_transaction_missing_basis(self) -> None:
+        """CapitalTransaction with missing basis requires escalation."""
+        txn = CapitalTransaction(
+            description="Various securities",
+            date_acquired="Various",
+            date_sold="2024-06-15",
+            proceeds=Decimal("25000"),
+            cost_basis=None,  # Not reported
+            is_long_term=True,
+            basis_reported_to_irs=False,
+        )
+        assert txn.cost_basis is None
+        assert txn.gain_loss is None  # Cannot calculate
+        assert txn.requires_basis_escalation is True
+
+    def test_capital_transaction_collectibles(self) -> None:
+        """CapitalTransaction handles collectibles flag."""
+        txn = CapitalTransaction(
+            description="Gold coins",
+            date_acquired="2020-01-15",
+            date_sold="2024-06-15",
+            proceeds=Decimal("50000"),
+            cost_basis=Decimal("30000"),
+            is_long_term=True,
+            is_collectibles=True,
+        )
+        assert txn.gain_loss == Decimal("20000")
+        assert txn.is_collectibles is True
+
+
+class TestScheduleDData:
+    """Tests for ScheduleDData dataclass."""
+
+    def test_schedule_d_data_filters_short_term(self) -> None:
+        """ScheduleDData filters short-term transactions."""
+        st_txn = CapitalTransaction(
+            description="ST",
+            date_acquired="2024-01-01",
+            date_sold="2024-06-15",
+            proceeds=Decimal("5000"),
+            cost_basis=Decimal("4000"),
+            is_short_term=True,
+        )
+        lt_txn = CapitalTransaction(
+            description="LT",
+            date_acquired="2022-01-01",
+            date_sold="2024-06-15",
+            proceeds=Decimal("10000"),
+            cost_basis=Decimal("8000"),
+            is_long_term=True,
+        )
+        data = ScheduleDData(transactions=[st_txn, lt_txn])
+        assert len(data.short_term_transactions) == 1
+        assert data.short_term_transactions[0].description == "ST"
+
+    def test_schedule_d_data_filters_long_term(self) -> None:
+        """ScheduleDData filters long-term transactions."""
+        st_txn = CapitalTransaction(
+            description="ST",
+            date_acquired="2024-01-01",
+            date_sold="2024-06-15",
+            proceeds=Decimal("5000"),
+            cost_basis=Decimal("4000"),
+            is_short_term=True,
+        )
+        lt_txn = CapitalTransaction(
+            description="LT",
+            date_acquired="2022-01-01",
+            date_sold="2024-06-15",
+            proceeds=Decimal("10000"),
+            cost_basis=Decimal("8000"),
+            is_long_term=True,
+        )
+        data = ScheduleDData(transactions=[st_txn, lt_txn])
+        assert len(data.long_term_transactions) == 1
+        assert data.long_term_transactions[0].description == "LT"
+
+    def test_schedule_d_data_net_short_term(self) -> None:
+        """ScheduleDData calculates net short-term gain/loss."""
+        st_gain = CapitalTransaction(
+            description="ST Gain",
+            date_acquired="2024-01-01",
+            date_sold="2024-06-15",
+            proceeds=Decimal("5000"),
+            cost_basis=Decimal("3000"),
+            is_short_term=True,
+        )
+        st_loss = CapitalTransaction(
+            description="ST Loss",
+            date_acquired="2024-02-01",
+            date_sold="2024-06-15",
+            proceeds=Decimal("4000"),
+            cost_basis=Decimal("5500"),
+            is_short_term=True,
+        )
+        data = ScheduleDData(transactions=[st_gain, st_loss])
+        # Gain 2000 + Loss -1500 = Net 500
+        assert data.net_short_term == Decimal("500")
+
+    def test_schedule_d_data_net_long_term(self) -> None:
+        """ScheduleDData calculates net long-term gain/loss."""
+        lt_gain = CapitalTransaction(
+            description="LT Gain",
+            date_acquired="2022-01-01",
+            date_sold="2024-06-15",
+            proceeds=Decimal("20000"),
+            cost_basis=Decimal("15000"),
+            is_long_term=True,
+        )
+        data = ScheduleDData(transactions=[lt_gain])
+        assert data.net_long_term == Decimal("5000")
+
+    def test_schedule_d_data_identifies_missing_basis(self) -> None:
+        """ScheduleDData identifies transactions with missing basis."""
+        good_txn = CapitalTransaction(
+            description="Good",
+            date_acquired="2022-01-01",
+            date_sold="2024-06-15",
+            proceeds=Decimal("10000"),
+            cost_basis=Decimal("8000"),
+            is_long_term=True,
+        )
+        bad_txn = CapitalTransaction(
+            description="Missing basis",
+            date_acquired="Various",
+            date_sold="2024-06-15",
+            proceeds=Decimal("5000"),
+            cost_basis=None,
+            is_long_term=True,
+            basis_reported_to_irs=False,
+        )
+        data = ScheduleDData(transactions=[good_txn, bad_txn])
+        assert len(data.transactions_with_missing_basis) == 1
+        assert data.transactions_with_missing_basis[0].description == "Missing basis"
+
+    def test_schedule_d_data_collectibles_gain(self) -> None:
+        """ScheduleDData calculates collectibles gain separately."""
+        regular = CapitalTransaction(
+            description="Stock",
+            date_acquired="2022-01-01",
+            date_sold="2024-06-15",
+            proceeds=Decimal("10000"),
+            cost_basis=Decimal("8000"),
+            is_long_term=True,
+        )
+        collectible = CapitalTransaction(
+            description="Gold",
+            date_acquired="2020-01-01",
+            date_sold="2024-06-15",
+            proceeds=Decimal("50000"),
+            cost_basis=Decimal("30000"),
+            is_long_term=True,
+            is_collectibles=True,
+        )
+        data = ScheduleDData(transactions=[regular, collectible])
+        assert data.collectibles_gain == Decimal("20000")
+
+
+class TestGetCapitalGainsRate:
+    """Tests for get_capital_gains_rate() function."""
+
+    def test_capital_gains_rate_0_percent_single(self) -> None:
+        """Single filer gets 0% rate below threshold."""
+        rate = get_capital_gains_rate(Decimal("40000"), FilingStatus.SINGLE)
+        assert rate == Decimal("0")
+
+    def test_capital_gains_rate_15_percent_single(self) -> None:
+        """Single filer gets 15% rate in middle bracket."""
+        rate = get_capital_gains_rate(Decimal("100000"), FilingStatus.SINGLE)
+        assert rate == Decimal("0.15")
+
+    def test_capital_gains_rate_20_percent_single(self) -> None:
+        """Single filer gets 20% rate above high threshold."""
+        rate = get_capital_gains_rate(Decimal("550000"), FilingStatus.SINGLE)
+        assert rate == Decimal("0.20")
+
+    def test_capital_gains_rate_0_percent_mfj(self) -> None:
+        """MFJ gets 0% rate below threshold."""
+        rate = get_capital_gains_rate(
+            Decimal("80000"), FilingStatus.MARRIED_FILING_JOINTLY
+        )
+        assert rate == Decimal("0")
+
+    def test_capital_gains_rate_15_percent_mfj(self) -> None:
+        """MFJ gets 15% rate in middle bracket."""
+        rate = get_capital_gains_rate(
+            Decimal("200000"), FilingStatus.MARRIED_FILING_JOINTLY
+        )
+        assert rate == Decimal("0.15")
+
+    def test_capital_gains_rate_20_percent_mfj(self) -> None:
+        """MFJ gets 20% rate above high threshold."""
+        rate = get_capital_gains_rate(
+            Decimal("600000"), FilingStatus.MARRIED_FILING_JOINTLY
+        )
+        assert rate == Decimal("0.20")
+
+    def test_capital_gains_rate_mfs_half_thresholds(self) -> None:
+        """MFS has half the MFJ thresholds."""
+        # MFJ 0% threshold ~94050, so MFS ~47025
+        rate = get_capital_gains_rate(
+            Decimal("50000"), FilingStatus.MARRIED_FILING_SEPARATELY
+        )
+        assert rate == Decimal("0.15")  # Above MFS 0% threshold
+
+
+class TestCalculateScheduleD:
+    """Tests for calculate_schedule_d() function."""
+
+    def test_calculate_schedule_d_basic_gain(self) -> None:
+        """Basic long-term gain calculation."""
+        txn = CapitalTransaction(
+            description="100 sh AAPL",
+            date_acquired="2022-01-15",
+            date_sold="2024-06-15",
+            proceeds=Decimal("15000"),
+            cost_basis=Decimal("10000"),
+            is_long_term=True,
+        )
+        data = ScheduleDData(transactions=[txn])
+        result = calculate_schedule_d(data, FilingStatus.SINGLE)
+
+        assert result.net_long_term_gain_loss == Decimal("5000")
+        assert result.net_short_term_gain_loss == Decimal("0")
+        assert result.net_included_in_income == Decimal("5000")
+        assert result.capital_loss_limitation_applied is False
+        assert result.new_loss_carryforward == Decimal("0")
+
+    def test_calculate_schedule_d_loss_within_limit(self) -> None:
+        """Capital loss within $3k limit."""
+        txn = CapitalTransaction(
+            description="100 sh GOOG",
+            date_acquired="2022-01-15",
+            date_sold="2024-06-15",
+            proceeds=Decimal("12000"),
+            cost_basis=Decimal("14500"),
+            is_long_term=True,
+        )
+        data = ScheduleDData(transactions=[txn])
+        result = calculate_schedule_d(data, FilingStatus.SINGLE)
+
+        assert result.net_long_term_gain_loss == Decimal("-2500")
+        assert result.allowed_capital_loss == Decimal("2500")
+        assert result.net_included_in_income == Decimal("-2500")
+        assert result.capital_loss_limitation_applied is False
+        assert result.new_loss_carryforward == Decimal("0")
+
+    def test_calculate_schedule_d_loss_exceeds_limit(self) -> None:
+        """Capital loss exceeding $3k limit creates carryforward."""
+        txn = CapitalTransaction(
+            description="100 sh META",
+            date_acquired="2022-01-15",
+            date_sold="2024-06-15",
+            proceeds=Decimal("8000"),
+            cost_basis=Decimal("20000"),
+            is_long_term=True,
+        )
+        data = ScheduleDData(transactions=[txn])
+        result = calculate_schedule_d(data, FilingStatus.SINGLE)
+
+        assert result.net_long_term_gain_loss == Decimal("-12000")
+        assert result.allowed_capital_loss == Decimal("3000")
+        assert result.net_included_in_income == Decimal("-3000")
+        assert result.capital_loss_limitation_applied is True
+        assert result.new_loss_carryforward == Decimal("9000")
+
+    def test_calculate_schedule_d_mfs_1500_limit(self) -> None:
+        """MFS has $1500 capital loss limit."""
+        txn = CapitalTransaction(
+            description="Loss",
+            date_acquired="2022-01-15",
+            date_sold="2024-06-15",
+            proceeds=Decimal("5000"),
+            cost_basis=Decimal("10000"),
+            is_long_term=True,
+        )
+        data = ScheduleDData(transactions=[txn])
+        result = calculate_schedule_d(data, FilingStatus.MARRIED_FILING_SEPARATELY)
+
+        assert result.allowed_capital_loss == Decimal("1500")
+        assert result.net_included_in_income == Decimal("-1500")
+        assert result.new_loss_carryforward == Decimal("3500")
+
+    def test_calculate_schedule_d_mixed_st_lt(self) -> None:
+        """Mixed short-term and long-term transactions."""
+        st_gain = CapitalTransaction(
+            description="ST Gain",
+            date_acquired="2024-01-01",
+            date_sold="2024-06-15",
+            proceeds=Decimal("8000"),
+            cost_basis=Decimal("6000"),
+            is_short_term=True,
+        )
+        lt_loss = CapitalTransaction(
+            description="LT Loss",
+            date_acquired="2022-01-01",
+            date_sold="2024-06-15",
+            proceeds=Decimal("5000"),
+            cost_basis=Decimal("8000"),
+            is_long_term=True,
+        )
+        data = ScheduleDData(transactions=[st_gain, lt_loss])
+        result = calculate_schedule_d(data, FilingStatus.SINGLE)
+
+        assert result.net_short_term_gain_loss == Decimal("2000")
+        assert result.net_long_term_gain_loss == Decimal("-3000")
+        # Net: 2000 - 3000 = -1000
+        assert result.net_capital_gain_loss == Decimal("-1000")
+        assert result.net_included_in_income == Decimal("-1000")
+
+    def test_calculate_schedule_d_prior_year_carryover(self) -> None:
+        """Prior year carryover applied to current gains."""
+        txn = CapitalTransaction(
+            description="Gain",
+            date_acquired="2022-01-15",
+            date_sold="2024-06-15",
+            proceeds=Decimal("15000"),
+            cost_basis=Decimal("10000"),
+            is_long_term=True,
+        )
+        data = ScheduleDData(
+            transactions=[txn],
+            prior_year_loss_carryover=Decimal("3000"),
+        )
+        result = calculate_schedule_d(data, FilingStatus.SINGLE)
+
+        # 5000 gain - 3000 carryover = 2000 net
+        assert result.gross_long_term == Decimal("5000")
+        assert result.capital_loss_carryover_used == Decimal("3000")
+        assert result.net_included_in_income == Decimal("2000")
+
+    def test_calculate_schedule_d_carryover_exceeds_gain(self) -> None:
+        """Prior carryover exceeding gain allows partial use."""
+        txn = CapitalTransaction(
+            description="Small gain",
+            date_acquired="2022-01-15",
+            date_sold="2024-06-15",
+            proceeds=Decimal("11000"),
+            cost_basis=Decimal("10000"),
+            is_long_term=True,
+        )
+        data = ScheduleDData(
+            transactions=[txn],
+            prior_year_loss_carryover=Decimal("5000"),
+        )
+        result = calculate_schedule_d(data, FilingStatus.SINGLE)
+
+        # 1000 gain, 5000 carryover = uses 1000, net = 0
+        # Remaining 4000 carryover treated as new loss, limited to 3000
+        assert result.capital_loss_carryover_used == Decimal("1000")
+
+    def test_calculate_schedule_d_missing_basis_count(self) -> None:
+        """Tracks transactions with missing basis for escalation."""
+        good_txn = CapitalTransaction(
+            description="Good",
+            date_acquired="2022-01-01",
+            date_sold="2024-06-15",
+            proceeds=Decimal("10000"),
+            cost_basis=Decimal("8000"),
+            is_long_term=True,
+        )
+        missing_txn = CapitalTransaction(
+            description="Missing",
+            date_acquired="Various",
+            date_sold="2024-06-15",
+            proceeds=Decimal("5000"),
+            cost_basis=None,
+            is_long_term=True,
+            basis_reported_to_irs=False,
+        )
+        data = ScheduleDData(transactions=[good_txn, missing_txn])
+        result = calculate_schedule_d(data, FilingStatus.SINGLE)
+
+        assert result.transactions_missing_basis == 1
+
+
+class TestConvert1099BToTransactions:
+    """Tests for convert_1099b_to_transactions() function."""
+
+    def test_convert_1099b_basic(self) -> None:
+        """Converts basic 1099-B to CapitalTransaction."""
+        form = Form1099B(
+            payer_name="Broker Inc",
+            payer_tin="12-3456789",
+            recipient_tin="123-45-6789",
+            description="100 sh AAPL",
+            date_acquired="2022-01-15",
+            date_sold="2024-06-15",
+            proceeds=Decimal("15000"),
+            cost_basis=Decimal("10000"),
+            is_long_term=True,
+            basis_reported_to_irs=True,
+        )
+        transactions, missing = convert_1099b_to_transactions([form])
+
+        assert len(transactions) == 1
+        assert len(missing) == 0
+        assert transactions[0].description == "100 sh AAPL"
+        assert transactions[0].proceeds == Decimal("15000")
+        assert transactions[0].cost_basis == Decimal("10000")
+        assert transactions[0].gain_loss == Decimal("5000")
+        assert transactions[0].is_long_term is True
+
+    def test_convert_1099b_with_wash_sale(self) -> None:
+        """Converts 1099-B with wash sale adjustment."""
+        form = Form1099B(
+            payer_name="Broker Inc",
+            payer_tin="12-3456789",
+            recipient_tin="123-45-6789",
+            description="50 sh NVDA",
+            date_acquired="2024-01-01",
+            date_sold="2024-03-15",
+            proceeds=Decimal("10000"),
+            cost_basis=Decimal("12000"),
+            is_short_term=True,
+            wash_sale_loss_disallowed=Decimal("500"),
+            basis_reported_to_irs=True,
+        )
+        transactions, missing = convert_1099b_to_transactions([form])
+
+        assert len(transactions) == 1
+        assert transactions[0].wash_sale_disallowed == Decimal("500")
+        # Loss -2000, wash sale +500 = -1500
+        assert transactions[0].gain_loss == Decimal("-1500")
+
+    def test_convert_1099b_missing_basis_tracked(self) -> None:
+        """Tracks 1099-B with missing basis for escalation."""
+        form = Form1099B(
+            payer_name="Broker Inc",
+            payer_tin="12-3456789",
+            recipient_tin="123-45-6789",
+            description="Various securities",
+            date_acquired="Various",
+            date_sold="2024-06-15",
+            proceeds=Decimal("25000"),
+            cost_basis=None,
+            is_long_term=True,
+            basis_reported_to_irs=False,
+        )
+        transactions, missing = convert_1099b_to_transactions([form])
+
+        assert len(transactions) == 1
+        assert len(missing) == 1
+        assert missing[0].description == "Various securities"
+        assert transactions[0].requires_basis_escalation is True
+
+    def test_convert_1099b_collectibles(self) -> None:
+        """Converts 1099-B for collectibles."""
+        form = Form1099B(
+            payer_name="Precious Metals LLC",
+            payer_tin="12-3456789",
+            recipient_tin="123-45-6789",
+            description="Gold bullion",
+            date_acquired="2020-01-15",
+            date_sold="2024-06-15",
+            proceeds=Decimal("50000"),
+            cost_basis=Decimal("30000"),
+            is_long_term=True,
+            is_collectibles=True,
+            basis_reported_to_irs=True,
+        )
+        transactions, missing = convert_1099b_to_transactions([form])
+
+        assert len(transactions) == 1
+        assert transactions[0].is_collectibles is True
+        assert transactions[0].gain_loss == Decimal("20000")
+
+    def test_convert_1099b_multiple_forms(self) -> None:
+        """Converts multiple 1099-B forms."""
+        forms = [
+            Form1099B(
+                payer_name="Broker A",
+                payer_tin="12-3456789",
+                recipient_tin="123-45-6789",
+                description="Stock A",
+                date_sold="2024-06-15",
+                proceeds=Decimal("5000"),
+                cost_basis=Decimal("4000"),
+                is_short_term=True,
+                basis_reported_to_irs=True,
+            ),
+            Form1099B(
+                payer_name="Broker B",
+                payer_tin="98-7654321",
+                recipient_tin="123-45-6789",
+                description="Stock B",
+                date_acquired="2022-01-01",
+                date_sold="2024-06-15",
+                proceeds=Decimal("20000"),
+                cost_basis=Decimal("15000"),
+                is_long_term=True,
+                basis_reported_to_irs=True,
+            ),
+        ]
+        transactions, missing = convert_1099b_to_transactions(forms)
+
+        assert len(transactions) == 2
+        assert len(missing) == 0
+
+
+class TestAggregateIncomeWithScheduleD:
+    """Tests for aggregate_income with Schedule D capital gains."""
+
+    def test_aggregate_with_schedule_d_gain(self) -> None:
+        """aggregate_income includes capital gains in total income."""
+        txn = CapitalTransaction(
+            description="100 sh AAPL",
+            date_acquired="2022-01-15",
+            date_sold="2024-06-15",
+            proceeds=Decimal("15000"),
+            cost_basis=Decimal("10000"),
+            is_long_term=True,
+        )
+        sch_d = ScheduleDData(transactions=[txn])
+
+        result = aggregate_income(
+            documents=[],
+            schedule_d_data=sch_d,
+            filing_status=FilingStatus.SINGLE,
+        )
+
+        assert result.capital_gains_long_term == Decimal("5000")
+        assert result.capital_gains_short_term == Decimal("0")
+        assert result.capital_gains_net == Decimal("5000")
+        assert result.total_income == Decimal("5000")
+
+    def test_aggregate_with_schedule_d_loss(self) -> None:
+        """aggregate_income handles capital loss (limited to $3k)."""
+        txn = CapitalTransaction(
+            description="Loss",
+            date_acquired="2022-01-15",
+            date_sold="2024-06-15",
+            proceeds=Decimal("5000"),
+            cost_basis=Decimal("15000"),
+            is_long_term=True,
+        )
+        sch_d = ScheduleDData(transactions=[txn])
+
+        result = aggregate_income(
+            documents=[],
+            schedule_d_data=sch_d,
+            filing_status=FilingStatus.SINGLE,
+        )
+
+        # 10k loss, but limited to 3k
+        assert result.capital_gains_net == Decimal("-3000")
+        assert result.capital_loss_carryforward == Decimal("7000")
+        assert result.total_income == Decimal("-3000")
+
+    def test_aggregate_with_w2_and_schedule_d(self) -> None:
+        """aggregate_income combines W-2 and capital gains."""
+        w2 = W2Data(
+            employee_ssn="123-45-6789",
+            employer_ein="12-3456789",
+            employer_name="Acme Corp",
+            employee_name="John Doe",
+            wages_tips_compensation=Decimal("75000"),
+            federal_tax_withheld=Decimal("10000"),
+            social_security_wages=Decimal("75000"),
+            social_security_tax=Decimal("4650"),
+            medicare_wages=Decimal("75000"),
+            medicare_tax=Decimal("1087.50"),
+            confidence=ConfidenceLevel.HIGH,
+        )
+        txn = CapitalTransaction(
+            description="LTCG",
+            date_acquired="2022-01-15",
+            date_sold="2024-06-15",
+            proceeds=Decimal("25000"),
+            cost_basis=Decimal("20000"),
+            is_long_term=True,
+        )
+        sch_d = ScheduleDData(transactions=[txn])
+
+        result = aggregate_income(
+            documents=[w2],
+            schedule_d_data=sch_d,
+            filing_status=FilingStatus.SINGLE,
+        )
+
+        assert result.total_wages == Decimal("75000")
+        assert result.capital_gains_net == Decimal("5000")
+        assert result.total_income == Decimal("80000")
+
+    def test_aggregate_with_all_income_types_including_capital_gains(self) -> None:
+        """aggregate_income handles W-2 + Schedule C + Schedule E + Schedule D."""
+        w2 = W2Data(
+            employee_ssn="123-45-6789",
+            employer_ein="12-3456789",
+            employer_name="Acme Corp",
+            employee_name="John Doe",
+            wages_tips_compensation=Decimal("60000"),
+            federal_tax_withheld=Decimal("9000"),
+            social_security_wages=Decimal("60000"),
+            social_security_tax=Decimal("3720"),
+            medicare_wages=Decimal("60000"),
+            medicare_tax=Decimal("870"),
+            confidence=ConfidenceLevel.HIGH,
+        )
+        sch_c = ScheduleCData(
+            business_name="Consulting",
+            business_activity="IT",
+            principal_business_code="541511",
+            gross_receipts=Decimal("20000"),
+            expenses=ScheduleCExpenses(supplies=Decimal("5000")),
+        )
+        prop = RentalProperty(
+            property_address="123 Main St",
+            property_type="Single Family",
+            fair_rental_days=365,
+            rental_income=Decimal("18000"),
+            expenses=RentalExpenses(taxes=Decimal("3000")),
+        )
+        sch_e = ScheduleEData(properties=[prop])
+        txn = CapitalTransaction(
+            description="LTCG",
+            date_acquired="2022-01-15",
+            date_sold="2024-06-15",
+            proceeds=Decimal("15000"),
+            cost_basis=Decimal("10000"),
+            is_long_term=True,
+        )
+        sch_d = ScheduleDData(transactions=[txn])
+
+        result = aggregate_income(
+            documents=[w2],
+            schedule_c_data=[sch_c],
+            schedule_e_data=sch_e,
+            schedule_d_data=sch_d,
+            filing_status=FilingStatus.SINGLE,
+        )
+
+        assert result.total_wages == Decimal("60000")
+        assert result.schedule_c_profit == Decimal("15000")
+        assert result.schedule_e_net == Decimal("15000")
+        assert result.capital_gains_net == Decimal("5000")
+        # W-2 + Schedule C + Schedule E + Capital Gains
+        assert result.total_income == Decimal("95000")
