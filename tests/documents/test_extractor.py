@@ -14,8 +14,12 @@ from decimal import Decimal
 import pytest
 
 from src.documents.extractor import (
+    Form1099BExtraction,
+    extract_1095_a,
     extract_1098,
     extract_1098_t,
+    extract_1099_b,
+    extract_1099_b_summary,
     extract_1099_div,
     extract_1099_g,
     extract_1099_int,
@@ -24,14 +28,18 @@ from src.documents.extractor import (
     extract_1099_s,
     extract_5498,
     extract_document,
+    extract_k1,
     extract_w2,
 )
 from src.documents.models import (
     Box12Code,
     ConfidenceLevel,
     DocumentType,
+    Form1095A,
     Form1098,
     Form1098T,
+    Form1099B,
+    Form1099BSummary,
     Form1099DIV,
     Form1099G,
     Form1099INT,
@@ -39,12 +47,16 @@ from src.documents.models import (
     Form1099R,
     Form1099S,
     Form5498,
+    FormK1,
     W2Batch,
     W2Data,
 )
 from src.documents.prompts import (
+    FORM_1095_A_PROMPT,
     FORM_1098_PROMPT,
     FORM_1098_T_PROMPT,
+    FORM_1099_B_PROMPT,
+    FORM_1099_B_SUMMARY_PROMPT,
     FORM_1099_DIV_PROMPT,
     FORM_1099_G_PROMPT,
     FORM_1099_INT_PROMPT,
@@ -52,6 +64,7 @@ from src.documents.prompts import (
     FORM_1099_R_PROMPT,
     FORM_1099_S_PROMPT,
     FORM_5498_PROMPT,
+    FORM_K1_PROMPT,
     W2_MULTI_EXTRACTION_PROMPT,
     W2_EXTRACTION_PROMPT,
 )
@@ -205,6 +218,91 @@ def stub_extract_with_vision(monkeypatch: pytest.MonkeyPatch) -> None:
         confidence=ConfidenceLevel.HIGH,
         uncertain_fields=[],
     )
+    sample_k1 = FormK1(
+        entity_name="Demo Partnership LLC",
+        entity_ein="12-3456789",
+        entity_type="partnership",
+        tax_year=2024,
+        recipient_name="John Q. Taxpayer",
+        recipient_tin="123-45-6789",
+        ownership_percentage=Decimal("25.0"),
+        ordinary_business_income=Decimal("45000.00"),
+        guaranteed_payments=Decimal("12000.00"),
+        interest_income=Decimal("500.00"),
+        dividend_income=Decimal("1200.00"),
+        net_long_term_capital_gain=Decimal("3500.00"),
+        distributions=Decimal("15000.00"),
+        self_employment_earnings=Decimal("57000.00"),
+        confidence=ConfidenceLevel.HIGH,
+        uncertain_fields=[],
+    )
+    sample_1099_b_list = [
+        Form1099B(
+            payer_name="Fidelity Investments",
+            payer_tin="12-3456789",
+            recipient_tin="123-45-6789",
+            account_number="X12345",
+            description="AAPL - Apple Inc (100 shares)",
+            date_acquired="2023-01-15",
+            date_sold="2024-06-20",
+            proceeds=Decimal("19500.00"),
+            cost_basis=Decimal("15000.00"),
+            is_long_term=True,
+            basis_reported_to_irs=True,
+            confidence=ConfidenceLevel.HIGH,
+            uncertain_fields=[],
+        ),
+        Form1099B(
+            payer_name="Fidelity Investments",
+            payer_tin="12-3456789",
+            recipient_tin="123-45-6789",
+            account_number="X12345",
+            description="MSFT - Microsoft Corp (50 shares)",
+            date_acquired="2024-03-01",
+            date_sold="2024-09-15",
+            proceeds=Decimal("21000.00"),
+            cost_basis=Decimal("18500.00"),
+            is_short_term=True,
+            basis_reported_to_irs=True,
+            confidence=ConfidenceLevel.HIGH,
+            uncertain_fields=[],
+        ),
+    ]
+    sample_1099_b_summary = Form1099BSummary(
+        payer_name="Fidelity Investments",
+        payer_tin="12-3456789",
+        recipient_tin="123-45-6789",
+        cat_a_proceeds=Decimal("150000.00"),
+        cat_a_cost_basis=Decimal("125000.00"),
+        cat_a_adjustments=Decimal("500.00"),
+        cat_a_gain_loss=Decimal("24500.00"),
+        cat_a_transaction_count=75,
+        cat_d_proceeds=Decimal("200000.00"),
+        cat_d_cost_basis=Decimal("150000.00"),
+        cat_d_adjustments=Decimal("0.00"),
+        cat_d_gain_loss=Decimal("50000.00"),
+        cat_d_transaction_count=50,
+        total_wash_sale_disallowed=Decimal("500.00"),
+        total_transaction_count=125,
+        confidence=ConfidenceLevel.HIGH,
+        uncertain_fields=[],
+    )
+    sample_1095_a = Form1095A(
+        marketplace_name="Covered California",
+        marketplace_id="CA123456",
+        policy_number="POL-2024-001",
+        policy_start_date="2024-01-01",
+        policy_end_date="2024-12-31",
+        recipient_name="John Q. Taxpayer",
+        recipient_tin="123-45-6789",
+        recipient_address="123 Main St, Anytown, CA 90210",
+        covered_individuals=2,
+        annual_monthly_premium=Decimal("1200.00"),
+        annual_slcsp_premium=Decimal("1400.00"),
+        annual_advance_ptc=Decimal("400.00"),
+        confidence=ConfidenceLevel.HIGH,
+        uncertain_fields=[],
+    )
 
     async def fake_extract_with_vision(*, response_model, **kwargs):
         if response_model is W2Batch:
@@ -227,6 +325,14 @@ def stub_extract_with_vision(monkeypatch: pytest.MonkeyPatch) -> None:
             return sample_5498
         if response_model is Form1099S:
             return sample_1099_s
+        if response_model is FormK1:
+            return sample_k1
+        if response_model is Form1099BExtraction:
+            return Form1099BExtraction(transactions=sample_1099_b_list)
+        if response_model is Form1099BSummary:
+            return sample_1099_b_summary
+        if response_model is Form1095A:
+            return sample_1095_a
         raise AssertionError(f"Unexpected response_model: {response_model}")
 
     monkeypatch.setattr(
@@ -706,3 +812,224 @@ class TestExtract1099S:
         """extract_document routes 1099-S to extract_1099_s."""
         result = await extract_document(fake_image_bytes, DocumentType.FORM_1099_S, "image/jpeg")
         assert isinstance(result, Form1099S)
+
+
+# =============================================================================
+# K-1 Extraction Tests
+# =============================================================================
+
+
+class TestExtractK1:
+    """Tests for Schedule K-1 extraction."""
+
+    @pytest.mark.asyncio
+    async def test_returns_formk1(self, fake_image_bytes: bytes) -> None:
+        """extract_k1 returns FormK1 instance."""
+        result = await extract_k1(fake_image_bytes, "image/jpeg")
+        assert isinstance(result, FormK1)
+
+    @pytest.mark.asyncio
+    async def test_k1_has_required_entity_fields(self, fake_image_bytes: bytes) -> None:
+        """FormK1 has all required entity fields populated."""
+        result = await extract_k1(fake_image_bytes, "image/jpeg")
+        assert result.entity_name
+        assert result.entity_ein
+        assert result.entity_type in ["partnership", "s_corp"]
+        assert result.tax_year >= 2020
+
+    @pytest.mark.asyncio
+    async def test_k1_has_required_recipient_fields(self, fake_image_bytes: bytes) -> None:
+        """FormK1 has all required recipient fields populated."""
+        result = await extract_k1(fake_image_bytes, "image/jpeg")
+        assert result.recipient_name
+        assert result.recipient_tin
+
+    @pytest.mark.asyncio
+    async def test_k1_has_confidence(self, fake_image_bytes: bytes) -> None:
+        """FormK1 includes confidence level."""
+        result = await extract_k1(fake_image_bytes, "image/jpeg")
+        assert result.confidence in [ConfidenceLevel.HIGH, ConfidenceLevel.MEDIUM, ConfidenceLevel.LOW]
+
+    @pytest.mark.asyncio
+    async def test_k1_ownership_percentage_valid(self, fake_image_bytes: bytes) -> None:
+        """K-1 ownership percentage is between 0 and 100."""
+        result = await extract_k1(fake_image_bytes, "image/jpeg")
+        assert Decimal("0") <= result.ownership_percentage <= Decimal("100")
+
+    @pytest.mark.asyncio
+    async def test_k1_income_fields(self, fake_image_bytes: bytes) -> None:
+        """K-1 has income fields populated."""
+        result = await extract_k1(fake_image_bytes, "image/jpeg")
+        # At least ordinary business income should be present
+        assert result.ordinary_business_income is not None
+
+    @pytest.mark.asyncio
+    async def test_extract_document_routes_to_k1(self, fake_image_bytes: bytes) -> None:
+        """extract_document routes K-1 to extract_k1."""
+        result = await extract_document(fake_image_bytes, DocumentType.FORM_K1, "image/jpeg")
+        assert isinstance(result, FormK1)
+
+
+# =============================================================================
+# 1099-B Extraction Tests
+# =============================================================================
+
+
+class TestExtract1099B:
+    """Tests for Form 1099-B extraction."""
+
+    @pytest.mark.asyncio
+    async def test_returns_list_of_form1099b(self, fake_image_bytes: bytes) -> None:
+        """extract_1099_b returns list of Form1099B instances."""
+        result = await extract_1099_b(fake_image_bytes, "image/jpeg")
+        assert isinstance(result, list)
+        assert len(result) >= 1
+        assert all(isinstance(t, Form1099B) for t in result)
+
+    @pytest.mark.asyncio
+    async def test_1099_b_has_required_fields(self, fake_image_bytes: bytes) -> None:
+        """Each Form1099B has required fields populated."""
+        result = await extract_1099_b(fake_image_bytes, "image/jpeg")
+        for txn in result:
+            assert txn.payer_name
+            assert txn.description
+            assert txn.date_sold
+            assert txn.proceeds > Decimal("0")
+
+    @pytest.mark.asyncio
+    async def test_1099_b_has_confidence(self, fake_image_bytes: bytes) -> None:
+        """Each Form1099B includes confidence level."""
+        result = await extract_1099_b(fake_image_bytes, "image/jpeg")
+        for txn in result:
+            assert txn.confidence in [ConfidenceLevel.HIGH, ConfidenceLevel.MEDIUM, ConfidenceLevel.LOW]
+
+    @pytest.mark.asyncio
+    async def test_1099_b_term_classification(self, fake_image_bytes: bytes) -> None:
+        """1099-B transactions have valid short/long term classification."""
+        result = await extract_1099_b(fake_image_bytes, "image/jpeg")
+        for txn in result:
+            # Can't be both short-term and long-term
+            assert not (txn.is_short_term and txn.is_long_term)
+
+    @pytest.mark.asyncio
+    async def test_extract_document_routes_to_1099_b(self, fake_image_bytes: bytes) -> None:
+        """extract_document routes 1099-B to extract_1099_b."""
+        result = await extract_document(fake_image_bytes, DocumentType.FORM_1099_B, "image/jpeg")
+        assert isinstance(result, list)
+        assert all(isinstance(t, Form1099B) for t in result)
+
+
+# =============================================================================
+# 1099-B Summary Extraction Tests
+# =============================================================================
+
+
+class TestExtract1099BSummary:
+    """Tests for Form 1099-B summary extraction."""
+
+    @pytest.mark.asyncio
+    async def test_returns_form1099bsummary(self, fake_image_bytes: bytes) -> None:
+        """extract_1099_b_summary returns Form1099BSummary instance."""
+        result = await extract_1099_b_summary(fake_image_bytes, "image/jpeg")
+        assert isinstance(result, Form1099BSummary)
+
+    @pytest.mark.asyncio
+    async def test_1099_b_summary_has_category_totals(self, fake_image_bytes: bytes) -> None:
+        """Form1099BSummary has category totals for Form 8949."""
+        result = await extract_1099_b_summary(fake_image_bytes, "image/jpeg")
+        # Should have at least one category populated
+        has_cat_a = result.cat_a_proceeds is not None
+        has_cat_d = result.cat_d_proceeds is not None
+        assert has_cat_a or has_cat_d
+
+    @pytest.mark.asyncio
+    async def test_1099_b_summary_has_total_count(self, fake_image_bytes: bytes) -> None:
+        """Form1099BSummary has total transaction count."""
+        result = await extract_1099_b_summary(fake_image_bytes, "image/jpeg")
+        assert result.total_transaction_count > 0
+
+    @pytest.mark.asyncio
+    async def test_1099_b_summary_has_confidence(self, fake_image_bytes: bytes) -> None:
+        """Form1099BSummary includes confidence level."""
+        result = await extract_1099_b_summary(fake_image_bytes, "image/jpeg")
+        assert result.confidence in [ConfidenceLevel.HIGH, ConfidenceLevel.MEDIUM, ConfidenceLevel.LOW]
+
+
+# =============================================================================
+# 1095-A Extraction Tests
+# =============================================================================
+
+
+class TestExtract1095A:
+    """Tests for Form 1095-A extraction."""
+
+    @pytest.mark.asyncio
+    async def test_returns_form1095a(self, fake_image_bytes: bytes) -> None:
+        """extract_1095_a returns Form1095A instance."""
+        result = await extract_1095_a(fake_image_bytes, "image/jpeg")
+        assert isinstance(result, Form1095A)
+
+    @pytest.mark.asyncio
+    async def test_1095_a_has_required_fields(self, fake_image_bytes: bytes) -> None:
+        """Form1095A has all required fields populated."""
+        result = await extract_1095_a(fake_image_bytes, "image/jpeg")
+        assert result.recipient_name
+        assert result.recipient_tin
+        assert result.policy_number
+
+    @pytest.mark.asyncio
+    async def test_1095_a_has_premium_data(self, fake_image_bytes: bytes) -> None:
+        """Form1095A has premium and credit data for Form 8962."""
+        result = await extract_1095_a(fake_image_bytes, "image/jpeg")
+        assert result.annual_slcsp_premium is not None
+        assert result.annual_advance_ptc is not None
+
+    @pytest.mark.asyncio
+    async def test_1095_a_has_confidence(self, fake_image_bytes: bytes) -> None:
+        """Form1095A includes confidence level."""
+        result = await extract_1095_a(fake_image_bytes, "image/jpeg")
+        assert result.confidence in [ConfidenceLevel.HIGH, ConfidenceLevel.MEDIUM, ConfidenceLevel.LOW]
+
+    @pytest.mark.asyncio
+    async def test_extract_document_routes_to_1095_a(self, fake_image_bytes: bytes) -> None:
+        """extract_document routes 1095-A to extract_1095_a."""
+        result = await extract_document(fake_image_bytes, DocumentType.FORM_1095_A, "image/jpeg")
+        assert isinstance(result, Form1095A)
+
+
+# =============================================================================
+# K-1, 1099-B, 1095-A Prompt Tests
+# =============================================================================
+
+
+class TestNewFormPrompts:
+    """Tests for K-1, 1099-B, and 1095-A extraction prompts."""
+
+    def test_k1_prompt_mentions_critical_boxes(self) -> None:
+        """K-1 prompt mentions all critical boxes."""
+        assert "Box 1" in FORM_K1_PROMPT
+        assert "ordinary_business_income" in FORM_K1_PROMPT.lower() or "ordinary business income" in FORM_K1_PROMPT.lower()
+        assert "guaranteed_payments" in FORM_K1_PROMPT.lower() or "guaranteed payments" in FORM_K1_PROMPT.lower()
+        assert "entity_type" in FORM_K1_PROMPT.lower() or "partnership" in FORM_K1_PROMPT.lower()
+
+    def test_1099_b_prompt_mentions_transaction_fields(self) -> None:
+        """1099-B prompt mentions key transaction fields."""
+        assert "proceeds" in FORM_1099_B_PROMPT.lower()
+        assert "cost_basis" in FORM_1099_B_PROMPT.lower() or "cost basis" in FORM_1099_B_PROMPT.lower()
+        assert "date_sold" in FORM_1099_B_PROMPT.lower() or "date sold" in FORM_1099_B_PROMPT.lower()
+        assert "short" in FORM_1099_B_PROMPT.lower()  # short-term
+        assert "long" in FORM_1099_B_PROMPT.lower()   # long-term
+
+    def test_1099_b_summary_prompt_mentions_categories(self) -> None:
+        """1099-B summary prompt mentions Form 8949 categories."""
+        prompt_lower = FORM_1099_B_SUMMARY_PROMPT.lower()
+        assert "category" in prompt_lower or "cat_a" in prompt_lower
+        assert "8949" in FORM_1099_B_SUMMARY_PROMPT
+        assert "summary" in prompt_lower or "total" in prompt_lower
+
+    def test_1095_a_prompt_mentions_ptc_fields(self) -> None:
+        """1095-A prompt mentions Premium Tax Credit fields."""
+        prompt_lower = FORM_1095_A_PROMPT.lower()
+        assert "slcsp" in prompt_lower or "second lowest cost silver plan" in prompt_lower
+        assert "advance" in prompt_lower  # advance PTC
+        assert "premium" in prompt_lower

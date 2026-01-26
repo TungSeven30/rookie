@@ -21,10 +21,18 @@ from __future__ import annotations
 import base64
 from typing import TYPE_CHECKING, Union
 
+from decimal import Decimal
+
+from pydantic import BaseModel, Field
+
 from src.documents.models import (
+    ConfidenceLevel,
     DocumentType,
+    Form1095A,
     Form1098,
     Form1098T,
+    Form1099B,
+    Form1099BSummary,
     Form1099DIV,
     Form1099G,
     Form1099INT,
@@ -32,12 +40,16 @@ from src.documents.models import (
     Form1099R,
     Form1099S,
     Form5498,
+    FormK1,
     W2Batch,
     W2Data,
 )
 from src.documents.prompts import (
+    FORM_1095_A_PROMPT,
     FORM_1098_PROMPT,
     FORM_1098_T_PROMPT,
+    FORM_1099_B_PROMPT,
+    FORM_1099_B_SUMMARY_PROMPT,
     FORM_1099_DIV_PROMPT,
     FORM_1099_G_PROMPT,
     FORM_1099_INT_PROMPT,
@@ -45,12 +57,25 @@ from src.documents.prompts import (
     FORM_1099_R_PROMPT,
     FORM_1099_S_PROMPT,
     FORM_5498_PROMPT,
-    W2_MULTI_EXTRACTION_PROMPT,
+    FORM_K1_PROMPT,
     W2_EXTRACTION_PROMPT,
+    W2_MULTI_EXTRACTION_PROMPT,
 )
 
 if TYPE_CHECKING:
     from anthropic import AsyncAnthropic
+
+
+# Wrapper model for 1099-B multi-transaction extraction
+class Form1099BExtraction(BaseModel):
+    """Wrapper for 1099-B multi-transaction extraction."""
+
+    transactions: list[Form1099B] = Field(
+        default_factory=list, description="List of extracted transactions"
+    )
+    form_level_uncertain_fields: list[str] = Field(
+        default_factory=list, description="Fields uncertain at the form level"
+    )
 
 
 # Type alias for extraction results
@@ -66,6 +91,10 @@ ExtractionResult = Union[
     Form1098T,
     Form5498,
     Form1099S,
+    FormK1,
+    list[Form1099B],
+    Form1099BSummary,
+    Form1095A,
 ]
 
 # Supported media types for document images
@@ -117,6 +146,9 @@ async def extract_document(
         DocumentType.FORM_1098_T: extract_1098_t,
         DocumentType.FORM_5498: extract_5498,
         DocumentType.FORM_1099_S: extract_1099_s,
+        DocumentType.FORM_K1: extract_k1,
+        DocumentType.FORM_1099_B: extract_1099_b,
+        DocumentType.FORM_1095_A: extract_1095_a,
     }
 
     extractor = extractors.get(document_type)
@@ -406,6 +438,129 @@ async def extract_1099_s(
         media_type=media_type,
         prompt=FORM_1099_S_PROMPT,
         response_model=Form1099S,
+        client=client,
+    )
+
+
+async def extract_k1(
+    image_bytes: bytes,
+    media_type: str = "image/jpeg",
+    client: "AsyncAnthropic | None" = None,
+) -> FormK1:
+    """Extract Schedule K-1 data using Claude Vision.
+
+    Extracts all data fields from a Schedule K-1 (Form 1065 Partnership or
+    Form 1120-S S-Corporation) including Part I entity info, Part II partner/
+    shareholder info, and Part III share of income/deductions/credits.
+
+    Args:
+        image_bytes: K-1 document image as bytes.
+        media_type: MIME type of the image.
+        client: Optional Anthropic client for dependency injection.
+
+    Returns:
+        FormK1 with all extracted fields and confidence metadata.
+
+    Raises:
+        ValueError: If media_type is not supported.
+    """
+    return await _extract_with_vision(
+        image_bytes=image_bytes,
+        media_type=media_type,
+        prompt=FORM_K1_PROMPT,
+        response_model=FormK1,
+        client=client,
+    )
+
+
+async def extract_1099_b(
+    image_bytes: bytes,
+    media_type: str = "image/jpeg",
+    client: "AsyncAnthropic | None" = None,
+) -> list[Form1099B]:
+    """Extract Form 1099-B transactions using Claude Vision.
+
+    A single 1099-B form may contain multiple stock/security transactions.
+    This function extracts each transaction separately with its own details.
+
+    Args:
+        image_bytes: 1099-B document image as bytes.
+        media_type: MIME type of the image.
+        client: Optional Anthropic client for dependency injection.
+
+    Returns:
+        List of Form1099B models, one per transaction on the form.
+
+    Raises:
+        ValueError: If media_type is not supported.
+    """
+    result = await _extract_with_vision(
+        image_bytes=image_bytes,
+        media_type=media_type,
+        prompt=FORM_1099_B_PROMPT,
+        response_model=Form1099BExtraction,
+        client=client,
+    )
+    return result.transactions
+
+
+async def extract_1099_b_summary(
+    image_bytes: bytes,
+    media_type: str = "image/jpeg",
+    client: "AsyncAnthropic | None" = None,
+) -> Form1099BSummary:
+    """Extract Form 1099-B summary totals using Claude Vision.
+
+    For high-volume broker statements with many transactions, extracts
+    category totals instead of individual transactions. Categories match
+    IRS Form 8949 (A/B/D/E).
+
+    Args:
+        image_bytes: 1099-B document image as bytes.
+        media_type: MIME type of the image.
+        client: Optional Anthropic client for dependency injection.
+
+    Returns:
+        Form1099BSummary with category totals.
+
+    Raises:
+        ValueError: If media_type is not supported.
+    """
+    return await _extract_with_vision(
+        image_bytes=image_bytes,
+        media_type=media_type,
+        prompt=FORM_1099_B_SUMMARY_PROMPT,
+        response_model=Form1099BSummary,
+        client=client,
+    )
+
+
+async def extract_1095_a(
+    image_bytes: bytes,
+    media_type: str = "image/jpeg",
+    client: "AsyncAnthropic | None" = None,
+) -> Form1095A:
+    """Extract Form 1095-A Health Insurance Marketplace Statement using Claude Vision.
+
+    Extracts coverage information, monthly premiums, SLCSP premiums, and
+    advance premium tax credit data needed for Form 8962 reconciliation.
+
+    Args:
+        image_bytes: 1095-A document image as bytes.
+        media_type: MIME type of the image.
+        client: Optional Anthropic client for dependency injection.
+
+    Returns:
+        Form1095A with all extracted fields and confidence metadata.
+
+    Raises:
+        ValueError: If media_type is not supported.
+    """
+    return await _extract_with_vision(
+        image_bytes=image_bytes,
+        media_type=media_type,
+        prompt=FORM_1095_A_PROMPT,
+        response_model=Form1095A,
         client=client,
     )
 

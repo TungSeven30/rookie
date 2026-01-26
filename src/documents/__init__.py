@@ -17,8 +17,11 @@ from src.documents.confidence import (
     get_critical_fields_for_1099b,
 )
 from src.documents.extractor import (
+    extract_1095_a,
     extract_1098,
     extract_1098_t,
+    extract_1099_b,
+    extract_1099_b_summary,
     extract_1099_div,
     extract_1099_g,
     extract_1099_int,
@@ -27,6 +30,7 @@ from src.documents.extractor import (
     extract_1099_s,
     extract_5498,
     extract_document,
+    extract_k1,
     extract_w2,
 )
 from src.documents.models import (
@@ -52,6 +56,7 @@ from src.documents.models import (
     validate_ssn,
 )
 from src.documents.scanner import ClientDocument, scan_client_folder
+from src.documents.validation import DocumentValidator, ValidationResult
 
 __all__ = [
     # Document models
@@ -99,4 +104,11 @@ __all__ = [
     "extract_1098_t",
     "extract_5498",
     "extract_1099_s",
+    "extract_k1",
+    "extract_1099_b",
+    "extract_1099_b_summary",
+    "extract_1095_a",
+    # Validation
+    "DocumentValidator",
+    "ValidationResult",
 ]
