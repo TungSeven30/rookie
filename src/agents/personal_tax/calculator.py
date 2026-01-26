@@ -20,6 +20,7 @@ from enum import Enum
 from typing import Union
 
 from src.documents.models import (
+    Form1095A,
     Form1098,
     Form1098T,
     Form1099B,
@@ -735,6 +736,68 @@ class QBIDeduction:
     qbi_deduction_before_limit: Decimal
     taxable_income_limit: Decimal
     final_qbi_deduction: Decimal
+
+
+@dataclass
+class PremiumTaxCredit:
+    """Premium Tax Credit calculation result (Form 8962).
+
+    Contains all components for ACA marketplace premium credit reconciliation.
+
+    Attributes:
+        household_size: Number of people in tax household.
+        household_income: Modified AGI for household.
+        federal_poverty_level: FPL for household size.
+        income_as_fpl_percent: Income as percentage of FPL.
+        annual_enrollment_premium: Total enrolled premiums from 1095-A.
+        annual_slcsp_premium: Total SLCSP premiums from 1095-A.
+        applicable_percentage: Contribution % based on income.
+        annual_contribution: Income × applicable %.
+        calculated_ptc: SLCSP premium - contribution.
+        advance_ptc_received: Advance payments from 1095-A.
+        net_ptc: Additional credit (+) or repayment (-).
+        repayment_required: Whether repayment is due.
+        repayment_amount: Amount to repay (may be limited).
+        repayment_limitation: Cap based on income, or None if unlimited.
+        additional_credit: Extra credit to claim.
+        is_eligible: Whether eligible for PTC.
+        ineligibility_reason: Why ineligible, if applicable.
+        is_partial_year: Whether coverage was < 12 months.
+        coverage_months: Number of months with coverage.
+    """
+
+    # Household data
+    household_size: int
+    household_income: Decimal
+    federal_poverty_level: Decimal
+    income_as_fpl_percent: Decimal
+
+    # Premium data
+    annual_enrollment_premium: Decimal
+    annual_slcsp_premium: Decimal
+
+    # Credit calculation
+    applicable_percentage: Decimal
+    annual_contribution: Decimal
+    calculated_ptc: Decimal
+
+    # Reconciliation
+    advance_ptc_received: Decimal
+
+    # Final result
+    net_ptc: Decimal
+    repayment_required: bool
+    repayment_amount: Decimal
+    repayment_limitation: Decimal | None
+    additional_credit: Decimal
+
+    # Eligibility
+    is_eligible: bool
+    ineligibility_reason: str | None = None
+
+    # Partial year tracking
+    is_partial_year: bool = False
+    coverage_months: int = 12
 
 
 @dataclass
@@ -1802,6 +1865,254 @@ def build_qbi_from_rental(
         w2_wages=Decimal("0"),
         is_sstb=False,  # Rentals are never SSTB
         source="rental",
+    )
+
+
+# =============================================================================
+# Premium Tax Credit - Form 8962 (PTAX-04-07)
+# =============================================================================
+
+# Federal Poverty Level (2024) - 48 contiguous states
+# Used for Premium Tax Credit calculation
+FPL_2024: dict[int, Decimal] = {
+    1: Decimal("14580"),
+    2: Decimal("19720"),
+    3: Decimal("24860"),
+    4: Decimal("30000"),
+    5: Decimal("35140"),
+    6: Decimal("40280"),
+    7: Decimal("45420"),
+    8: Decimal("50560"),
+}
+
+# Additional person above 8
+FPL_2024_ADDITIONAL = Decimal("5140")
+
+
+def get_fpl(household_size: int, tax_year: int = 2024) -> Decimal:
+    """Get Federal Poverty Level for household size.
+
+    Args:
+        household_size: Number of people in tax household.
+        tax_year: Tax year (currently only 2024 supported).
+
+    Returns:
+        Federal Poverty Level amount.
+
+    Example:
+        >>> get_fpl(4)
+        Decimal('30000')
+    """
+    if household_size <= 8:
+        return FPL_2024.get(household_size, FPL_2024[1])
+    else:
+        # For each additional person above 8
+        return FPL_2024[8] + FPL_2024_ADDITIONAL * (household_size - 8)
+
+
+def get_applicable_percentage(
+    income_as_fpl_percent: Decimal,
+) -> Decimal:
+    """Get applicable percentage for PTC calculation.
+
+    2024 rates (ARP extended):
+    - <150% FPL: 0%
+    - 150-200% FPL: 0-2%
+    - 200-250% FPL: 2-4%
+    - 250-300% FPL: 4-6%
+    - 300-400% FPL: 6-8.5%
+    - >400% FPL: 8.5%
+
+    Args:
+        income_as_fpl_percent: Household income as % of FPL (e.g., 250 for 250%).
+
+    Returns:
+        Contribution as decimal (e.g., 0.04 for 4%).
+
+    Example:
+        >>> get_applicable_percentage(Decimal("200"))
+        Decimal('0.02')
+    """
+    if income_as_fpl_percent < Decimal("150"):
+        return Decimal("0")
+    elif income_as_fpl_percent < Decimal("200"):
+        # Linear from 0% to 2%
+        pct = (income_as_fpl_percent - Decimal("150")) / Decimal("50")
+        return pct * Decimal("0.02")
+    elif income_as_fpl_percent < Decimal("250"):
+        # Linear from 2% to 4%
+        pct = (income_as_fpl_percent - Decimal("200")) / Decimal("50")
+        return Decimal("0.02") + pct * Decimal("0.02")
+    elif income_as_fpl_percent < Decimal("300"):
+        # Linear from 4% to 6%
+        pct = (income_as_fpl_percent - Decimal("250")) / Decimal("50")
+        return Decimal("0.04") + pct * Decimal("0.02")
+    elif income_as_fpl_percent < Decimal("400"):
+        # Linear from 6% to 8.5%
+        pct = (income_as_fpl_percent - Decimal("300")) / Decimal("100")
+        return Decimal("0.06") + pct * Decimal("0.025")
+    else:
+        return Decimal("0.085")
+
+
+def get_ptc_repayment_limit(
+    income_as_fpl_percent: Decimal,
+    filing_status: FilingStatus,
+) -> Decimal | None:
+    """Get repayment limitation for excess advance PTC.
+
+    2024 limits:
+    | FPL %     | Single/HOH | MFJ/QW  |
+    |-----------|------------|---------|
+    | <200%     | $375       | $750    |
+    | 200-300%  | $975       | $1,950  |
+    | 300-400%  | $1,625     | $3,250  |
+    | >400%     | No limit   | No limit|
+
+    Args:
+        income_as_fpl_percent: Income as % of FPL.
+        filing_status: Filing status for limit determination.
+
+    Returns:
+        Repayment limit or None if no limit applies.
+
+    Example:
+        >>> get_ptc_repayment_limit(Decimal("250"), FilingStatus.SINGLE)
+        Decimal('975')
+    """
+    is_joint = filing_status in (
+        FilingStatus.MARRIED_FILING_JOINTLY,
+        FilingStatus.QUALIFYING_WIDOW,
+    )
+
+    if income_as_fpl_percent >= Decimal("400"):
+        return None  # No limit - full repayment required
+    elif income_as_fpl_percent >= Decimal("300"):
+        return Decimal("3250") if is_joint else Decimal("1625")
+    elif income_as_fpl_percent >= Decimal("200"):
+        return Decimal("1950") if is_joint else Decimal("975")
+    else:
+        return Decimal("750") if is_joint else Decimal("375")
+
+
+def calculate_premium_tax_credit(
+    household_income: Decimal,
+    household_size: int,
+    form_1095a: Form1095A,
+    filing_status: FilingStatus,
+) -> PremiumTaxCredit:
+    """Calculate Premium Tax Credit and reconcile advance payments.
+
+    Form 8962 logic:
+    1. Calculate household income as % of FPL
+    2. Determine applicable percentage (contribution %)
+    3. Calculate annual contribution (income × applicable %)
+    4. Calculate PTC = SLCSP premium - contribution
+    5. Compare to advance payments received
+    6. Determine additional credit or repayment (with limitations)
+
+    Args:
+        household_income: Modified AGI for household.
+        household_size: Number of people in tax household.
+        form_1095a: Form 1095-A with marketplace data.
+        filing_status: For repayment limitation.
+
+    Returns:
+        PremiumTaxCredit with complete reconciliation.
+
+    Example:
+        >>> from src.documents.models import Form1095A
+        >>> form = Form1095A(
+        ...     recipient_name="John Smith",
+        ...     recipient_tin="123-45-6789",
+        ...     marketplace_id="FFM123",
+        ...     policy_number="POL123",
+        ...     policy_start_date="2024-01-01",
+        ...     annual_enrollment_premium=Decimal("7800"),
+        ...     annual_slcsp_premium=Decimal("9600"),
+        ...     annual_advance_ptc=Decimal("4800"),
+        ... )
+        >>> result = calculate_premium_tax_credit(
+        ...     Decimal("40000"), 2, form, FilingStatus.SINGLE
+        ... )
+        >>> result.is_eligible
+        True
+    """
+    # Calculate FPL percentage
+    fpl = get_fpl(household_size)
+    income_as_fpl_percent = (household_income / fpl) * Decimal("100")
+
+    # Check eligibility (100-400% FPL for 2024 under ARP extension)
+    # Below 100% generally eligible for Medicaid, above 400% no longer excluded
+    is_eligible = income_as_fpl_percent >= Decimal("100")
+    ineligibility_reason = None
+    if not is_eligible:
+        ineligibility_reason = "Income below 100% FPL (may qualify for Medicaid)"
+
+    # Get applicable percentage
+    applicable_pct = get_applicable_percentage(income_as_fpl_percent)
+
+    # Calculate annual contribution (what taxpayer should pay)
+    annual_contribution = household_income * applicable_pct
+
+    # Get premium data from 1095-A
+    annual_slcsp = form_1095a.annual_slcsp_premium
+    annual_enrolled = form_1095a.annual_enrollment_premium
+    advance_ptc = form_1095a.annual_advance_ptc
+
+    # Calculate PTC = SLCSP - contribution (but not more than enrolled premium)
+    calculated_ptc = max(Decimal("0"), annual_slcsp - annual_contribution)
+    calculated_ptc = min(calculated_ptc, annual_enrolled)
+
+    # Reconciliation: compare calculated PTC to advance received
+    net_ptc = calculated_ptc - advance_ptc
+
+    # Determine repayment or additional credit
+    repayment_required = net_ptc < Decimal("0")
+    additional_credit = max(Decimal("0"), net_ptc)
+
+    # Apply repayment limitation if needed
+    repayment_limitation = None
+    if repayment_required:
+        repayment_limitation = get_ptc_repayment_limit(
+            income_as_fpl_percent, filing_status
+        )
+
+    if repayment_required:
+        raw_repayment = abs(net_ptc)
+        if repayment_limitation is not None:
+            repayment_amount = min(raw_repayment, repayment_limitation)
+        else:
+            repayment_amount = raw_repayment
+    else:
+        repayment_amount = Decimal("0")
+
+    # Determine coverage months from monthly data
+    coverage_months = sum(
+        1 for premium in form_1095a.monthly_enrollment_premium if premium > Decimal("0")
+    )
+    is_partial_year = coverage_months < 12 and coverage_months > 0
+
+    return PremiumTaxCredit(
+        household_size=household_size,
+        household_income=household_income,
+        federal_poverty_level=fpl,
+        income_as_fpl_percent=income_as_fpl_percent.quantize(Decimal("0.01")),
+        annual_enrollment_premium=annual_enrolled,
+        annual_slcsp_premium=annual_slcsp,
+        applicable_percentage=applicable_pct.quantize(Decimal("0.0001")),
+        annual_contribution=annual_contribution.quantize(Decimal("0.01")),
+        calculated_ptc=calculated_ptc.quantize(Decimal("0.01")),
+        advance_ptc_received=advance_ptc,
+        net_ptc=net_ptc.quantize(Decimal("0.01")),
+        repayment_required=repayment_required,
+        repayment_amount=repayment_amount.quantize(Decimal("0.01")),
+        repayment_limitation=repayment_limitation,
+        additional_credit=additional_credit.quantize(Decimal("0.01")),
+        is_eligible=is_eligible,
+        ineligibility_reason=ineligibility_reason,
+        is_partial_year=is_partial_year,
+        coverage_months=coverage_months,
     )
 
 

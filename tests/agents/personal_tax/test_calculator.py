@@ -21,6 +21,7 @@ from src.agents.personal_tax.calculator import (
     FilingStatus,
     IncomeSummary,
     ItemizedDeductionBreakdown,
+    PremiumTaxCredit,
     QBIComponent,
     QBIDeduction,
     RentalExpenses,
@@ -39,6 +40,7 @@ from src.agents.personal_tax.calculator import (
     build_qbi_from_rental,
     build_qbi_from_schedule_c,
     calculate_deductions,
+    calculate_premium_tax_credit,
     calculate_qbi_deduction,
     calculate_schedule_c,
     calculate_schedule_d,
@@ -49,11 +51,15 @@ from src.agents.personal_tax.calculator import (
     compare_years,
     convert_1099b_to_transactions,
     evaluate_credits,
+    get_applicable_percentage,
     get_capital_gains_rate,
+    get_fpl,
+    get_ptc_repayment_limit,
     get_standard_deduction,
 )
 from src.documents.models import (
     ConfidenceLevel,
+    Form1095A,
     Form1098,
     Form1098T,
     Form1099B,
@@ -3333,3 +3339,372 @@ class TestQBIHelpers:
             Decimal("15000"), "789 Elm St", qualifies_safe_harbor=False
         )
         assert qbi is None
+
+
+# =============================================================================
+# Premium Tax Credit Tests (04-07)
+# =============================================================================
+
+
+class TestGetFPL:
+    """Tests for get_fpl() function."""
+
+    def test_fpl_single_person(self) -> None:
+        """FPL for 1 person household."""
+        fpl = get_fpl(1)
+        assert fpl == Decimal("14580")
+
+    def test_fpl_family_of_four(self) -> None:
+        """FPL for standard family of 4."""
+        fpl = get_fpl(4)
+        assert fpl == Decimal("30000")
+
+    def test_fpl_household_of_eight(self) -> None:
+        """FPL for maximum standard size of 8."""
+        fpl = get_fpl(8)
+        assert fpl == Decimal("50560")
+
+    def test_fpl_large_household(self) -> None:
+        """FPL for household > 8 adds additional per person."""
+        # 8-person base + 2 additional @ $5,140 each
+        fpl = get_fpl(10)
+        expected = Decimal("50560") + Decimal("5140") * 2
+        assert fpl == expected
+
+
+class TestGetApplicablePercentage:
+    """Tests for get_applicable_percentage() function."""
+
+    def test_below_150_fpl_zero_percent(self) -> None:
+        """Income below 150% FPL contributes 0%."""
+        pct = get_applicable_percentage(Decimal("100"))
+        assert pct == Decimal("0")
+
+        pct = get_applicable_percentage(Decimal("149"))
+        assert pct == Decimal("0")
+
+    def test_at_150_fpl_zero_percent(self) -> None:
+        """At exactly 150% FPL, contribution is 0%."""
+        pct = get_applicable_percentage(Decimal("150"))
+        assert pct == Decimal("0")
+
+    def test_175_fpl_linear_interpolation(self) -> None:
+        """At 175% FPL (midpoint 150-200), contribution is 1%."""
+        pct = get_applicable_percentage(Decimal("175"))
+        assert pct == Decimal("0.01")
+
+    def test_200_fpl_two_percent(self) -> None:
+        """At 200% FPL, contribution is 2%."""
+        pct = get_applicable_percentage(Decimal("200"))
+        assert pct == Decimal("0.02")
+
+    def test_250_fpl_four_percent(self) -> None:
+        """At 250% FPL, contribution is 4%."""
+        pct = get_applicable_percentage(Decimal("250"))
+        assert pct == Decimal("0.04")
+
+    def test_300_fpl_six_percent(self) -> None:
+        """At 300% FPL, contribution is 6%."""
+        pct = get_applicable_percentage(Decimal("300"))
+        assert pct == Decimal("0.06")
+
+    def test_400_fpl_eight_point_five_percent(self) -> None:
+        """At 400% FPL, contribution is 8.5%."""
+        pct = get_applicable_percentage(Decimal("400"))
+        assert pct == Decimal("0.085")
+
+    def test_above_400_fpl_capped(self) -> None:
+        """Above 400% FPL, contribution stays at 8.5% (ARP extension)."""
+        pct = get_applicable_percentage(Decimal("500"))
+        assert pct == Decimal("0.085")
+
+
+class TestGetPTCRepaymentLimit:
+    """Tests for get_ptc_repayment_limit() function."""
+
+    def test_below_200_fpl_single(self) -> None:
+        """Single filer below 200% FPL has $375 limit."""
+        limit = get_ptc_repayment_limit(Decimal("175"), FilingStatus.SINGLE)
+        assert limit == Decimal("375")
+
+    def test_below_200_fpl_mfj(self) -> None:
+        """MFJ below 200% FPL has $750 limit."""
+        limit = get_ptc_repayment_limit(
+            Decimal("175"), FilingStatus.MARRIED_FILING_JOINTLY
+        )
+        assert limit == Decimal("750")
+
+    def test_200_to_300_fpl_single(self) -> None:
+        """Single filer 200-300% FPL has $975 limit."""
+        limit = get_ptc_repayment_limit(Decimal("250"), FilingStatus.SINGLE)
+        assert limit == Decimal("975")
+
+    def test_200_to_300_fpl_mfj(self) -> None:
+        """MFJ 200-300% FPL has $1,950 limit."""
+        limit = get_ptc_repayment_limit(
+            Decimal("250"), FilingStatus.MARRIED_FILING_JOINTLY
+        )
+        assert limit == Decimal("1950")
+
+    def test_300_to_400_fpl_single(self) -> None:
+        """Single filer 300-400% FPL has $1,625 limit."""
+        limit = get_ptc_repayment_limit(Decimal("350"), FilingStatus.SINGLE)
+        assert limit == Decimal("1625")
+
+    def test_300_to_400_fpl_mfj(self) -> None:
+        """MFJ 300-400% FPL has $3,250 limit."""
+        limit = get_ptc_repayment_limit(
+            Decimal("350"), FilingStatus.MARRIED_FILING_JOINTLY
+        )
+        assert limit == Decimal("3250")
+
+    def test_above_400_fpl_no_limit(self) -> None:
+        """Above 400% FPL, no repayment limit."""
+        limit = get_ptc_repayment_limit(Decimal("450"), FilingStatus.SINGLE)
+        assert limit is None
+
+        limit = get_ptc_repayment_limit(
+            Decimal("450"), FilingStatus.MARRIED_FILING_JOINTLY
+        )
+        assert limit is None
+
+    def test_hoh_same_as_single(self) -> None:
+        """Head of Household uses same limits as Single."""
+        limit = get_ptc_repayment_limit(Decimal("250"), FilingStatus.HEAD_OF_HOUSEHOLD)
+        assert limit == Decimal("975")
+
+    def test_qualifying_widow_same_as_mfj(self) -> None:
+        """Qualifying Widow uses same limits as MFJ."""
+        limit = get_ptc_repayment_limit(Decimal("250"), FilingStatus.QUALIFYING_WIDOW)
+        assert limit == Decimal("1950")
+
+
+class TestPremiumTaxCreditDataclass:
+    """Tests for PremiumTaxCredit dataclass."""
+
+    def test_dataclass_creation(self) -> None:
+        """PremiumTaxCredit stores all fields correctly."""
+        ptc = PremiumTaxCredit(
+            household_size=2,
+            household_income=Decimal("40000"),
+            federal_poverty_level=Decimal("19720"),
+            income_as_fpl_percent=Decimal("202.84"),
+            annual_enrollment_premium=Decimal("7800"),
+            annual_slcsp_premium=Decimal("9600"),
+            applicable_percentage=Decimal("0.0211"),
+            annual_contribution=Decimal("844"),
+            calculated_ptc=Decimal("8756"),
+            advance_ptc_received=Decimal("4800"),
+            net_ptc=Decimal("3956"),
+            repayment_required=False,
+            repayment_amount=Decimal("0"),
+            repayment_limitation=None,
+            additional_credit=Decimal("3956"),
+            is_eligible=True,
+            ineligibility_reason=None,
+            is_partial_year=False,
+            coverage_months=12,
+        )
+        assert ptc.household_size == 2
+        assert ptc.is_eligible is True
+        assert ptc.additional_credit == Decimal("3956")
+
+
+class TestCalculatePremiumTaxCredit:
+    """Tests for calculate_premium_tax_credit() function."""
+
+    @pytest.fixture
+    def sample_1095a(self) -> Form1095A:
+        """Create sample Form 1095-A for testing."""
+        return Form1095A(
+            recipient_name="John Smith",
+            recipient_tin="123-45-6789",
+            marketplace_id="FFM123456",
+            policy_number="POL123",
+            policy_start_date="2024-01-01",
+            annual_enrollment_premium=Decimal("7800"),
+            annual_slcsp_premium=Decimal("9600"),
+            annual_advance_ptc=Decimal("4800"),
+            monthly_enrollment_premium=[Decimal("650")] * 12,
+            monthly_slcsp_premium=[Decimal("800")] * 12,
+            monthly_advance_ptc=[Decimal("400")] * 12,
+        )
+
+    def test_eligible_additional_credit_due(self, sample_1095a: Form1095A) -> None:
+        """Taxpayer owes no repayment, gets additional credit."""
+        result = calculate_premium_tax_credit(
+            household_income=Decimal("40000"),  # ~203% FPL for 2
+            household_size=2,
+            form_1095a=sample_1095a,
+            filing_status=FilingStatus.SINGLE,
+        )
+        assert result.is_eligible is True
+        assert result.repayment_required is False
+        assert result.additional_credit > Decimal("0")
+
+    def test_repayment_required(self, sample_1095a: Form1095A) -> None:
+        """Higher income means repayment required."""
+        # Create 1095-A with more advance credit than should have been received
+        form = Form1095A(
+            recipient_name="Jane Doe",
+            recipient_tin="987-65-4321",
+            marketplace_id="FFM999999",
+            policy_number="POL999",
+            policy_start_date="2024-01-01",
+            annual_enrollment_premium=Decimal("6000"),
+            annual_slcsp_premium=Decimal("7200"),
+            annual_advance_ptc=Decimal("5000"),  # Received too much
+            monthly_enrollment_premium=[Decimal("500")] * 12,
+            monthly_slcsp_premium=[Decimal("600")] * 12,
+            monthly_advance_ptc=[Decimal("417")] * 12,
+        )
+        result = calculate_premium_tax_credit(
+            household_income=Decimal("75000"),  # ~380% FPL for 2
+            household_size=2,
+            form_1095a=form,
+            filing_status=FilingStatus.SINGLE,
+        )
+        assert result.is_eligible is True
+        assert result.repayment_required is True
+        assert result.repayment_amount > Decimal("0")
+
+    def test_repayment_limited(self) -> None:
+        """Repayment capped at limitation amount."""
+        form = Form1095A(
+            recipient_name="Test User",
+            recipient_tin="111-22-3333",
+            marketplace_id="FFM111222",
+            policy_number="POL111",
+            policy_start_date="2024-01-01",
+            annual_enrollment_premium=Decimal("6000"),
+            annual_slcsp_premium=Decimal("7200"),
+            annual_advance_ptc=Decimal("6000"),  # Large advance
+            monthly_enrollment_premium=[Decimal("500")] * 12,
+            monthly_slcsp_premium=[Decimal("600")] * 12,
+            monthly_advance_ptc=[Decimal("500")] * 12,
+        )
+        result = calculate_premium_tax_credit(
+            household_income=Decimal("35000"),  # ~237% FPL for 1
+            household_size=1,
+            form_1095a=form,
+            filing_status=FilingStatus.SINGLE,
+        )
+        # Should be limited
+        assert result.repayment_required is True
+        assert result.repayment_limitation == Decimal("975")
+        assert result.repayment_amount <= Decimal("975")
+
+    def test_ineligible_below_100_fpl(self, sample_1095a: Form1095A) -> None:
+        """Income below 100% FPL is ineligible (Medicaid territory)."""
+        result = calculate_premium_tax_credit(
+            household_income=Decimal("10000"),  # Below FPL
+            household_size=2,
+            form_1095a=sample_1095a,
+            filing_status=FilingStatus.SINGLE,
+        )
+        assert result.is_eligible is False
+        assert result.ineligibility_reason is not None
+        assert "100% FPL" in result.ineligibility_reason
+
+    def test_partial_year_coverage(self) -> None:
+        """Partial year coverage detected from monthly data."""
+        form = Form1095A(
+            recipient_name="Part Year",
+            recipient_tin="555-55-5555",
+            marketplace_id="FFM555555",
+            policy_number="POL555",
+            policy_start_date="2024-07-01",
+            annual_enrollment_premium=Decimal("3900"),  # 6 months
+            annual_slcsp_premium=Decimal("4800"),  # 6 months
+            annual_advance_ptc=Decimal("2400"),  # 6 months
+            # Only 6 months with premiums
+            monthly_enrollment_premium=[Decimal("0")] * 6 + [Decimal("650")] * 6,
+            monthly_slcsp_premium=[Decimal("0")] * 6 + [Decimal("800")] * 6,
+            monthly_advance_ptc=[Decimal("0")] * 6 + [Decimal("400")] * 6,
+        )
+        result = calculate_premium_tax_credit(
+            household_income=Decimal("40000"),
+            household_size=2,
+            form_1095a=form,
+            filing_status=FilingStatus.SINGLE,
+        )
+        assert result.is_partial_year is True
+        assert result.coverage_months == 6
+
+    def test_full_year_coverage(self, sample_1095a: Form1095A) -> None:
+        """Full year coverage correctly identified."""
+        result = calculate_premium_tax_credit(
+            household_income=Decimal("40000"),
+            household_size=2,
+            form_1095a=sample_1095a,
+            filing_status=FilingStatus.SINGLE,
+        )
+        assert result.is_partial_year is False
+        assert result.coverage_months == 12
+
+    def test_high_income_no_repayment_limit(self) -> None:
+        """Above 400% FPL, full repayment required (no limit)."""
+        form = Form1095A(
+            recipient_name="High Income",
+            recipient_tin="999-99-9999",
+            marketplace_id="FFM999999",
+            policy_number="POL999",
+            policy_start_date="2024-01-01",
+            annual_enrollment_premium=Decimal("6000"),
+            annual_slcsp_premium=Decimal("7200"),
+            annual_advance_ptc=Decimal("5000"),
+            monthly_enrollment_premium=[Decimal("500")] * 12,
+            monthly_slcsp_premium=[Decimal("600")] * 12,
+            monthly_advance_ptc=[Decimal("417")] * 12,
+        )
+        result = calculate_premium_tax_credit(
+            household_income=Decimal("100000"),  # >400% FPL
+            household_size=2,
+            form_1095a=form,
+            filing_status=FilingStatus.SINGLE,
+        )
+        assert result.repayment_limitation is None
+        # Should repay full excess (no cap)
+
+    def test_mfj_repayment_limits_higher(self) -> None:
+        """MFJ has higher repayment limits than single."""
+        form = Form1095A(
+            recipient_name="Married Couple",
+            recipient_tin="888-88-8888",
+            marketplace_id="FFM888888",
+            policy_number="POL888",
+            policy_start_date="2024-01-01",
+            annual_enrollment_premium=Decimal("6000"),
+            annual_slcsp_premium=Decimal("7200"),
+            annual_advance_ptc=Decimal("6000"),
+            monthly_enrollment_premium=[Decimal("500")] * 12,
+            monthly_slcsp_premium=[Decimal("600")] * 12,
+            monthly_advance_ptc=[Decimal("500")] * 12,
+        )
+        # Same income, different filing status
+        single_result = calculate_premium_tax_credit(
+            household_income=Decimal("35000"),
+            household_size=1,
+            form_1095a=form,
+            filing_status=FilingStatus.SINGLE,
+        )
+        mfj_result = calculate_premium_tax_credit(
+            household_income=Decimal("35000"),
+            household_size=1,
+            form_1095a=form,
+            filing_status=FilingStatus.MARRIED_FILING_JOINTLY,
+        )
+        # MFJ limit is 2x single
+        assert mfj_result.repayment_limitation == single_result.repayment_limitation * 2
+
+    def test_ptc_capped_at_enrollment_premium(self, sample_1095a: Form1095A) -> None:
+        """PTC cannot exceed actual enrollment premium."""
+        # Low income means calculated PTC could be very high
+        result = calculate_premium_tax_credit(
+            household_income=Decimal("25000"),  # ~127% FPL for 2
+            household_size=2,
+            form_1095a=sample_1095a,
+            filing_status=FilingStatus.SINGLE,
+        )
+        # Calculated PTC cannot exceed enrolled premium
+        assert result.calculated_ptc <= sample_1095a.annual_enrollment_premium
