@@ -17,22 +17,36 @@ from src.agents.personal_tax.calculator import (
     CreditItem,
     CreditsResult,
     DeductionResult,
+    FilingStatus,
     IncomeSummary,
+    ItemizedDeductionBreakdown,
+    ScheduleCData,
+    ScheduleCExpenses,
     TaxResult,
     TaxSituation,
     VarianceItem,
     aggregate_income,
+    build_credit_inputs,
     calculate_deductions,
+    calculate_schedule_c,
+    calculate_self_employment_tax,
     calculate_tax,
+    compute_itemized_deductions,
     compare_years,
     evaluate_credits,
     get_standard_deduction,
 )
 from src.documents.models import (
     ConfidenceLevel,
+    Form1098,
+    Form1098T,
     Form1099DIV,
+    Form1099G,
     Form1099INT,
     Form1099NEC,
+    Form1099R,
+    Form5498,
+    FormK1,
     W2Data,
 )
 
@@ -98,6 +112,86 @@ def sample_1099_nec() -> Form1099NEC:
     )
 
 
+@pytest.fixture
+def sample_1098() -> Form1098:
+    """Create a sample 1098 for testing."""
+    return Form1098(
+        lender_name="ABC Mortgage",
+        lender_tin="12-3456789",
+        borrower_name="John Doe",
+        borrower_tin="123-45-6789",
+        mortgage_interest=Decimal("8000"),
+        points_paid=Decimal("500"),
+        mortgage_insurance_premiums=Decimal("300"),
+        property_taxes_paid=Decimal("6000"),
+        confidence=ConfidenceLevel.HIGH,
+    )
+
+
+@pytest.fixture
+def sample_1099_r() -> Form1099R:
+    """Create a sample 1099-R for testing."""
+    return Form1099R(
+        payer_name="Retirement Plan Inc",
+        payer_tin="98-7654321",
+        recipient_name="John Doe",
+        recipient_tin="123-45-6789",
+        gross_distribution=Decimal("12000"),
+        taxable_amount=Decimal("10000"),
+        distribution_code="1",
+        state_tax_withheld=Decimal("1500"),
+        confidence=ConfidenceLevel.HIGH,
+    )
+
+
+@pytest.fixture
+def sample_1099_g() -> Form1099G:
+    """Create a sample 1099-G for testing."""
+    return Form1099G(
+        payer_name="State Agency",
+        payer_tin="11-1111111",
+        recipient_name="John Doe",
+        recipient_tin="123-45-6789",
+        unemployment_compensation=Decimal("3000"),
+        state_local_tax_refund=Decimal("0"),
+        state_tax_withheld=Decimal("800"),
+        confidence=ConfidenceLevel.HIGH,
+    )
+
+
+@pytest.fixture
+def sample_1098_t() -> Form1098T:
+    """Create a sample 1098-T for testing."""
+    return Form1098T(
+        institution_name="State University",
+        institution_tin="22-2222222",
+        student_name="John Doe",
+        student_tin="123-45-6789",
+        payments_received=Decimal("10000"),
+        scholarships_grants=Decimal("2500"),
+        adjustments_prior_year=Decimal("500"),
+        scholarships_adjustments_prior_year=Decimal("0"),
+        at_least_half_time=True,
+        confidence=ConfidenceLevel.HIGH,
+    )
+
+
+@pytest.fixture
+def sample_5498() -> Form5498:
+    """Create a sample 5498 for testing."""
+    return Form5498(
+        trustee_name="IRA Trustee",
+        trustee_tin="33-3333333",
+        participant_name="John Doe",
+        participant_tin="123-45-6789",
+        ira_contributions=Decimal("2000"),
+        sep_contributions=Decimal("1000"),
+        simple_contributions=Decimal("500"),
+        roth_ira_contributions=Decimal("1500"),
+        confidence=ConfidenceLevel.HIGH,
+    )
+
+
 # =============================================================================
 # Income Aggregation Tests (PTAX-03)
 # =============================================================================
@@ -149,14 +243,18 @@ class TestAggregateIncome:
         assert result.total_income == Decimal("80000")
         assert result.federal_withholding == Decimal("12000")
 
-    def test_aggregate_income_single_1099_int(self, sample_1099_int: Form1099INT) -> None:
+    def test_aggregate_income_single_1099_int(
+        self, sample_1099_int: Form1099INT
+    ) -> None:
         """Single 1099-INT should produce correct interest total."""
         result = aggregate_income([sample_1099_int])
 
         assert result.total_interest == Decimal("500")
         assert result.total_income == Decimal("500")
 
-    def test_aggregate_income_single_1099_div(self, sample_1099_div: Form1099DIV) -> None:
+    def test_aggregate_income_single_1099_div(
+        self, sample_1099_div: Form1099DIV
+    ) -> None:
         """Single 1099-DIV should produce correct dividend totals."""
         result = aggregate_income([sample_1099_div])
 
@@ -164,7 +262,9 @@ class TestAggregateIncome:
         assert result.total_qualified_dividends == Decimal("800")
         assert result.total_income == Decimal("1000")
 
-    def test_aggregate_income_single_1099_nec(self, sample_1099_nec: Form1099NEC) -> None:
+    def test_aggregate_income_single_1099_nec(
+        self, sample_1099_nec: Form1099NEC
+    ) -> None:
         """Single 1099-NEC should produce correct NEC total."""
         result = aggregate_income([sample_1099_nec])
 
@@ -179,7 +279,9 @@ class TestAggregateIncome:
         sample_1099_nec: Form1099NEC,
     ) -> None:
         """Mix of all document types should categorize correctly."""
-        result = aggregate_income([sample_w2, sample_1099_int, sample_1099_div, sample_1099_nec])
+        result = aggregate_income(
+            [sample_w2, sample_1099_int, sample_1099_div, sample_1099_nec]
+        )
 
         assert result.total_wages == Decimal("50000")
         assert result.total_interest == Decimal("500")
@@ -209,6 +311,18 @@ class TestAggregateIncome:
 
         assert result.total_interest == Decimal("150")
         assert result.total_income == Decimal("150")
+
+    def test_aggregate_income_1099_r_and_1099_g(
+        self,
+        sample_1099_r: Form1099R,
+        sample_1099_g: Form1099G,
+    ) -> None:
+        """1099-R and 1099-G add retirement and unemployment income."""
+        result = aggregate_income([sample_1099_r, sample_1099_g])
+
+        assert result.total_retirement_distributions == Decimal("10000")
+        assert result.total_unemployment == Decimal("3000")
+        assert result.total_income == Decimal("13000")
 
 
 # =============================================================================
@@ -261,7 +375,9 @@ class TestCalculateDeductions:
             federal_withholding=Decimal("10000"),
         )
 
-        result = calculate_deductions(income, "single", 2024, itemized_total=Decimal("10000"))
+        result = calculate_deductions(
+            income, "single", 2024, itemized_total=Decimal("10000")
+        )
 
         assert result.method == "standard"
         assert result.amount == Decimal("14600")
@@ -281,7 +397,9 @@ class TestCalculateDeductions:
             federal_withholding=Decimal("25000"),
         )
 
-        result = calculate_deductions(income, "mfj", 2024, itemized_total=Decimal("35000"))
+        result = calculate_deductions(
+            income, "mfj", 2024, itemized_total=Decimal("35000")
+        )
 
         assert result.method == "itemized"
         assert result.amount == Decimal("35000")
@@ -306,6 +424,67 @@ class TestCalculateDeductions:
         assert result.method == "standard"
         assert result.amount == Decimal("14600")
         assert result.itemized_amount == Decimal("0")
+
+
+class TestItemizedDeductions:
+    """Tests for itemized deduction computation from new forms."""
+
+    def test_compute_itemized_deductions_applies_salt_cap(
+        self,
+        sample_1098: Form1098,
+        sample_1099_r: Form1099R,
+        sample_1099_g: Form1099G,
+    ) -> None:
+        """SALT cap applies to property + state tax total."""
+        w2 = W2Data(
+            employee_ssn="123-45-6789",
+            employer_ein="12-3456789",
+            employer_name="Acme Corp",
+            employee_name="John Doe",
+            wages_tips_compensation=Decimal("50000"),
+            federal_tax_withheld=Decimal("7500"),
+            social_security_wages=Decimal("50000"),
+            social_security_tax=Decimal("3100"),
+            medicare_wages=Decimal("50000"),
+            medicare_tax=Decimal("725"),
+            state_tax_withheld=Decimal("5000"),
+            confidence=ConfidenceLevel.HIGH,
+        )
+
+        breakdown = compute_itemized_deductions(
+            [w2, sample_1098, sample_1099_r, sample_1099_g], filing_status="single"
+        )
+
+        assert isinstance(breakdown, ItemizedDeductionBreakdown)
+        assert breakdown.salt_total == Decimal("13300")
+        assert breakdown.salt_deduction == Decimal("10000")
+        assert breakdown.total == Decimal("18800")
+
+
+class TestCreditInputs:
+    """Tests for credit input aggregation from forms."""
+
+    def test_build_credit_inputs_education_and_retirement(
+        self,
+        sample_1098_t: Form1098T,
+        sample_5498: Form5498,
+    ) -> None:
+        """Education expenses and retirement contributions are aggregated."""
+        inputs = build_credit_inputs([sample_1098_t, sample_5498])
+
+        assert inputs.education_expenses == Decimal("7000")
+        assert inputs.education_credit_type == "aoc"
+        assert inputs.retirement_contributions == Decimal("5000")
+
+    def test_build_credit_inputs_llc_when_not_half_time(
+        self,
+        sample_1098_t: Form1098T,
+    ) -> None:
+        """LLC used when student is not at least half-time."""
+        modified = sample_1098_t.model_copy(update={"at_least_half_time": False})
+        inputs = build_credit_inputs([modified])
+
+        assert inputs.education_credit_type == "llc"
 
 
 # =============================================================================
@@ -422,6 +601,7 @@ class TestAdditionalChildTaxCredit:
         assert result.total_nonrefundable == Decimal("500")
         assert result.total_refundable == Decimal("1500")
 
+
 class TestEducationCredit:
     """Tests for Education Credits (AOC and LLC)."""
 
@@ -495,7 +675,11 @@ class TestEducationCredit:
         result = evaluate_credits(situation)
 
         edu = next(
-            (c for c in result.credits if "Education" in c.name or "Opportunity" in c.name),
+            (
+                c
+                for c in result.credits
+                if "Education" in c.name or "Opportunity" in c.name
+            ),
             None,
         )
         assert edu is None
@@ -567,7 +751,9 @@ class TestEITC:
 
         result = evaluate_credits(situation)
 
-        eitc = next((c for c in result.credits if c.name == "Earned Income Credit"), None)
+        eitc = next(
+            (c for c in result.credits if c.name == "Earned Income Credit"), None
+        )
         assert eitc is not None
         assert eitc.refundable is True
         assert eitc.amount > Decimal("0")
@@ -585,7 +771,9 @@ class TestEITC:
 
         result = evaluate_credits(situation)
 
-        eitc = next((c for c in result.credits if c.name == "Earned Income Credit"), None)
+        eitc = next(
+            (c for c in result.credits if c.name == "Earned Income Credit"), None
+        )
         assert eitc is None
 
     def test_eitc_above_income_limit(self) -> None:
@@ -600,7 +788,9 @@ class TestEITC:
 
         result = evaluate_credits(situation)
 
-        eitc = next((c for c in result.credits if c.name == "Earned Income Credit"), None)
+        eitc = next(
+            (c for c in result.credits if c.name == "Earned Income Credit"), None
+        )
         assert eitc is None
 
     def test_eitc_no_earned_income(self) -> None:
@@ -614,7 +804,9 @@ class TestEITC:
 
         result = evaluate_credits(situation)
 
-        eitc = next((c for c in result.credits if c.name == "Earned Income Credit"), None)
+        eitc = next(
+            (c for c in result.credits if c.name == "Earned Income Credit"), None
+        )
         assert eitc is None
 
 
@@ -634,7 +826,9 @@ class TestCreditsResult:
         result = evaluate_credits(situation)
 
         # Should have CTC ($2000) + AOC ($2500)
-        assert result.total_credits == result.total_nonrefundable + result.total_refundable
+        assert (
+            result.total_credits == result.total_nonrefundable + result.total_refundable
+        )
         assert result.total_credits >= Decimal("4500")
 
     def test_credits_refundable_vs_nonrefundable(self) -> None:
@@ -900,7 +1094,13 @@ class TestDataStructures:
         """TaxResult should have all required fields."""
         result = TaxResult(
             gross_tax=Decimal("1000"),
-            bracket_breakdown=[{"bracket": Decimal("11600"), "rate": Decimal("0.10"), "tax_in_bracket": Decimal("1000")}],
+            bracket_breakdown=[
+                {
+                    "bracket": Decimal("11600"),
+                    "rate": Decimal("0.10"),
+                    "tax_in_bracket": Decimal("1000"),
+                }
+            ],
             effective_rate=Decimal("0.10"),
         )
 
@@ -1152,7 +1352,9 @@ class TestEdgeCases:
             federal_withholding=Decimal("10000"),
         )
 
-        result = calculate_deductions(income, "single", 2024, itemized_total=Decimal("14600"))
+        result = calculate_deductions(
+            income, "single", 2024, itemized_total=Decimal("14600")
+        )
 
         # Equal should default to standard
         assert result.method == "standard"
@@ -1169,7 +1371,437 @@ class TestEdgeCases:
 
         result = evaluate_credits(situation)
 
-        eitc = next((c for c in result.credits if c.name == "Earned Income Credit"), None)
+        eitc = next(
+            (c for c in result.credits if c.name == "Earned Income Credit"), None
+        )
         assert eitc is not None
         # Phase-in: $5000 * 0.0765 = ~$382.50
         assert Decimal("300") < eitc.amount < Decimal("450")
+
+
+# =============================================================================
+# Schedule C Tests (PTAX-04-03)
+# =============================================================================
+
+
+class TestScheduleCExpenses:
+    """Tests for Schedule C expense tracking."""
+
+    def test_schedule_c_expenses_total(self) -> None:
+        """ScheduleCExpenses computes total correctly."""
+        expenses = ScheduleCExpenses(
+            advertising=Decimal("500"),
+            supplies=Decimal("1200"),
+            utilities=Decimal("3000"),
+            office_expense=Decimal("2500"),
+        )
+
+        assert expenses.total == Decimal("7200")
+
+    def test_schedule_c_expenses_default_zero(self) -> None:
+        """ScheduleCExpenses defaults all fields to zero."""
+        expenses = ScheduleCExpenses()
+        assert expenses.total == Decimal("0")
+
+    def test_schedule_c_expenses_all_categories(self) -> None:
+        """ScheduleCExpenses includes all IRS categories."""
+        expenses = ScheduleCExpenses(
+            advertising=Decimal("100"),
+            car_truck=Decimal("100"),
+            commissions_fees=Decimal("100"),
+            contract_labor=Decimal("100"),
+            depletion=Decimal("100"),
+            depreciation=Decimal("100"),
+            employee_benefits=Decimal("100"),
+            insurance=Decimal("100"),
+            interest_mortgage=Decimal("100"),
+            interest_other=Decimal("100"),
+            legal_professional=Decimal("100"),
+            office_expense=Decimal("100"),
+            pension_profit_sharing=Decimal("100"),
+            rent_vehicles_machinery=Decimal("100"),
+            rent_other=Decimal("100"),
+            repairs_maintenance=Decimal("100"),
+            supplies=Decimal("100"),
+            taxes_licenses=Decimal("100"),
+            travel=Decimal("100"),
+            deductible_meals=Decimal("100"),
+            utilities=Decimal("100"),
+            wages=Decimal("100"),
+            other_expenses=Decimal("100"),
+        )
+
+        # 23 categories * $100 = $2300
+        assert expenses.total == Decimal("2300")
+
+
+class TestScheduleCData:
+    """Tests for Schedule C calculations."""
+
+    def test_schedule_c_net_profit(self) -> None:
+        """Schedule C calculates net profit correctly."""
+        sch_c = ScheduleCData(
+            business_name="Test Business",
+            business_activity="Consulting",
+            principal_business_code="541611",
+            gross_receipts=Decimal("100000"),
+            cost_of_goods_sold=Decimal("20000"),
+            expenses=ScheduleCExpenses(
+                office_expense=Decimal("5000"),
+                supplies=Decimal("2000"),
+            ),
+        )
+
+        result = calculate_schedule_c(sch_c)
+
+        # 100000 - 20000 - 5000 - 2000 = 73000
+        assert result["net_profit_or_loss"] == Decimal("73000")
+
+    def test_schedule_c_with_loss(self) -> None:
+        """Schedule C handles business loss."""
+        sch_c = ScheduleCData(
+            business_name="Startup",
+            business_activity="Tech",
+            principal_business_code="541511",
+            gross_receipts=Decimal("10000"),
+            expenses=ScheduleCExpenses(
+                office_expense=Decimal("15000"),
+            ),
+        )
+
+        result = calculate_schedule_c(sch_c)
+
+        assert result["net_profit_or_loss"] == Decimal("-5000")
+        # QBI cannot be negative
+        assert result["qualified_business_income"] == Decimal("0")
+
+    def test_schedule_c_gross_income_calculation(self) -> None:
+        """Schedule C computes gross income (receipts - returns)."""
+        sch_c = ScheduleCData(
+            business_name="Retail",
+            business_activity="Sales",
+            principal_business_code="441110",
+            gross_receipts=Decimal("50000"),
+            returns_allowances=Decimal("3000"),
+        )
+
+        assert sch_c.gross_income == Decimal("47000")
+
+    def test_schedule_c_gross_profit_calculation(self) -> None:
+        """Schedule C computes gross profit (gross income - COGS)."""
+        sch_c = ScheduleCData(
+            business_name="Wholesale",
+            business_activity="Distribution",
+            principal_business_code="423110",
+            gross_receipts=Decimal("100000"),
+            returns_allowances=Decimal("5000"),
+            cost_of_goods_sold=Decimal("40000"),
+        )
+
+        assert sch_c.gross_profit == Decimal("55000")
+
+    def test_schedule_c_with_home_office(self) -> None:
+        """Schedule C includes home office deduction in expenses."""
+        sch_c = ScheduleCData(
+            business_name="Freelance",
+            business_activity="Writing",
+            principal_business_code="711510",
+            gross_receipts=Decimal("80000"),
+            expenses=ScheduleCExpenses(
+                supplies=Decimal("1000"),
+            ),
+            home_office_deduction=Decimal("5000"),
+        )
+
+        # Total expenses include home office
+        assert sch_c.total_expenses == Decimal("6000")
+        assert sch_c.net_profit_or_loss == Decimal("74000")
+
+
+# =============================================================================
+# Self-Employment Tax Tests (PTAX-04-03)
+# =============================================================================
+
+
+class TestSelfEmploymentTax:
+    """Tests for self-employment tax calculations."""
+
+    def test_se_tax_basic(self) -> None:
+        """SE tax calculated correctly for typical income."""
+        result = calculate_self_employment_tax(
+            Decimal("100000"),
+            FilingStatus.SINGLE,
+        )
+
+        # Net = 100000 * 0.9235 = 92350
+        assert result.net_earnings == Decimal("92350.00")
+        # SS = 92350 * 0.124 = 11451.40
+        assert result.social_security_tax == Decimal("11451.40")
+        # Medicare = 92350 * 0.029 = 2678.15
+        assert result.medicare_tax == Decimal("2678.15")
+        # No additional Medicare (under threshold)
+        assert result.additional_medicare_tax == Decimal("0.00")
+        # Total = 14129.55
+        assert result.total_se_tax == Decimal("14129.55")
+        # Deductible = 50%
+        assert result.deductible_portion == Decimal("7064.78")
+
+    def test_se_tax_above_ss_wage_base(self) -> None:
+        """SE tax respects Social Security wage base cap."""
+        result = calculate_self_employment_tax(
+            Decimal("200000"),
+            FilingStatus.SINGLE,
+        )
+
+        # SS capped at wage base * rate
+        max_ss_tax = Decimal("168600") * Decimal("0.124")
+        assert result.social_security_tax == max_ss_tax.quantize(Decimal("0.01"))
+
+    def test_se_tax_additional_medicare_single(self) -> None:
+        """Additional Medicare applies above $200k threshold for single."""
+        result = calculate_self_employment_tax(
+            Decimal("250000"),
+            FilingStatus.SINGLE,
+        )
+
+        # Net earnings = 250000 * 0.9235 = 230875
+        # Excess over $200k = 30875
+        # Additional Medicare = 30875 * 0.009 = 277.88
+        assert result.additional_medicare_tax > Decimal("0")
+        assert result.additional_medicare_threshold == Decimal("200000")
+
+    def test_se_tax_additional_medicare_mfj(self) -> None:
+        """Additional Medicare threshold is $250k for MFJ."""
+        result = calculate_self_employment_tax(
+            Decimal("280000"),
+            FilingStatus.MARRIED_FILING_JOINTLY,
+        )
+
+        # MFJ threshold is $250k
+        assert result.additional_medicare_threshold == Decimal("250000")
+        # Net earnings = 280000 * 0.9235 = 258580, which exceeds $250k
+        assert result.additional_medicare_tax > Decimal("0")
+
+    def test_se_tax_additional_medicare_mfs(self) -> None:
+        """Additional Medicare threshold is $125k for MFS."""
+        result = calculate_self_employment_tax(
+            Decimal("150000"),
+            FilingStatus.MARRIED_FILING_SEPARATELY,
+        )
+
+        # MFS has lower threshold of $125k
+        assert result.additional_medicare_threshold == Decimal("125000")
+
+    def test_se_tax_deductible_portion(self) -> None:
+        """SE tax deduction is exactly 50% of total."""
+        result = calculate_self_employment_tax(
+            Decimal("100000"),
+            FilingStatus.SINGLE,
+        )
+
+        expected_deductible = (result.total_se_tax * Decimal("0.5")).quantize(
+            Decimal("0.01")
+        )
+        assert result.deductible_portion == expected_deductible
+
+    def test_se_tax_zero_income(self) -> None:
+        """SE tax is zero for zero income."""
+        result = calculate_self_employment_tax(
+            Decimal("0"),
+            FilingStatus.SINGLE,
+        )
+
+        assert result.net_earnings == Decimal("0.00")
+        assert result.total_se_tax == Decimal("0.00")
+
+    def test_se_tax_negative_income(self) -> None:
+        """SE tax is zero for negative income (loss)."""
+        result = calculate_self_employment_tax(
+            Decimal("-10000"),
+            FilingStatus.SINGLE,
+        )
+
+        assert result.net_earnings == Decimal("0.00")
+        assert result.total_se_tax == Decimal("0.00")
+
+
+# =============================================================================
+# Aggregate Income with Business Income Tests
+# =============================================================================
+
+
+class TestAggregateIncomeWithBusiness:
+    """Tests for aggregate_income with Schedule C and K-1 data."""
+
+    def test_aggregate_with_schedule_c(self) -> None:
+        """Aggregate income includes Schedule C profit."""
+        sch_c = ScheduleCData(
+            business_name="Consulting",
+            business_activity="IT",
+            principal_business_code="541511",
+            gross_receipts=Decimal("90000"),
+            expenses=ScheduleCExpenses(office_expense=Decimal("10000")),
+        )
+
+        result = aggregate_income(
+            documents=[],
+            schedule_c_data=[sch_c],
+            filing_status=FilingStatus.SINGLE,
+        )
+
+        assert result.schedule_c_profit == Decimal("80000")
+        assert result.self_employment_income == Decimal("80000")
+        assert result.se_tax > Decimal("0")
+        assert result.se_tax_deduction > Decimal("0")
+        assert result.total_income == Decimal("80000")
+
+    def test_aggregate_with_multiple_schedule_c(self) -> None:
+        """Aggregate income sums multiple Schedule C businesses."""
+        sch_c1 = ScheduleCData(
+            business_name="Consulting",
+            business_activity="IT",
+            principal_business_code="541511",
+            gross_receipts=Decimal("50000"),
+        )
+        sch_c2 = ScheduleCData(
+            business_name="Freelance",
+            business_activity="Writing",
+            principal_business_code="711510",
+            gross_receipts=Decimal("30000"),
+        )
+
+        result = aggregate_income(
+            documents=[],
+            schedule_c_data=[sch_c1, sch_c2],
+            filing_status=FilingStatus.SINGLE,
+        )
+
+        assert result.schedule_c_profit == Decimal("80000")
+        assert result.self_employment_income == Decimal("80000")
+
+    def test_aggregate_with_k1_partnership(self) -> None:
+        """K-1 from partnership with Box 14 SE earnings."""
+        k1 = FormK1(
+            entity_name="ABC Partnership",
+            entity_ein="12-3456789",
+            entity_type="partnership",
+            tax_year=2024,
+            recipient_name="John Doe",
+            recipient_tin="123-45-6789",
+            ownership_percentage=Decimal("25.0"),
+            ordinary_business_income=Decimal("40000"),
+            guaranteed_payments=Decimal("10000"),
+            self_employment_earnings=Decimal("45000"),  # Box 14
+            confidence=ConfidenceLevel.HIGH,
+        )
+
+        result = aggregate_income(
+            documents=[k1],
+            filing_status=FilingStatus.SINGLE,
+        )
+
+        # K-1 ordinary income goes to total_other
+        assert result.k1_ordinary_income == Decimal("40000")
+        assert result.k1_guaranteed_payments == Decimal("10000")
+        # SE income from Box 14 (not Box 1 + Box 4)
+        assert result.self_employment_income == Decimal("45000")
+        assert result.se_tax > Decimal("0")
+
+    def test_aggregate_with_k1_scorp(self) -> None:
+        """S-corp K-1 should NOT generate SE tax."""
+        k1 = FormK1(
+            entity_name="XYZ S-Corp",
+            entity_ein="12-3456789",
+            entity_type="s_corp",
+            tax_year=2024,
+            recipient_name="John Doe",
+            recipient_tin="123-45-6789",
+            ownership_percentage=Decimal("50.0"),
+            ordinary_business_income=Decimal("100000"),
+            confidence=ConfidenceLevel.HIGH,
+        )
+
+        result = aggregate_income(
+            documents=[k1],
+            filing_status=FilingStatus.SINGLE,
+        )
+
+        # S-corp income is NOT subject to SE tax
+        assert result.k1_ordinary_income == Decimal("100000")
+        assert result.self_employment_income == Decimal("0")
+        assert result.se_tax == Decimal("0")
+
+    def test_aggregate_mixed_w2_and_schedule_c(self) -> None:
+        """Aggregate income correctly combines W-2 and Schedule C."""
+        w2 = W2Data(
+            employee_ssn="123-45-6789",
+            employer_ein="12-3456789",
+            employer_name="Acme Corp",
+            employee_name="John Doe",
+            wages_tips_compensation=Decimal("75000"),
+            federal_tax_withheld=Decimal("10000"),
+            social_security_wages=Decimal("75000"),
+            social_security_tax=Decimal("4650"),
+            medicare_wages=Decimal("75000"),
+            medicare_tax=Decimal("1087.50"),
+            confidence=ConfidenceLevel.HIGH,
+        )
+        sch_c = ScheduleCData(
+            business_name="Side Gig",
+            business_activity="Consulting",
+            principal_business_code="541611",
+            gross_receipts=Decimal("25000"),
+            expenses=ScheduleCExpenses(supplies=Decimal("5000")),
+        )
+
+        result = aggregate_income(
+            documents=[w2],
+            schedule_c_data=[sch_c],
+            filing_status=FilingStatus.SINGLE,
+        )
+
+        assert result.total_wages == Decimal("75000")
+        assert result.schedule_c_profit == Decimal("20000")
+        assert result.total_income == Decimal("95000")
+        assert result.federal_withholding == Decimal("10000")
+        assert result.se_tax > Decimal("0")
+
+    def test_aggregate_schedule_c_loss_offsets_income(self) -> None:
+        """Schedule C loss reduces total income."""
+        w2 = W2Data(
+            employee_ssn="123-45-6789",
+            employer_ein="12-3456789",
+            employer_name="Acme Corp",
+            employee_name="John Doe",
+            wages_tips_compensation=Decimal("50000"),
+            federal_tax_withheld=Decimal("7500"),
+            social_security_wages=Decimal("50000"),
+            social_security_tax=Decimal("3100"),
+            medicare_wages=Decimal("50000"),
+            medicare_tax=Decimal("725"),
+            confidence=ConfidenceLevel.HIGH,
+        )
+        sch_c = ScheduleCData(
+            business_name="Failed Startup",
+            business_activity="Tech",
+            principal_business_code="541511",
+            gross_receipts=Decimal("5000"),
+            expenses=ScheduleCExpenses(
+                office_expense=Decimal("10000"),
+                advertising=Decimal("5000"),
+            ),
+        )
+
+        result = aggregate_income(
+            documents=[w2],
+            schedule_c_data=[sch_c],
+            filing_status=FilingStatus.SINGLE,
+        )
+
+        # Loss is -10000
+        assert result.schedule_c_profit == Decimal("-10000")
+        # Total income includes the loss
+        assert result.total_income == Decimal("40000")
+        # No SE tax on loss
+        assert result.self_employment_income == Decimal("-10000")
+        assert result.se_tax == Decimal("0")

@@ -1,7 +1,9 @@
 """Tax calculation functions for personal tax returns.
 
 This module provides pure functions for computing tax-related values:
-- Income aggregation from W-2 and 1099 forms
+- Income aggregation from W-2, 1099, K-1, and Schedule C data
+- Schedule C (business income) calculations
+- Self-employment tax calculations
 - Standard vs itemized deduction selection
 - Tax credits evaluation (CTC, AOC, Saver's Credit, EITC)
 - Federal tax liability using marginal brackets
@@ -14,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from decimal import Decimal
+from enum import Enum
 from typing import Union
 
 from src.documents.models import (
@@ -26,8 +29,23 @@ from src.documents.models import (
     Form1099R,
     Form1099S,
     Form5498,
+    FormK1,
     W2Data,
 )
+from src.tax.year_config import get_tax_year_config
+
+
+class FilingStatus(str, Enum):
+    """IRS filing status options.
+
+    These determine tax brackets, deduction amounts, and credit thresholds.
+    """
+
+    SINGLE = "single"
+    MARRIED_FILING_JOINTLY = "mfj"
+    MARRIED_FILING_SEPARATELY = "mfs"
+    HEAD_OF_HOUSEHOLD = "hoh"
+    QUALIFYING_WIDOW = "qw"
 
 
 # =============================================================================
@@ -51,6 +69,12 @@ class IncomeSummary:
         total_other: Other income not categorized above.
         total_income: Grand total of all income.
         federal_withholding: Sum of all federal tax withheld.
+        schedule_c_profit: Net profit (or loss) from Schedule C businesses.
+        k1_ordinary_income: K-1 Box 1 ordinary business income.
+        k1_guaranteed_payments: K-1 Box 4 guaranteed payments (partnerships).
+        self_employment_income: Total SE income (Schedule C + K-1 Box 14).
+        se_tax: Total self-employment tax liability.
+        se_tax_deduction: Above-the-line deduction (50% of SE tax).
     """
 
     total_wages: Decimal
@@ -58,12 +82,233 @@ class IncomeSummary:
     total_dividends: Decimal
     total_qualified_dividends: Decimal
     total_nec: Decimal
-    total_retirement_distributions: Decimal = field(default_factory=lambda: Decimal("0"))
+    total_retirement_distributions: Decimal = field(
+        default_factory=lambda: Decimal("0")
+    )
     total_unemployment: Decimal = field(default_factory=lambda: Decimal("0"))
     total_state_tax_refund: Decimal = field(default_factory=lambda: Decimal("0"))
     total_other: Decimal = field(default_factory=lambda: Decimal("0"))
     total_income: Decimal = field(default_factory=lambda: Decimal("0"))
     federal_withholding: Decimal = field(default_factory=lambda: Decimal("0"))
+
+    # Business income fields (Phase 4)
+    schedule_c_profit: Decimal = field(default_factory=lambda: Decimal("0"))
+    k1_ordinary_income: Decimal = field(default_factory=lambda: Decimal("0"))
+    k1_guaranteed_payments: Decimal = field(default_factory=lambda: Decimal("0"))
+    self_employment_income: Decimal = field(default_factory=lambda: Decimal("0"))
+    se_tax: Decimal = field(default_factory=lambda: Decimal("0"))
+    se_tax_deduction: Decimal = field(default_factory=lambda: Decimal("0"))
+
+
+@dataclass
+class ScheduleCExpenses:
+    """Schedule C expense categories (Lines 8-27).
+
+    All IRS Schedule C expense categories with corresponding line numbers.
+    All defaults are zero - only populate what applies.
+
+    Example:
+        >>> expenses = ScheduleCExpenses(
+        ...     advertising=Decimal("500"),
+        ...     supplies=Decimal("1200"),
+        ...     utilities=Decimal("3000"),
+        ... )
+        >>> expenses.total
+        Decimal('4700')
+    """
+
+    advertising: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 8
+    car_truck: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 9
+    commissions_fees: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 10
+    contract_labor: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 11
+    depletion: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 12
+    depreciation: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 13
+    employee_benefits: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 14
+    insurance: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 15
+    interest_mortgage: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 16a
+    interest_other: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 16b
+    legal_professional: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 17
+    office_expense: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 18
+    pension_profit_sharing: Decimal = field(
+        default_factory=lambda: Decimal("0")
+    )  # Line 19
+    rent_vehicles_machinery: Decimal = field(
+        default_factory=lambda: Decimal("0")
+    )  # Line 20a
+    rent_other: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 20b
+    repairs_maintenance: Decimal = field(
+        default_factory=lambda: Decimal("0")
+    )  # Line 21
+    supplies: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 22
+    taxes_licenses: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 23
+    travel: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 24a
+    deductible_meals: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 24b
+    utilities: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 25
+    wages: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 26
+    other_expenses: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 27
+
+    @property
+    def total(self) -> Decimal:
+        """Sum of all expense categories (Line 28)."""
+        return (
+            self.advertising
+            + self.car_truck
+            + self.commissions_fees
+            + self.contract_labor
+            + self.depletion
+            + self.depreciation
+            + self.employee_benefits
+            + self.insurance
+            + self.interest_mortgage
+            + self.interest_other
+            + self.legal_professional
+            + self.office_expense
+            + self.pension_profit_sharing
+            + self.rent_vehicles_machinery
+            + self.rent_other
+            + self.repairs_maintenance
+            + self.supplies
+            + self.taxes_licenses
+            + self.travel
+            + self.deductible_meals
+            + self.utilities
+            + self.wages
+            + self.other_expenses
+        )
+
+
+@dataclass
+class ScheduleCData:
+    """Schedule C (Profit or Loss from Business) data.
+
+    Complete data for IRS Schedule C calculation including business info,
+    income, and expenses.
+
+    Example:
+        >>> sch_c = ScheduleCData(
+        ...     business_name="Consulting LLC",
+        ...     business_activity="Management Consulting",
+        ...     principal_business_code="541611",
+        ...     gross_receipts=Decimal("150000"),
+        ...     expenses=ScheduleCExpenses(office_expense=Decimal("5000")),
+        ... )
+        >>> sch_c.net_profit_or_loss
+        Decimal('145000')
+    """
+
+    # Business identification
+    business_name: str
+    business_activity: str
+    principal_business_code: str  # 6-digit NAICS code
+    employer_id: str | None = None
+
+    # Accounting method
+    accounting_method: str = "cash"  # cash, accrual, or other
+
+    # Income (Part I)
+    gross_receipts: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 1
+    returns_allowances: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 2
+    cost_of_goods_sold: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 4
+    other_income: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 6
+
+    # Expenses (Part II)
+    expenses: ScheduleCExpenses = field(default_factory=ScheduleCExpenses)
+
+    # Home office (if applicable)
+    home_office_deduction: Decimal = field(
+        default_factory=lambda: Decimal("0")
+    )  # From Form 8829
+
+    @property
+    def gross_income(self) -> Decimal:
+        """Line 3: Gross receipts minus returns and allowances."""
+        return self.gross_receipts - self.returns_allowances
+
+    @property
+    def gross_profit(self) -> Decimal:
+        """Line 5: Gross income minus cost of goods sold."""
+        return self.gross_income - self.cost_of_goods_sold
+
+    @property
+    def total_income(self) -> Decimal:
+        """Line 7: Gross profit plus other income."""
+        return self.gross_profit + self.other_income
+
+    @property
+    def total_expenses(self) -> Decimal:
+        """Line 28: Total expenses including home office."""
+        return self.expenses.total + self.home_office_deduction
+
+    @property
+    def net_profit_or_loss(self) -> Decimal:
+        """Line 31: Net profit (or loss) from business."""
+        return self.total_income - self.total_expenses
+
+
+@dataclass
+class SelfEmploymentTax:
+    """Self-employment tax calculation result (Schedule SE).
+
+    Breakdown of SE tax components including Social Security and Medicare portions.
+    50% of SE tax is deductible "above the line" on Form 1040.
+
+    Attributes:
+        net_earnings: Net SE earnings (92.35% of net SE income).
+        social_security_tax: 12.4% on earnings up to wage base.
+        medicare_tax: 2.9% on all earnings.
+        additional_medicare_tax: 0.9% on earnings above threshold.
+        total_se_tax: Sum of all SE tax components.
+        deductible_portion: 50% of total SE tax (above-the-line deduction).
+    """
+
+    net_earnings: Decimal
+    social_security_tax: Decimal
+    medicare_tax: Decimal
+    additional_medicare_tax: Decimal
+    total_se_tax: Decimal
+    deductible_portion: Decimal
+    social_security_wage_base: Decimal
+    additional_medicare_threshold: Decimal
+
+
+@dataclass
+class ItemizedDeductionBreakdown:
+    """Itemized deduction components and totals.
+
+    Attributes:
+        mortgage_interest: Sum of mortgage interest from Form 1098.
+        points_paid: Sum of points paid from Form 1098.
+        mortgage_insurance_premiums: Sum of PMI from Form 1098.
+        property_taxes_paid: Sum of property taxes from Form 1098.
+        state_income_taxes_paid: Sum of state tax withholding (W-2, 1099-R, 1099-G).
+        salt_total: Combined state and local taxes before cap.
+        salt_deduction: SALT deduction after applying cap.
+        total: Total itemized deductions (mortgage + points + PMI + SALT).
+    """
+
+    mortgage_interest: Decimal
+    points_paid: Decimal
+    mortgage_insurance_premiums: Decimal
+    property_taxes_paid: Decimal
+    state_income_taxes_paid: Decimal
+    salt_total: Decimal
+    salt_deduction: Decimal
+    total: Decimal
+
+
+@dataclass
+class CreditInputs:
+    """Aggregated inputs for credit evaluation.
+
+    Attributes:
+        education_expenses: Qualified education expenses for AOC/LLC.
+        education_credit_type: Preferred credit type ("aoc" or "llc").
+        retirement_contributions: Eligible retirement contributions for Saver's Credit.
+    """
+
+    education_expenses: Decimal
+    education_credit_type: str
+    retirement_contributions: Decimal
 
 
 @dataclass
@@ -200,6 +445,14 @@ STANDARD_DEDUCTIONS: dict[tuple[int, str], Decimal] = {
     (2023, "mfj"): Decimal("27700"),
     (2023, "mfs"): Decimal("13850"),
     (2023, "hoh"): Decimal("20800"),
+}
+
+# SALT caps (state and local taxes) by filing status.
+SALT_CAPS: dict[str, Decimal] = {
+    "single": Decimal("10000"),
+    "mfj": Decimal("10000"),
+    "hoh": Decimal("10000"),
+    "mfs": Decimal("5000"),
 }
 
 # Tax brackets by (year, filing_status) - list of (upper_bound, rate)
@@ -341,7 +594,138 @@ TaxDocument = Union[
     Form1098T,
     Form5498,
     Form1099S,
+    FormK1,
 ]
+
+
+# =============================================================================
+# Schedule C Calculation (PTAX-04-03)
+# =============================================================================
+
+
+def calculate_schedule_c(data: ScheduleCData) -> dict[str, Decimal]:
+    """Calculate Schedule C net profit and key figures.
+
+    Computes line-by-line values from Schedule C (Profit or Loss from Business)
+    following IRS form structure.
+
+    Args:
+        data: ScheduleCData with business income and expenses.
+
+    Returns:
+        Dict with calculation results:
+        - gross_income: Line 3 (gross receipts - returns)
+        - gross_profit: Line 5 (gross income - COGS)
+        - total_income: Line 7 (gross profit + other income)
+        - total_expenses: Line 28 (sum of all deductions)
+        - net_profit_or_loss: Line 31 (total income - expenses)
+        - qualified_business_income: QBI for Section 199A deduction
+
+    Example:
+        >>> sch_c = ScheduleCData(
+        ...     business_name="Consulting",
+        ...     business_activity="IT",
+        ...     principal_business_code="541511",
+        ...     gross_receipts=Decimal("100000"),
+        ...     expenses=ScheduleCExpenses(office_expense=Decimal("5000")),
+        ... )
+        >>> result = calculate_schedule_c(sch_c)
+        >>> result["net_profit_or_loss"]
+        Decimal('95000')
+    """
+    result = {
+        "gross_income": data.gross_income,
+        "gross_profit": data.gross_profit,
+        "total_income": data.total_income,
+        "total_expenses": data.total_expenses,
+        "net_profit_or_loss": data.net_profit_or_loss,
+    }
+
+    # QBI is generally net profit minus SE tax deduction (calculated later)
+    # For now, return net profit as qualified business income (QBI can't be negative)
+    result["qualified_business_income"] = max(Decimal("0"), data.net_profit_or_loss)
+
+    return result
+
+
+def calculate_self_employment_tax(
+    net_self_employment_earnings: Decimal,
+    filing_status: FilingStatus,
+    tax_year: int = 2024,
+) -> SelfEmploymentTax:
+    """Calculate self-employment tax (Schedule SE).
+
+    Self-employment tax consists of Social Security and Medicare taxes for
+    self-employed individuals. Unlike W-2 employees who split these taxes
+    with employers, self-employed pay both portions.
+
+    2024 Rates:
+    - 12.4% Social Security on net earnings up to $168,600 (wage base)
+    - 2.9% Medicare on all net earnings
+    - Additional 0.9% Medicare on earnings above threshold ($200k single/$250k MFJ)
+
+    Args:
+        net_self_employment_earnings: Net earnings from Schedule C or K-1 Box 14.
+        filing_status: Filing status for Additional Medicare threshold.
+        tax_year: Tax year for rates and limits (default 2024).
+
+    Returns:
+        SelfEmploymentTax with breakdown of all components.
+
+    Example:
+        >>> result = calculate_self_employment_tax(
+        ...     Decimal("100000"),
+        ...     FilingStatus.SINGLE,
+        ... )
+        >>> result.net_earnings
+        Decimal('92350.00')
+        >>> result.total_se_tax
+        Decimal('14129.55')
+    """
+    config = get_tax_year_config(tax_year)
+
+    # Additional Medicare threshold varies by filing status
+    threshold_map = {
+        FilingStatus.SINGLE: config.additional_medicare_threshold_single,
+        FilingStatus.MARRIED_FILING_JOINTLY: config.additional_medicare_threshold_mfj,
+        FilingStatus.MARRIED_FILING_SEPARATELY: config.additional_medicare_threshold_mfs,
+        FilingStatus.HEAD_OF_HOUSEHOLD: config.additional_medicare_threshold_single,
+        FilingStatus.QUALIFYING_WIDOW: config.additional_medicare_threshold_mfj,
+    }
+
+    # Net earnings = 92.35% of net self-employment income
+    # This matches the employer portion adjustment for W-2 workers
+    net_earnings = net_self_employment_earnings * config.se_net_earnings_factor
+    net_earnings = max(Decimal("0"), net_earnings)
+
+    # Social Security (12.4% up to wage base)
+    ss_taxable = min(net_earnings, config.ss_wage_base)
+    social_security_tax = ss_taxable * config.se_ss_rate
+
+    # Medicare (2.9% on all earnings)
+    medicare_tax = net_earnings * config.se_medicare_rate
+
+    # Additional Medicare (0.9% over threshold)
+    threshold = threshold_map.get(
+        filing_status, config.additional_medicare_threshold_single
+    )
+    additional_earnings = max(Decimal("0"), net_earnings - threshold)
+    additional_medicare_tax = additional_earnings * config.additional_medicare_rate
+
+    # Total and deductible portion (50% is above-the-line deduction)
+    total_se_tax = social_security_tax + medicare_tax + additional_medicare_tax
+    deductible_portion = total_se_tax * config.se_tax_deduction_rate
+
+    return SelfEmploymentTax(
+        net_earnings=net_earnings.quantize(Decimal("0.01")),
+        social_security_tax=social_security_tax.quantize(Decimal("0.01")),
+        medicare_tax=medicare_tax.quantize(Decimal("0.01")),
+        additional_medicare_tax=additional_medicare_tax.quantize(Decimal("0.01")),
+        total_se_tax=total_se_tax.quantize(Decimal("0.01")),
+        deductible_portion=deductible_portion.quantize(Decimal("0.01")),
+        social_security_wage_base=config.ss_wage_base,
+        additional_medicare_threshold=threshold,
+    )
 
 
 # =============================================================================
@@ -349,20 +733,27 @@ TaxDocument = Union[
 # =============================================================================
 
 
-def aggregate_income(documents: list[TaxDocument]) -> IncomeSummary:
+def aggregate_income(
+    documents: list[TaxDocument],
+    schedule_c_data: list[ScheduleCData] | None = None,
+    filing_status: FilingStatus = FilingStatus.SINGLE,
+) -> IncomeSummary:
     """Aggregate income from all tax documents.
 
     Args:
-        documents: List of supported tax document models.
+        documents: List of supported tax document models (W-2, 1099s, K-1).
+        schedule_c_data: Optional list of Schedule C business data.
+        filing_status: Filing status for SE tax calculation.
 
     Returns:
-        IncomeSummary with totals by income type.
+        IncomeSummary with totals by income type including business income.
 
     Note:
-        Some forms (1098, 1098-T, 5498, 1099-S) do not directly contribute to
-        income but are tracked for deduction/credit calculation. 1099-R adds
-        to retirement distributions, and 1099-G adds to unemployment and
-        state tax refunds.
+        - Some forms (1098, 1098-T, 5498, 1099-S) do not directly contribute to
+          income but are tracked for deduction/credit calculation.
+        - K-1 SE income comes from Box 14 (self_employment_earnings), NOT Box 1.
+        - S-corp K-1s do NOT generate SE tax (shareholders receive W-2 wages).
+        - Guaranteed payments (Box 4) are included in Box 14 when subject to SE.
 
     Example:
         >>> w2 = W2Data(wages_tips_compensation=Decimal("50000"), ...)
@@ -380,6 +771,11 @@ def aggregate_income(documents: list[TaxDocument]) -> IncomeSummary:
     total_state_tax_refund = Decimal("0")
     total_other = Decimal("0")
     federal_withholding = Decimal("0")
+
+    # K-1 income tracking
+    k1_ordinary_income = Decimal("0")
+    k1_guaranteed_payments = Decimal("0")
+    k1_se_earnings = Decimal("0")  # Box 14 only - NOT Box 1 + Box 4
 
     for doc in documents:
         if isinstance(doc, W2Data):
@@ -409,8 +805,41 @@ def aggregate_income(documents: list[TaxDocument]) -> IncomeSummary:
             total_unemployment += doc.unemployment_compensation
             total_state_tax_refund += doc.state_local_tax_refund
             federal_withholding += doc.federal_tax_withheld
+        elif isinstance(doc, FormK1):
+            # K-1 ordinary income (Box 1) goes to total_other for income tax
+            k1_ordinary_income += doc.ordinary_business_income or Decimal("0")
+            k1_guaranteed_payments += doc.guaranteed_payments or Decimal("0")
+
+            # IMPORTANT: SE income uses Box 14 (self_employment_earnings), NOT Box 1 + Box 4
+            # S-corp K-1s do NOT have SE tax - shareholders receive W-2 wages instead
+            if doc.entity_type == "partnership":
+                k1_se_earnings += doc.self_employment_earnings or Decimal("0")
         # Form1098, Form1098T, Form5498, Form1099S are informational for
         # deductions/credits and don't directly add to income totals
+
+    # Aggregate Schedule C net profit
+    schedule_c_profit = Decimal("0")
+    if schedule_c_data:
+        for sch_c in schedule_c_data:
+            schedule_c_profit += sch_c.net_profit_or_loss
+
+    # Total self-employment income = Schedule C profit + K-1 Box 14 (partnerships only)
+    # NOTE: Guaranteed payments are INCLUDED in Box 14 when subject to SE tax
+    self_employment_income = schedule_c_profit + k1_se_earnings
+
+    # Calculate self-employment tax if applicable
+    se_tax = Decimal("0")
+    se_tax_deduction = Decimal("0")
+    if self_employment_income > Decimal("0"):
+        se_result = calculate_self_employment_tax(
+            self_employment_income,
+            filing_status,
+        )
+        se_tax = se_result.total_se_tax
+        se_tax_deduction = se_result.deductible_portion
+
+    # K-1 ordinary income is added to total_other for tax calculation
+    total_other += k1_ordinary_income
 
     total_income = (
         total_wages
@@ -420,6 +849,7 @@ def aggregate_income(documents: list[TaxDocument]) -> IncomeSummary:
         + total_retirement_distributions
         + total_unemployment
         + total_other
+        + schedule_c_profit  # Schedule C net profit is part of total income
     )
     # Note: state_tax_refund may be taxable if itemized in prior year,
     # but this requires additional context - handle in escalation
@@ -436,6 +866,12 @@ def aggregate_income(documents: list[TaxDocument]) -> IncomeSummary:
         total_other=total_other,
         total_income=total_income,
         federal_withholding=federal_withholding,
+        schedule_c_profit=schedule_c_profit,
+        k1_ordinary_income=k1_ordinary_income,
+        k1_guaranteed_payments=k1_guaranteed_payments,
+        self_employment_income=self_employment_income,
+        se_tax=se_tax,
+        se_tax_deduction=se_tax_deduction,
     )
 
 
@@ -465,6 +901,58 @@ def get_standard_deduction(filing_status: str, tax_year: int) -> Decimal:
     if key not in STANDARD_DEDUCTIONS:
         raise ValueError(f"Unknown filing status/year: {filing_status}/{tax_year}")
     return STANDARD_DEDUCTIONS[key]
+
+
+def compute_itemized_deductions(
+    documents: list[TaxDocument],
+    filing_status: str,
+) -> ItemizedDeductionBreakdown:
+    """Compute itemized deductions from supported documents.
+
+    Args:
+        documents: List of tax document models.
+        filing_status: Filing status for SALT cap selection.
+
+    Returns:
+        ItemizedDeductionBreakdown with component totals and final amount.
+    """
+    mortgage_interest = Decimal("0")
+    points_paid = Decimal("0")
+    mortgage_insurance_premiums = Decimal("0")
+    property_taxes_paid = Decimal("0")
+    state_income_taxes_paid = Decimal("0")
+
+    for doc in documents:
+        if isinstance(doc, Form1098):
+            mortgage_interest += doc.mortgage_interest
+            points_paid += doc.points_paid
+            mortgage_insurance_premiums += doc.mortgage_insurance_premiums
+            property_taxes_paid += doc.property_taxes_paid
+        elif isinstance(doc, W2Data):
+            state_income_taxes_paid += doc.state_tax_withheld
+        elif isinstance(doc, Form1099R):
+            state_income_taxes_paid += doc.state_tax_withheld
+        elif isinstance(doc, Form1099G):
+            state_income_taxes_paid += doc.state_tax_withheld
+
+    salt_total = property_taxes_paid + state_income_taxes_paid
+    cap = SALT_CAPS.get(filing_status.lower(), SALT_CAPS["single"])
+    salt_deduction = min(salt_total, cap)
+
+    total = (
+        mortgage_interest + points_paid + mortgage_insurance_premiums + salt_deduction
+    )
+
+    return ItemizedDeductionBreakdown(
+        mortgage_interest=mortgage_interest,
+        points_paid=points_paid,
+        mortgage_insurance_premiums=mortgage_insurance_premiums,
+        property_taxes_paid=property_taxes_paid,
+        state_income_taxes_paid=state_income_taxes_paid,
+        salt_total=salt_total,
+        salt_deduction=salt_deduction,
+        total=total,
+    )
 
 
 def calculate_deductions(
@@ -640,7 +1128,9 @@ def _calculate_savers_credit(situation: TaxSituation) -> Decimal:
         return Decimal("0")
 
     # Apply rate to contributions (max $2,000)
-    eligible_contributions = min(situation.retirement_contributions, SAVERS_CREDIT_MAX_CONTRIBUTION)
+    eligible_contributions = min(
+        situation.retirement_contributions, SAVERS_CREDIT_MAX_CONTRIBUTION
+    )
     return eligible_contributions * rate
 
 
@@ -692,6 +1182,46 @@ def _calculate_eitc(situation: TaxSituation) -> Decimal:
         credit = max(Decimal("0"), EITC_MAX_NO_CHILDREN - reduction)
 
     return min(credit, EITC_MAX_NO_CHILDREN)
+
+
+def build_credit_inputs(documents: list[TaxDocument]) -> CreditInputs:
+    """Build credit inputs from extracted documents.
+
+    Args:
+        documents: List of tax document models.
+
+    Returns:
+        CreditInputs with aggregated education expenses and retirement contributions.
+    """
+    education_expenses = Decimal("0")
+    education_credit_type = "aoc"
+    retirement_contributions = Decimal("0")
+
+    for doc in documents:
+        if isinstance(doc, Form1098T):
+            net_expenses = (
+                doc.payments_received
+                - doc.scholarships_grants
+                - doc.adjustments_prior_year
+                - doc.scholarships_adjustments_prior_year
+            )
+            if net_expenses > Decimal("0"):
+                education_expenses += net_expenses
+            if not doc.at_least_half_time:
+                education_credit_type = "llc"
+        elif isinstance(doc, Form5498):
+            retirement_contributions += (
+                doc.ira_contributions
+                + doc.sep_contributions
+                + doc.simple_contributions
+                + doc.roth_ira_contributions
+            )
+
+    return CreditInputs(
+        education_expenses=education_expenses,
+        education_credit_type=education_credit_type,
+        retirement_contributions=retirement_contributions,
+    )
 
 
 def evaluate_credits(situation: TaxSituation) -> CreditsResult:
@@ -792,7 +1322,9 @@ def evaluate_credits(situation: TaxSituation) -> CreditsResult:
 # =============================================================================
 
 
-def calculate_tax(taxable_income: Decimal, filing_status: str, tax_year: int) -> TaxResult:
+def calculate_tax(
+    taxable_income: Decimal, filing_status: str, tax_year: int
+) -> TaxResult:
     """Calculate federal income tax using marginal brackets.
 
     Args:
