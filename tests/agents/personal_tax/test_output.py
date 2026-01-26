@@ -24,9 +24,15 @@ from src.agents.personal_tax.output import (
 )
 from src.documents.models import (
     Box12Code,
+    Form1098,
+    Form1098T,
     Form1099DIV,
+    Form1099G,
     Form1099INT,
     Form1099NEC,
+    Form1099R,
+    Form1099S,
+    Form5498,
     W2Data,
 )
 
@@ -116,6 +122,103 @@ def sample_1099_nec() -> Form1099NEC:
         recipient_tin="123-45-6789",
         nonemployee_compensation=Decimal("5000"),
         federal_tax_withheld=Decimal("0"),
+        confidence="HIGH",
+    )
+
+
+@pytest.fixture
+def sample_1098() -> Form1098:
+    """Create sample 1098 data."""
+    return Form1098(
+        lender_name="ABC Mortgage",
+        lender_tin="12-3456789",
+        borrower_name="John Doe",
+        borrower_tin="123-45-6789",
+        mortgage_interest=Decimal("8000"),
+        points_paid=Decimal("500"),
+        mortgage_insurance_premiums=Decimal("300"),
+        property_taxes_paid=Decimal("6000"),
+        confidence="HIGH",
+    )
+
+
+@pytest.fixture
+def sample_1099_r() -> Form1099R:
+    """Create sample 1099-R data."""
+    return Form1099R(
+        payer_name="Retirement Plan Inc",
+        payer_tin="98-7654321",
+        recipient_name="John Doe",
+        recipient_tin="123-45-6789",
+        gross_distribution=Decimal("12000"),
+        taxable_amount=Decimal("10000"),
+        distribution_code="7",
+        federal_tax_withheld=Decimal("1200"),
+        state_tax_withheld=Decimal("150"),
+        confidence="HIGH",
+    )
+
+
+@pytest.fixture
+def sample_1099_g() -> Form1099G:
+    """Create sample 1099-G data."""
+    return Form1099G(
+        payer_name="State Agency",
+        payer_tin="11-1111111",
+        recipient_name="John Doe",
+        recipient_tin="123-45-6789",
+        unemployment_compensation=Decimal("3000"),
+        state_local_tax_refund=Decimal("0"),
+        federal_tax_withheld=Decimal("200"),
+        state_tax_withheld=Decimal("75"),
+        confidence="HIGH",
+    )
+
+
+@pytest.fixture
+def sample_1098_t() -> Form1098T:
+    """Create sample 1098-T data."""
+    return Form1098T(
+        institution_name="State University",
+        institution_tin="22-2222222",
+        student_name="John Doe",
+        student_tin="123-45-6789",
+        payments_received=Decimal("10000"),
+        scholarships_grants=Decimal("2500"),
+        at_least_half_time=True,
+        graduate_student=False,
+        confidence="HIGH",
+    )
+
+
+@pytest.fixture
+def sample_5498() -> Form5498:
+    """Create sample 5498 data."""
+    return Form5498(
+        trustee_name="IRA Trustee",
+        trustee_tin="33-3333333",
+        participant_name="John Doe",
+        participant_tin="123-45-6789",
+        ira_contributions=Decimal("2000"),
+        roth_ira_contributions=Decimal("1500"),
+        sep_contributions=Decimal("1000"),
+        simple_contributions=Decimal("500"),
+        fair_market_value=Decimal("45000"),
+        confidence="HIGH",
+    )
+
+
+@pytest.fixture
+def sample_1099_s() -> Form1099S:
+    """Create sample 1099-S data."""
+    return Form1099S(
+        filer_name="Title Company",
+        filer_tin="44-4444444",
+        transferor_name="John Doe",
+        transferor_tin="123-45-6789",
+        closing_date="2024-03-15",
+        gross_proceeds=Decimal("250000"),
+        property_address="123 Main St, City, ST",
         confidence="HIGH",
     )
 
@@ -217,6 +320,12 @@ class TestDrakeWorksheetCreation:
                 [],
                 [],
                 [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
                 sample_income_summary,
                 sample_deduction_result,
                 sample_tax_result,
@@ -239,6 +348,12 @@ class TestDrakeWorksheetCreation:
                 "John Doe",
                 2024,
                 [sample_w2],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
                 [],
                 [],
                 [],
@@ -270,6 +385,12 @@ class TestDrakeWorksheetSheets:
                 [],
                 [],
                 [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
                 sample_income_summary,
                 sample_deduction_result,
                 sample_tax_result,
@@ -295,6 +416,12 @@ class TestDrakeWorksheetSheets:
                 [],
                 [],
                 [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
                 sample_income_summary,
                 sample_deduction_result,
                 sample_tax_result,
@@ -316,6 +443,12 @@ class TestDrakeWorksheetSheets:
             path = generate_drake_worksheet(
                 "John Doe",
                 2024,
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
                 [],
                 [],
                 [],
@@ -345,6 +478,12 @@ class TestDrakeWorksheetSheets:
                 [],
                 [],
                 [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
                 sample_income_summary,
                 sample_deduction_result,
                 sample_tax_result,
@@ -370,6 +509,12 @@ class TestDrakeWorksheetSheets:
                 [],
                 [],
                 [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
                 sample_income_summary,
                 sample_deduction_result,
                 sample_tax_result,
@@ -378,6 +523,186 @@ class TestDrakeWorksheetSheets:
 
             wb = load_workbook(path)
             assert "1099-NEC" in wb.sheetnames
+
+    def test_worksheet_has_1098_sheet(
+        self,
+        sample_income_summary: IncomeSummary,
+        sample_deduction_result: DeductionResult,
+        sample_tax_result: TaxResult,
+    ) -> None:
+        """1098 sheet is present."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = generate_drake_worksheet(
+                "John Doe",
+                2024,
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                sample_income_summary,
+                sample_deduction_result,
+                sample_tax_result,
+                Path(tmpdir) / "test.xlsx",
+            )
+
+            wb = load_workbook(path)
+            assert "1098" in wb.sheetnames
+
+    def test_worksheet_has_1099_r_sheet(
+        self,
+        sample_income_summary: IncomeSummary,
+        sample_deduction_result: DeductionResult,
+        sample_tax_result: TaxResult,
+    ) -> None:
+        """1099-R sheet is present."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = generate_drake_worksheet(
+                "John Doe",
+                2024,
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                sample_income_summary,
+                sample_deduction_result,
+                sample_tax_result,
+                Path(tmpdir) / "test.xlsx",
+            )
+
+            wb = load_workbook(path)
+            assert "1099-R" in wb.sheetnames
+
+    def test_worksheet_has_1099_g_sheet(
+        self,
+        sample_income_summary: IncomeSummary,
+        sample_deduction_result: DeductionResult,
+        sample_tax_result: TaxResult,
+    ) -> None:
+        """1099-G sheet is present."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = generate_drake_worksheet(
+                "John Doe",
+                2024,
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                sample_income_summary,
+                sample_deduction_result,
+                sample_tax_result,
+                Path(tmpdir) / "test.xlsx",
+            )
+
+            wb = load_workbook(path)
+            assert "1099-G" in wb.sheetnames
+
+    def test_worksheet_has_1098_t_sheet(
+        self,
+        sample_income_summary: IncomeSummary,
+        sample_deduction_result: DeductionResult,
+        sample_tax_result: TaxResult,
+    ) -> None:
+        """1098-T sheet is present."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = generate_drake_worksheet(
+                "John Doe",
+                2024,
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                sample_income_summary,
+                sample_deduction_result,
+                sample_tax_result,
+                Path(tmpdir) / "test.xlsx",
+            )
+
+            wb = load_workbook(path)
+            assert "1098-T" in wb.sheetnames
+
+    def test_worksheet_has_5498_sheet(
+        self,
+        sample_income_summary: IncomeSummary,
+        sample_deduction_result: DeductionResult,
+        sample_tax_result: TaxResult,
+    ) -> None:
+        """5498 sheet is present."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = generate_drake_worksheet(
+                "John Doe",
+                2024,
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                sample_income_summary,
+                sample_deduction_result,
+                sample_tax_result,
+                Path(tmpdir) / "test.xlsx",
+            )
+
+            wb = load_workbook(path)
+            assert "5498" in wb.sheetnames
+
+    def test_worksheet_has_1099_s_sheet(
+        self,
+        sample_income_summary: IncomeSummary,
+        sample_deduction_result: DeductionResult,
+        sample_tax_result: TaxResult,
+    ) -> None:
+        """1099-S sheet is present."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = generate_drake_worksheet(
+                "John Doe",
+                2024,
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                sample_income_summary,
+                sample_deduction_result,
+                sample_tax_result,
+                Path(tmpdir) / "test.xlsx",
+            )
+
+            wb = load_workbook(path)
+            assert "1099-S" in wb.sheetnames
 
 
 class TestDrakeWorksheetW2Columns:
@@ -396,6 +721,12 @@ class TestDrakeWorksheetW2Columns:
                 "John Doe",
                 2024,
                 [sample_w2],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
                 [],
                 [],
                 [],
@@ -442,6 +773,12 @@ class TestDrakeWorksheetDataPopulation:
                 [],
                 [],
                 [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
                 sample_income_summary,
                 sample_deduction_result,
                 sample_tax_result,
@@ -473,6 +810,12 @@ class TestDrakeWorksheetDataPopulation:
                 [sample_1099_int],
                 [],
                 [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
                 sample_income_summary,
                 sample_deduction_result,
                 sample_tax_result,
@@ -500,6 +843,12 @@ class TestDrakeWorksheetDataPopulation:
                 [],
                 [],
                 [sample_1099_div],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
                 [],
                 sample_income_summary,
                 sample_deduction_result,
@@ -529,6 +878,12 @@ class TestDrakeWorksheetDataPopulation:
                 [],
                 [],
                 [sample_1099_nec],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
                 sample_income_summary,
                 sample_deduction_result,
                 sample_tax_result,
@@ -540,6 +895,210 @@ class TestDrakeWorksheetDataPopulation:
 
             assert ws.cell(row=2, column=1).value == "Freelance Client Inc"
             assert ws.cell(row=2, column=3).value == 5000.0  # NEC
+
+    def test_worksheet_1098_data_populated(
+        self,
+        sample_1098: Form1098,
+        sample_income_summary: IncomeSummary,
+        sample_deduction_result: DeductionResult,
+        sample_tax_result: TaxResult,
+    ) -> None:
+        """1098 data is populated correctly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = generate_drake_worksheet(
+                "John Doe",
+                2024,
+                [],
+                [],
+                [],
+                [],
+                [sample_1098],
+                [],
+                [],
+                [],
+                [],
+                [],
+                sample_income_summary,
+                sample_deduction_result,
+                sample_tax_result,
+                Path(tmpdir) / "test.xlsx",
+            )
+
+            wb = load_workbook(path)
+            ws = wb["1098"]
+
+            assert ws.cell(row=2, column=1).value == "ABC Mortgage"
+            assert ws.cell(row=2, column=3).value == 8000.0  # Mortgage interest
+
+    def test_worksheet_1099_r_data_populated(
+        self,
+        sample_1099_r: Form1099R,
+        sample_income_summary: IncomeSummary,
+        sample_deduction_result: DeductionResult,
+        sample_tax_result: TaxResult,
+    ) -> None:
+        """1099-R data is populated correctly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = generate_drake_worksheet(
+                "John Doe",
+                2024,
+                [],
+                [],
+                [],
+                [],
+                [],
+                [sample_1099_r],
+                [],
+                [],
+                [],
+                [],
+                sample_income_summary,
+                sample_deduction_result,
+                sample_tax_result,
+                Path(tmpdir) / "test.xlsx",
+            )
+
+            wb = load_workbook(path)
+            ws = wb["1099-R"]
+
+            assert ws.cell(row=2, column=1).value == "Retirement Plan Inc"
+            assert ws.cell(row=2, column=3).value == 12000.0  # Gross distribution
+
+    def test_worksheet_1099_g_data_populated(
+        self,
+        sample_1099_g: Form1099G,
+        sample_income_summary: IncomeSummary,
+        sample_deduction_result: DeductionResult,
+        sample_tax_result: TaxResult,
+    ) -> None:
+        """1099-G data is populated correctly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = generate_drake_worksheet(
+                "John Doe",
+                2024,
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [sample_1099_g],
+                [],
+                [],
+                [],
+                sample_income_summary,
+                sample_deduction_result,
+                sample_tax_result,
+                Path(tmpdir) / "test.xlsx",
+            )
+
+            wb = load_workbook(path)
+            ws = wb["1099-G"]
+
+            assert ws.cell(row=2, column=1).value == "State Agency"
+            assert ws.cell(row=2, column=3).value == 3000.0  # Unemployment
+
+    def test_worksheet_1098_t_data_populated(
+        self,
+        sample_1098_t: Form1098T,
+        sample_income_summary: IncomeSummary,
+        sample_deduction_result: DeductionResult,
+        sample_tax_result: TaxResult,
+    ) -> None:
+        """1098-T data is populated correctly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = generate_drake_worksheet(
+                "John Doe",
+                2024,
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [sample_1098_t],
+                [],
+                [],
+                sample_income_summary,
+                sample_deduction_result,
+                sample_tax_result,
+                Path(tmpdir) / "test.xlsx",
+            )
+
+            wb = load_workbook(path)
+            ws = wb["1098-T"]
+
+            assert ws.cell(row=2, column=1).value == "State University"
+            assert ws.cell(row=2, column=3).value == 10000.0  # Payments received
+
+    def test_worksheet_5498_data_populated(
+        self,
+        sample_5498: Form5498,
+        sample_income_summary: IncomeSummary,
+        sample_deduction_result: DeductionResult,
+        sample_tax_result: TaxResult,
+    ) -> None:
+        """5498 data is populated correctly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = generate_drake_worksheet(
+                "John Doe",
+                2024,
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [sample_5498],
+                [],
+                sample_income_summary,
+                sample_deduction_result,
+                sample_tax_result,
+                Path(tmpdir) / "test.xlsx",
+            )
+
+            wb = load_workbook(path)
+            ws = wb["5498"]
+
+            assert ws.cell(row=2, column=1).value == "IRA Trustee"
+            assert ws.cell(row=2, column=3).value == 2000.0  # IRA contributions
+
+    def test_worksheet_1099_s_data_populated(
+        self,
+        sample_1099_s: Form1099S,
+        sample_income_summary: IncomeSummary,
+        sample_deduction_result: DeductionResult,
+        sample_tax_result: TaxResult,
+    ) -> None:
+        """1099-S data is populated correctly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = generate_drake_worksheet(
+                "John Doe",
+                2024,
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [sample_1099_s],
+                sample_income_summary,
+                sample_deduction_result,
+                sample_tax_result,
+                Path(tmpdir) / "test.xlsx",
+            )
+
+            wb = load_workbook(path)
+            ws = wb["1099-S"]
+
+            assert ws.cell(row=2, column=1).value == "Title Company"
+            assert ws.cell(row=2, column=3).value == 250000.0  # Gross proceeds
 
     def test_worksheet_summary_totals(
         self,
@@ -554,6 +1113,12 @@ class TestDrakeWorksheetDataPopulation:
                 "John Doe",
                 2024,
                 [sample_w2],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
                 [],
                 [],
                 [],
@@ -605,6 +1170,12 @@ class TestDrakeWorksheetDataPopulation:
                 [],
                 [],
                 [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
                 income_summary,
                 sample_deduction_result,
                 tax_result,
@@ -636,6 +1207,12 @@ class TestDrakeWorksheetDataPopulation:
                 "John Doe",
                 2024,
                 [sample_w2, sample_w2_with_box12],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
                 [],
                 [],
                 [],
@@ -824,6 +1401,35 @@ class TestPreparerNotesSections:
 
             content = path.read_text()
             assert "## Review Focus" in content
+
+    def test_notes_new_forms_review_section(
+        self,
+        sample_income_summary: IncomeSummary,
+        sample_deduction_result: DeductionResult,
+        sample_tax_result: TaxResult,
+    ) -> None:
+        """New form types are highlighted for review."""
+        extractions = [
+            {"document_type": "1099-R", "filename": "retirement.pdf", "confidence": "HIGH"},
+            {"document_type": "1098", "filename": "mortgage.pdf", "confidence": "HIGH"},
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = generate_preparer_notes(
+                "John Doe",
+                2024,
+                sample_income_summary,
+                sample_deduction_result,
+                sample_tax_result,
+                [],
+                extractions,
+                "single",
+                Path(tmpdir) / "notes.md",
+            )
+
+            content = path.read_text()
+            assert "New Forms Review" in content
+            assert "1099-R" in content
 
 
 class TestPreparerNotesContent:
@@ -1039,6 +1645,7 @@ class TestPreparerNotesContent:
                 "confidence": "MEDIUM",
                 "classification_overridden": True,
                 "classification_original_type": "1099-NEC",
+                "classification_override_source": "user",
             }
         ]
 
@@ -1057,6 +1664,7 @@ class TestPreparerNotesContent:
 
             content = path.read_text()
             assert "Classification Notes" in content
+            assert "User-selected override" in content
             assert "classifier predicted 1099-NEC" in content
 
     def test_notes_review_focus_with_variances(

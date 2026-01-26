@@ -24,8 +24,10 @@ from src.agents.personal_tax.calculator import (
     VarianceItem,
 )
 from src.documents.models import (
+    Form1095A,
     Form1098,
     Form1098T,
+    Form1099B,
     Form1099DIV,
     Form1099G,
     Form1099INT,
@@ -33,6 +35,7 @@ from src.documents.models import (
     Form1099R,
     Form1099S,
     Form5498,
+    FormK1,
     W2Data,
 )
 
@@ -141,6 +144,8 @@ def _add_summary_sheet(
         ("Interest Income (1099-INT)", income_summary.total_interest),
         ("Dividend Income (1099-DIV)", income_summary.total_dividends),
         ("Nonemployee Compensation (1099-NEC)", income_summary.total_nec),
+        ("Retirement Distributions (1099-R)", income_summary.total_retirement_distributions),
+        ("Unemployment Compensation (1099-G)", income_summary.total_unemployment),
         ("Other Income", income_summary.total_other),
         ("TOTAL INCOME", income_summary.total_income),
     ]
@@ -416,6 +421,425 @@ def _add_1099_nec_sheet(workbook: Workbook, data: list[Form1099NEC]) -> None:
     _auto_fit_columns(ws)
 
 
+def _add_1098_sheet(workbook: Workbook, data: list[Form1098]) -> None:
+    """Add 1098 sheet to workbook.
+
+    Args:
+        workbook: Excel workbook.
+        data: List of 1098 data.
+    """
+    ws = workbook.create_sheet("1098")
+
+    headers = [
+        "Lender Name",
+        "Lender TIN",
+        "Mortgage Interest",
+        "Points Paid",
+        "Mortgage Insurance",
+        "Property Taxes",
+    ]
+
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        cell.fill = PatternFill(
+            start_color="DAEEF3", end_color="DAEEF3", fill_type="solid"
+        )
+
+    row = 2
+    for form in data:
+        ws.cell(row=row, column=1, value=form.lender_name)
+        ws.cell(row=row, column=2, value=form.lender_tin)
+        ws.cell(row=row, column=3, value=_format_decimal(form.mortgage_interest))
+        ws.cell(row=row, column=4, value=_format_decimal(form.points_paid))
+        ws.cell(row=row, column=5, value=_format_decimal(form.mortgage_insurance_premiums))
+        ws.cell(row=row, column=6, value=_format_decimal(form.property_taxes_paid))
+
+        for col in [3, 4, 5, 6]:
+            ws.cell(row=row, column=col).number_format = '"$"#,##0.00'
+
+        row += 1
+
+    ws.freeze_panes = "A2"
+    _auto_fit_columns(ws)
+
+
+def _add_1099_r_sheet(workbook: Workbook, data: list[Form1099R]) -> None:
+    """Add 1099-R sheet to workbook.
+
+    Args:
+        workbook: Excel workbook.
+        data: List of 1099-R data.
+    """
+    ws = workbook.create_sheet("1099-R")
+
+    headers = [
+        "Payer Name",
+        "Payer TIN",
+        "Gross Distribution",
+        "Taxable Amount",
+        "Distribution Code",
+        "Fed W/H",
+        "State W/H",
+    ]
+
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        cell.fill = PatternFill(
+            start_color="DAEEF3", end_color="DAEEF3", fill_type="solid"
+        )
+
+    row = 2
+    for form in data:
+        ws.cell(row=row, column=1, value=form.payer_name)
+        ws.cell(row=row, column=2, value=form.payer_tin)
+        ws.cell(row=row, column=3, value=_format_decimal(form.gross_distribution))
+        ws.cell(row=row, column=4, value=_format_decimal(form.taxable_amount))
+        ws.cell(row=row, column=5, value=form.distribution_code)
+        ws.cell(row=row, column=6, value=_format_decimal(form.federal_tax_withheld))
+        ws.cell(row=row, column=7, value=_format_decimal(form.state_tax_withheld))
+
+        for col in [3, 4, 6, 7]:
+            ws.cell(row=row, column=col).number_format = '"$"#,##0.00'
+
+        row += 1
+
+    ws.freeze_panes = "A2"
+    _auto_fit_columns(ws)
+
+
+def _add_1099_g_sheet(workbook: Workbook, data: list[Form1099G]) -> None:
+    """Add 1099-G sheet to workbook.
+
+    Args:
+        workbook: Excel workbook.
+        data: List of 1099-G data.
+    """
+    ws = workbook.create_sheet("1099-G")
+
+    headers = [
+        "Payer Name",
+        "Payer TIN",
+        "Unemployment",
+        "State Tax Refund",
+        "Fed W/H",
+        "State W/H",
+    ]
+
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        cell.fill = PatternFill(
+            start_color="DAEEF3", end_color="DAEEF3", fill_type="solid"
+        )
+
+    row = 2
+    for form in data:
+        ws.cell(row=row, column=1, value=form.payer_name)
+        ws.cell(row=row, column=2, value=form.payer_tin)
+        ws.cell(row=row, column=3, value=_format_decimal(form.unemployment_compensation))
+        ws.cell(row=row, column=4, value=_format_decimal(form.state_local_tax_refund))
+        ws.cell(row=row, column=5, value=_format_decimal(form.federal_tax_withheld))
+        ws.cell(row=row, column=6, value=_format_decimal(form.state_tax_withheld))
+
+        for col in [3, 4, 5, 6]:
+            ws.cell(row=row, column=col).number_format = '"$"#,##0.00'
+
+        row += 1
+
+    ws.freeze_panes = "A2"
+    _auto_fit_columns(ws)
+
+
+def _add_1098_t_sheet(workbook: Workbook, data: list[Form1098T]) -> None:
+    """Add 1098-T sheet to workbook.
+
+    Args:
+        workbook: Excel workbook.
+        data: List of 1098-T data.
+    """
+    ws = workbook.create_sheet("1098-T")
+
+    headers = [
+        "Institution Name",
+        "Institution TIN",
+        "Payments Received",
+        "Scholarships/Grants",
+        "Half-Time",
+        "Graduate",
+    ]
+
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        cell.fill = PatternFill(
+            start_color="DAEEF3", end_color="DAEEF3", fill_type="solid"
+        )
+
+    row = 2
+    for form in data:
+        ws.cell(row=row, column=1, value=form.institution_name)
+        ws.cell(row=row, column=2, value=form.institution_tin)
+        ws.cell(row=row, column=3, value=_format_decimal(form.payments_received))
+        ws.cell(row=row, column=4, value=_format_decimal(form.scholarships_grants))
+        ws.cell(row=row, column=5, value="Yes" if form.at_least_half_time else "No")
+        ws.cell(row=row, column=6, value="Yes" if form.graduate_student else "No")
+
+        for col in [3, 4]:
+            ws.cell(row=row, column=col).number_format = '"$"#,##0.00'
+
+        row += 1
+
+    ws.freeze_panes = "A2"
+    _auto_fit_columns(ws)
+
+
+def _add_5498_sheet(workbook: Workbook, data: list[Form5498]) -> None:
+    """Add 5498 sheet to workbook.
+
+    Args:
+        workbook: Excel workbook.
+        data: List of 5498 data.
+    """
+    ws = workbook.create_sheet("5498")
+
+    headers = [
+        "Trustee Name",
+        "Trustee TIN",
+        "IRA Contributions",
+        "Roth IRA Contributions",
+        "SEP Contributions",
+        "SIMPLE Contributions",
+        "Year-End FMV",
+    ]
+
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        cell.fill = PatternFill(
+            start_color="DAEEF3", end_color="DAEEF3", fill_type="solid"
+        )
+
+    row = 2
+    for form in data:
+        ws.cell(row=row, column=1, value=form.trustee_name)
+        ws.cell(row=row, column=2, value=form.trustee_tin)
+        ws.cell(row=row, column=3, value=_format_decimal(form.ira_contributions))
+        ws.cell(row=row, column=4, value=_format_decimal(form.roth_ira_contributions))
+        ws.cell(row=row, column=5, value=_format_decimal(form.sep_contributions))
+        ws.cell(row=row, column=6, value=_format_decimal(form.simple_contributions))
+        ws.cell(row=row, column=7, value=_format_decimal(form.fair_market_value))
+
+        for col in [3, 4, 5, 6, 7]:
+            ws.cell(row=row, column=col).number_format = '"$"#,##0.00'
+
+        row += 1
+
+    ws.freeze_panes = "A2"
+    _auto_fit_columns(ws)
+
+
+def _add_1099_s_sheet(workbook: Workbook, data: list[Form1099S]) -> None:
+    """Add 1099-S sheet to workbook.
+
+    Args:
+        workbook: Excel workbook.
+        data: List of 1099-S data.
+    """
+    ws = workbook.create_sheet("1099-S")
+
+    headers = [
+        "Filer Name",
+        "Filer TIN",
+        "Gross Proceeds",
+        "Closing Date",
+        "Property Address",
+    ]
+
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        cell.fill = PatternFill(
+            start_color="DAEEF3", end_color="DAEEF3", fill_type="solid"
+        )
+
+    row = 2
+    for form in data:
+        ws.cell(row=row, column=1, value=form.filer_name)
+        ws.cell(row=row, column=2, value=form.filer_tin)
+        ws.cell(row=row, column=3, value=_format_decimal(form.gross_proceeds))
+        ws.cell(row=row, column=4, value=form.closing_date)
+        ws.cell(row=row, column=5, value=form.property_address)
+
+        ws.cell(row=row, column=3).number_format = '"$"#,##0.00'
+
+        row += 1
+
+    ws.freeze_panes = "A2"
+    _auto_fit_columns(ws)
+
+
+def _add_k1_sheet(workbook: Workbook, data: list[FormK1]) -> None:
+    """Add K-1 sheet to workbook.
+
+    Args:
+        workbook: Excel workbook.
+        data: List of K-1 data.
+    """
+    ws = workbook.create_sheet("K-1")
+
+    headers = [
+        "Entity Name",
+        "Entity EIN",
+        "Entity Type",
+        "Ownership %",
+        "Ordinary Income",
+        "Net Rental RE",
+        "Guaranteed Pmts",
+        "Interest Income",
+        "Dividend Income",
+        "Net ST Cap Gain",
+        "Net LT Cap Gain",
+        "Distributions",
+    ]
+
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        cell.fill = PatternFill(
+            start_color="DAEEF3", end_color="DAEEF3", fill_type="solid"
+        )
+
+    row = 2
+    for form in data:
+        ws.cell(row=row, column=1, value=form.entity_name)
+        ws.cell(row=row, column=2, value=form.entity_ein)
+        ws.cell(row=row, column=3, value=form.entity_type)
+        ws.cell(row=row, column=4, value=_format_decimal(form.ownership_percentage))
+        ws.cell(row=row, column=5, value=_format_decimal(form.ordinary_business_income))
+        ws.cell(row=row, column=6, value=_format_decimal(form.net_rental_real_estate))
+        ws.cell(row=row, column=7, value=_format_decimal(form.guaranteed_payments))
+        ws.cell(row=row, column=8, value=_format_decimal(form.interest_income))
+        ws.cell(row=row, column=9, value=_format_decimal(form.dividend_income))
+        ws.cell(row=row, column=10, value=_format_decimal(form.net_short_term_capital_gain))
+        ws.cell(row=row, column=11, value=_format_decimal(form.net_long_term_capital_gain))
+        ws.cell(row=row, column=12, value=_format_decimal(form.distributions))
+
+        for col in [5, 6, 7, 8, 9, 10, 11, 12]:
+            ws.cell(row=row, column=col).number_format = '"$"#,##0.00'
+        ws.cell(row=row, column=4).number_format = '0.00"%"'
+
+        row += 1
+
+    ws.freeze_panes = "A2"
+    _auto_fit_columns(ws)
+
+
+def _add_1099_b_sheet(workbook: Workbook, data: list[Form1099B]) -> None:
+    """Add 1099-B sheet to workbook.
+
+    Args:
+        workbook: Excel workbook.
+        data: List of 1099-B transactions.
+    """
+    ws = workbook.create_sheet("1099-B")
+
+    headers = [
+        "Description",
+        "Date Acquired",
+        "Date Sold",
+        "Proceeds",
+        "Cost Basis",
+        "Gain/Loss",
+        "Term",
+        "Covered",
+        "Wash Sale",
+    ]
+
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        cell.fill = PatternFill(
+            start_color="DAEEF3", end_color="DAEEF3", fill_type="solid"
+        )
+
+    row = 2
+    for txn in data:
+        ws.cell(row=row, column=1, value=txn.description)
+        ws.cell(row=row, column=2, value=txn.date_acquired)
+        ws.cell(row=row, column=3, value=txn.date_sold)
+        ws.cell(row=row, column=4, value=_format_decimal(txn.proceeds))
+        ws.cell(row=row, column=5, value=_format_decimal(txn.cost_basis))
+        gain_loss = txn.proceeds - txn.cost_basis if txn.cost_basis else txn.proceeds
+        ws.cell(row=row, column=6, value=_format_decimal(gain_loss))
+        ws.cell(row=row, column=7, value=txn.term or "Unknown")
+        ws.cell(row=row, column=8, value="Yes" if txn.is_covered_security else "No")
+        ws.cell(row=row, column=9, value=_format_decimal(txn.wash_sale_disallowed) if txn.wash_sale_disallowed else "N/A")
+
+        for col in [4, 5, 6]:
+            ws.cell(row=row, column=col).number_format = '"$"#,##0.00'
+
+        row += 1
+
+    ws.freeze_panes = "A2"
+    _auto_fit_columns(ws)
+
+
+def _add_1095_a_sheet(workbook: Workbook, data: list[Form1095A]) -> None:
+    """Add 1095-A sheet to workbook.
+
+    Args:
+        workbook: Excel workbook.
+        data: List of 1095-A data.
+    """
+    ws = workbook.create_sheet("1095-A")
+
+    headers = [
+        "Recipient Name",
+        "Marketplace ID",
+        "Policy Number",
+        "Coverage Start",
+        "Annual Premium",
+        "Annual SLCSP",
+        "Annual Advance PTC",
+    ]
+
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        cell.fill = PatternFill(
+            start_color="DAEEF3", end_color="DAEEF3", fill_type="solid"
+        )
+
+    row = 2
+    for form in data:
+        ws.cell(row=row, column=1, value=form.recipient_name)
+        ws.cell(row=row, column=2, value=form.marketplace_id)
+        ws.cell(row=row, column=3, value=form.policy_number)
+        ws.cell(row=row, column=4, value=form.coverage_start_date)
+        ws.cell(row=row, column=5, value=_format_decimal(form.annual_enrollment_premium))
+        ws.cell(row=row, column=6, value=_format_decimal(form.annual_slcsp_premium))
+        ws.cell(row=row, column=7, value=_format_decimal(form.annual_advance_ptc))
+
+        for col in [5, 6, 7]:
+            ws.cell(row=row, column=col).number_format = '"$"#,##0.00'
+
+        row += 1
+
+    ws.freeze_panes = "A2"
+    _auto_fit_columns(ws)
+
+
 def generate_drake_worksheet(
     client_name: str,
     tax_year: int,
@@ -423,16 +847,26 @@ def generate_drake_worksheet(
     income_1099_int: list[Form1099INT],
     income_1099_div: list[Form1099DIV],
     income_1099_nec: list[Form1099NEC],
+    mortgage_1098: list[Form1098],
+    income_1099_r: list[Form1099R],
+    income_1099_g: list[Form1099G],
+    education_1098_t: list[Form1098T],
+    retirement_5498: list[Form5498],
+    real_estate_1099_s: list[Form1099S],
     income_summary: IncomeSummary,
     deduction_result: DeductionResult,
     tax_result: TaxResult,
     output_path: Path,
+    *,
+    k1_data: list[FormK1] | None = None,
+    transactions_1099_b: list[Form1099B] | None = None,
+    form_1095a_data: list[Form1095A] | None = None,
 ) -> Path:
     """Generate Drake-compatible Excel worksheet.
 
-    Creates an Excel workbook with sheets for Summary, W-2 Income,
-    1099-INT, 1099-DIV, and 1099-NEC data formatted for manual entry
-    into Drake Tax Software.
+    Creates an Excel workbook with sheets for Summary, W-2 Income, 1099-INT,
+    1099-DIV, 1099-NEC, 1098, 1099-R, 1099-G, 1098-T, 5498, 1099-S, K-1,
+    1099-B, and 1095-A data formatted for manual entry into Drake Tax Software.
 
     Args:
         client_name: Client name for header.
@@ -441,19 +875,27 @@ def generate_drake_worksheet(
         income_1099_int: List of extracted 1099-INT data.
         income_1099_div: List of extracted 1099-DIV data.
         income_1099_nec: List of extracted 1099-NEC data.
+        mortgage_1098: List of extracted 1098 data.
+        income_1099_r: List of extracted 1099-R data.
+        income_1099_g: List of extracted 1099-G data.
+        education_1098_t: List of extracted 1098-T data.
+        retirement_5498: List of extracted 5498 data.
+        real_estate_1099_s: List of extracted 1099-S data.
         income_summary: Aggregated income from calculator.
         deduction_result: Deduction calculation from calculator.
         tax_result: Tax calculation from calculator.
         output_path: Where to save the xlsx file.
+        k1_data: List of extracted K-1 data (optional).
+        transactions_1099_b: List of extracted 1099-B transactions (optional).
+        form_1095a_data: List of extracted 1095-A data (optional).
 
     Returns:
         Path to generated file.
 
     Example:
         >>> path = generate_drake_worksheet(
-        ...     "John Doe", 2024, [w2], [], [], [],
-        ...     income, deduction, tax,
-        ...     Path("output.xlsx")
+        ...     "John Doe", 2024, [w2], [], [], [], [], [], [], [], [], [],
+        ...     income, deduction, tax, Path("output.xlsx")
         ... )
     """
     workbook = Workbook()
@@ -466,6 +908,18 @@ def generate_drake_worksheet(
     _add_1099_int_sheet(workbook, income_1099_int)
     _add_1099_div_sheet(workbook, income_1099_div)
     _add_1099_nec_sheet(workbook, income_1099_nec)
+    _add_1098_sheet(workbook, mortgage_1098)
+    _add_1099_r_sheet(workbook, income_1099_r)
+    _add_1099_g_sheet(workbook, income_1099_g)
+    _add_1098_t_sheet(workbook, education_1098_t)
+    _add_5498_sheet(workbook, retirement_5498)
+    _add_1099_s_sheet(workbook, real_estate_1099_s)
+    if k1_data:
+        _add_k1_sheet(workbook, k1_data)
+    if transactions_1099_b:
+        _add_1099_b_sheet(workbook, transactions_1099_b)
+    if form_1095a_data:
+        _add_1095_a_sheet(workbook, form_1095a_data)
 
     # Ensure parent directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -668,10 +1122,21 @@ def generate_preparer_notes(
         filename = ext.get("filename", "Unknown")
         if ext.get("classification_overridden"):
             original = ext.get("classification_original_type", "unknown")
-            classification_notes.append(
-                f"- {filename}: filename suggests {doc_type}, "
-                f"but classifier predicted {original}"
-            )
+            override_source = ext.get("classification_override_source")
+            if override_source == "user":
+                classification_notes.append(
+                    f"- {filename}: User-selected override; classifier predicted "
+                    f"{original}"
+                )
+            elif override_source == "filename":
+                classification_notes.append(
+                    f"- {filename}: filename hint suggests {doc_type}, "
+                    f"but classifier predicted {original}"
+                )
+            else:
+                classification_notes.append(
+                    f"- {filename}: override applied; classifier predicted {original}"
+                )
         elif ext.get("multiple_forms_detected"):
             classification_notes.append(
                 f"- {filename}: multiple W-2 forms detected on one page; split file"
@@ -708,6 +1173,23 @@ def generate_preparer_notes(
     )
     lines.append("- All documents in client folder were processed")
     lines.append("")
+
+    # New forms review section
+    new_form_types = {"1098", "1099-R", "1099-G", "1098-T", "5498", "1099-S"}
+    new_form_extractions = [
+        ext
+        for ext in extractions
+        if ext.get("document_type") in new_form_types
+    ]
+    if new_form_extractions:
+        lines.append("## New Forms Review")
+        lines.append("")
+        lines.append("Documents requiring additional review:")
+        for ext in new_form_extractions:
+            doc_type = ext.get("document_type", "Unknown")
+            filename = ext.get("filename", "Unknown")
+            lines.append(f"- {doc_type}: {filename}")
+        lines.append("")
 
     # Review Focus section
     lines.append("## Review Focus")

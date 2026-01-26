@@ -389,6 +389,221 @@ For empty boxes, use 0 (zero).
 Gross proceeds (Box 2), closing date (Box 1), and property address (Box 3) are the most critical fields."""
 
 
+FORM_K1_PROMPT = """Extract all data from this Schedule K-1 (Form 1065 or Form 1120-S).
+
+Return a JSON object with the following fields:
+
+**PART I - ENTITY INFORMATION:**
+- entity_name: Name of partnership or S-corporation
+- entity_ein: Entity's Employer Identification Number (XX-XXXXXXX format)
+- entity_type: "partnership" (Form 1065) or "s_corp" (Form 1120-S)
+- tax_year: The tax year this K-1 is for (YYYY format)
+
+**PART II - PARTNER/SHAREHOLDER INFORMATION:**
+- recipient_name: Partner or shareholder name
+- recipient_tin: Partner/shareholder's TIN (SSN format XXX-XX-XXXX or EIN format XX-XXXXXXX)
+- ownership_percentage: Percentage of ownership (as decimal, e.g., 25.5 for 25.5%)
+
+**CAPITAL ACCOUNT (Item L in Part II, if visible):**
+- capital_account_beginning: Beginning capital account balance
+- capital_account_ending: Ending capital account balance
+- current_year_increase: Current year increase
+- current_year_decrease: Current year decrease
+
+**LIABILITIES (if shown):**
+- share_of_recourse_liabilities: Partner's share of recourse liabilities
+- share_of_nonrecourse_liabilities: Partner's share of nonrecourse liabilities
+- share_of_qualified_nonrecourse: Partner's share of qualified nonrecourse financing
+
+**PART III - SHARE OF INCOME, DEDUCTIONS, CREDITS:**
+- ordinary_business_income: Box 1 - Ordinary business income (loss)
+- net_rental_real_estate: Box 2 - Net rental real estate income (loss)
+- other_rental_income: Box 3 - Other net rental income (loss)
+- guaranteed_payments: Box 4 - Guaranteed payments (partnerships only, 0 for S-corps)
+- interest_income: Box 5 - Interest income
+- dividend_income: Box 6a/6b - Dividends (total amount)
+- royalties: Box 7 - Royalties
+- net_short_term_capital_gain: Box 8 - Net short-term capital gain (loss)
+- net_long_term_capital_gain: Box 9a - Net long-term capital gain (loss)
+- net_section_1231_gain: Box 10 - Net section 1231 gain (loss)
+- other_income: Box 11 - Other income (loss) - sum of all codes if multiple
+- section_179_deduction: Box 12 - Section 179 deduction
+- other_deductions: Box 13 - Other deductions - sum of all codes if multiple
+- self_employment_earnings: Box 14 - Self-employment earnings (loss)
+- credits: Box 15 - Credits (total of all credit types)
+- foreign_transactions: Box 16 - Foreign transactions (total amount)
+- distributions: Box 19 - Distributions
+
+**IMPORTANT RULES:**
+- Use negative numbers for losses (e.g., -5000 for a $5,000 loss)
+- Enter 0 if box is blank or not applicable
+- For boxes with multiple codes (11, 13, 15, etc.), sum all amounts
+- S-corporations do NOT have guaranteed payments (Box 4) - use 0
+
+**CONFIDENCE ASSESSMENT:**
+- HIGH: All fields clearly visible and readable
+- MEDIUM: Some fields partially obscured or unclear
+- LOW: Critical fields (Box 1, entity EIN, recipient TIN) hard to read
+
+Add any uncertain field names to the uncertain_fields list."""
+
+
+FORM_1099_B_PROMPT = """Extract all data from this Form 1099-B (Proceeds from Broker Transactions).
+
+This form may contain ONE or MULTIPLE transactions. Extract each transaction separately.
+
+For EACH transaction on the form, extract:
+
+**PAYER INFORMATION (same for all transactions):**
+- payer_name: Broker/financial institution name
+- payer_tin: Broker's TIN (format as XX-XXXXXXX for EIN)
+- account_number: Account number (if shown)
+
+**RECIPIENT:**
+- recipient_tin: Recipient's SSN (format as XXX-XX-XXXX)
+
+**TRANSACTION DETAILS (per transaction):**
+- description: Box 1a - Description of property (stock name, CUSIP, quantity)
+- date_acquired: Box 1b - Date acquired (YYYY-MM-DD format, or "Various" if multiple lots)
+- date_sold: Box 1c - Date sold or disposed (YYYY-MM-DD format)
+- proceeds: Box 1d - Proceeds (gross amount from sale)
+- cost_basis: Box 1e - Cost or other basis (may be blank if not reported to IRS)
+- wash_sale_loss_disallowed: Box 1g - Wash sale loss disallowed (0 if not applicable)
+- gain_loss: Box 1h - Gain or loss (if reported, otherwise calculate from proceeds - cost)
+
+**CLASSIFICATION (per transaction):**
+- is_short_term: True if Box 2 is checked (held 1 year or less)
+- is_long_term: True if Box 3 is checked (held more than 1 year)
+- basis_reported_to_irs: True if Box 12 is checked (basis was reported to IRS)
+
+**SPECIAL TYPES:**
+- is_collectibles: True if this is a collectibles (28% rate) transaction
+- is_qof: True if this is a Qualified Opportunity Fund investment
+
+**OUTPUT FORMAT:**
+Return a JSON object with:
+- transactions: Array of transaction objects, each containing all fields above
+- Each transaction should have its own uncertain_fields list for that transaction
+
+**RULES:**
+- If form shows summary/totals at the end, ignore those - extract individual transactions
+- If multiple pages, each transaction row is a separate object
+- Date format: YYYY-MM-DD (convert from MM/DD/YYYY if needed)
+- Use 0 for blank monetary fields
+- For date_acquired, use "Various" if shown that way
+
+**CONFIDENCE ASSESSMENT:**
+Set confidence per transaction:
+- HIGH: All fields clearly visible and readable
+- MEDIUM: Some fields partially obscured or unclear
+- LOW: Proceeds or dates hard to read"""
+
+
+FORM_1099_B_SUMMARY_PROMPT = """Extract SUMMARY TOTALS from this Form 1099-B broker statement.
+
+This statement has MANY transactions - extract category totals, NOT individual transactions.
+These categories match IRS Form 8949 reporting categories.
+
+**PAYER INFORMATION:**
+- payer_name: Broker/financial institution name
+- payer_tin: Broker's TIN (format as XX-XXXXXXX)
+- recipient_tin: Recipient's SSN (format as XXX-XX-XXXX)
+
+**CATEGORY A - Short-Term, Basis Reported to IRS:**
+(Transactions held 1 year or less where broker reported basis)
+- cat_a_proceeds: Total proceeds (sales price)
+- cat_a_cost_basis: Total cost basis
+- cat_a_adjustments: Total adjustments (wash sales, etc.)
+- cat_a_gain_loss: Total gain/loss (proceeds - cost + adjustments)
+- cat_a_transaction_count: Number of transactions in this category
+
+**CATEGORY B - Short-Term, Basis NOT Reported to IRS:**
+(Transactions held 1 year or less where broker did NOT report basis)
+- cat_b_proceeds: Total proceeds
+- cat_b_cost_basis: Total cost basis (if shown, else null)
+- cat_b_adjustments: Total adjustments
+- cat_b_transaction_count: Number of transactions
+
+**CATEGORY D - Long-Term, Basis Reported to IRS:**
+(Transactions held more than 1 year where broker reported basis)
+- cat_d_proceeds: Total proceeds
+- cat_d_cost_basis: Total cost basis
+- cat_d_adjustments: Total adjustments
+- cat_d_gain_loss: Total gain/loss
+- cat_d_transaction_count: Number of transactions
+
+**CATEGORY E - Long-Term, Basis NOT Reported to IRS:**
+(Transactions held more than 1 year where broker did NOT report basis)
+- cat_e_proceeds: Total proceeds
+- cat_e_cost_basis: Total cost basis (if shown, else null)
+- cat_e_adjustments: Total adjustments
+- cat_e_transaction_count: Number of transactions
+
+**ADDITIONAL FIELDS:**
+- total_wash_sale_disallowed: Total wash sale loss disallowed across all categories
+- collectibles_gain: Total collectibles (28% rate) gain if any
+- section_1202_gain: Total Section 1202 qualified small business stock gain if any
+- total_transaction_count: Total number of all transactions
+
+**RULES:**
+- Look for "Summary" or "Totals" sections on the statement
+- Categories may be labeled "Box A", "Box B", etc. or "Short-Term Covered", etc.
+- Use 0 for categories with no transactions
+- Use null for cost_basis in B/E categories if not shown (client must provide)
+
+**CONFIDENCE ASSESSMENT:**
+- HIGH: Category totals clearly visible
+- MEDIUM: Some categories unclear or may be incomplete
+- LOW: Cannot reliably identify category breakdowns"""
+
+
+FORM_1095_A_PROMPT = """Extract all data from this Form 1095-A Health Insurance Marketplace Statement.
+
+This form shows health insurance coverage and premium tax credit information for reconciling on Form 8962.
+
+**RECIPIENT INFORMATION:**
+- recipient_name: Recipient's name (policyholder)
+- recipient_tin: Recipient's SSN (format as XXX-XX-XXXX)
+- recipient_address: Recipient's address (if shown)
+
+**MARKETPLACE INFORMATION:**
+- marketplace_id: Marketplace identifier (if shown)
+- policy_number: Policy number
+
+**COVERAGE DATES:**
+- coverage_start_date: Coverage start date (YYYY-MM-DD)
+- coverage_termination_date: Coverage termination date if terminated (YYYY-MM-DD, null if ongoing)
+
+**MONTHLY DATA (Columns A, B, C for each month):**
+Extract values for each month January through December:
+
+- monthly_enrollment_premium: Array of 12 values for Column A (Boxes 21-32)
+  Monthly enrollment premiums (what the plan costs before tax credit)
+
+- monthly_slcsp_premium: Array of 12 values for Column B (Boxes 33-44)
+  Monthly SLCSP (Second Lowest Cost Silver Plan) premium amounts
+
+- monthly_advance_ptc: Array of 12 values for Column C (Boxes 45-56)
+  Monthly advance payments of premium tax credit
+
+**ANNUAL TOTALS:**
+- annual_enrollment_premium: Sum of monthly enrollment premiums (Column A total)
+- annual_slcsp_premium: Sum of monthly SLCSP premiums (Column B total)
+- annual_advance_ptc: Sum of monthly advance PTC (Column C total)
+
+**RULES:**
+- Use 0 for months with no coverage
+- The 12-element arrays should be ordered January (index 0) through December (index 11)
+- Annual totals should match the sum of monthly values
+
+**CONFIDENCE ASSESSMENT:**
+- HIGH: All monthly values clearly visible
+- MEDIUM: Some months unclear or partially obscured
+- LOW: Cannot reliably extract monthly breakdown
+
+Add any uncertain field names to the uncertain_fields list."""
+
+
 __all__ = [
     "W2_EXTRACTION_PROMPT",
     "W2_MULTI_EXTRACTION_PROMPT",
@@ -401,4 +616,8 @@ __all__ = [
     "FORM_1098_T_PROMPT",
     "FORM_5498_PROMPT",
     "FORM_1099_S_PROMPT",
+    "FORM_K1_PROMPT",
+    "FORM_1099_B_PROMPT",
+    "FORM_1099_B_SUMMARY_PROMPT",
+    "FORM_1095_A_PROMPT",
 ]

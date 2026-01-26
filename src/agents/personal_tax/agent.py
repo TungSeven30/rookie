@@ -33,9 +33,11 @@ from src.agents.personal_tax.calculator import (
     TaxSituation,
     VarianceItem,
     aggregate_income,
+    build_credit_inputs,
     calculate_deductions,
     calculate_tax,
     compare_years,
+    compute_itemized_deductions,
     evaluate_credits,
 )
 from src.agents.personal_tax.output import (
@@ -49,8 +51,10 @@ from src.documents.extractor import extract_document
 from src.documents.models import (
     ConfidenceLevel,
     DocumentType,
+    Form1095A,
     Form1098,
     Form1098T,
+    Form1099B,
     Form1099DIV,
     Form1099G,
     Form1099INT,
@@ -58,6 +62,7 @@ from src.documents.models import (
     Form1099R,
     Form1099S,
     Form5498,
+    FormK1,
     W2Batch,
     W2Data,
 )
@@ -467,6 +472,7 @@ class PersonalTaxAgent:
         original_confidence = classification.confidence
         original_reasoning = classification.reasoning
         classification_overridden = False
+        classification_override_source: str | None = None
         user_selection_used = False
 
         # Check for user-selected form type override
@@ -498,6 +504,7 @@ class PersonalTaxAgent:
                     reasoning=f"User selected form type: {user_form_type}",
                 )
                 classification_overridden = True
+                classification_override_source = "user"
                 user_selection_used = True
             except ValueError:
                 # Invalid document type - fall back to classifier
@@ -524,6 +531,7 @@ class PersonalTaxAgent:
                     reasoning=f"Filename hint: {page_filename}",
                 )
                 classification_overridden = True
+                classification_override_source = "filename"
 
         if classification.document_type == DocumentType.UNKNOWN:
             logger.warning(
@@ -579,6 +587,7 @@ class PersonalTaxAgent:
                         "classification_confidence": classification.confidence,
                         "classification_reasoning": classification.reasoning,
                         "classification_overridden": classification_overridden,
+                        "classification_override_source": classification_override_source,
                         "multiple_forms_detected": multiple_forms_detected,
                         "classification_original_type": (
                             original_type.value if classification_overridden else None
@@ -609,6 +618,7 @@ class PersonalTaxAgent:
             "classification_confidence": classification.confidence,
             "classification_reasoning": classification.reasoning,
             "classification_overridden": classification_overridden,
+            "classification_override_source": classification_override_source,
             "multiple_forms_detected": False,
             "classification_original_type": (
                 original_type.value if classification_overridden else None
@@ -989,11 +999,13 @@ class PersonalTaxAgent:
         # Aggregate income
         income_summary = aggregate_income(documents)
 
-        # Calculate deductions (standard for now)
+        # Calculate itemized deductions and select best option
+        itemized_breakdown = compute_itemized_deductions(documents, filing_status)
         deduction_result = calculate_deductions(
             income_summary,
             filing_status,
             tax_year,
+            itemized_total=itemized_breakdown.total,
         )
 
         # Calculate taxable income
@@ -1006,10 +1018,14 @@ class PersonalTaxAgent:
         tax_result = calculate_tax(taxable_income, filing_status, tax_year)
 
         # Evaluate credits (requires pre-credit tax liability for ACTC)
+        credit_inputs = build_credit_inputs(documents)
         situation = TaxSituation(
             agi=income_summary.total_income,
             filing_status=filing_status,
             tax_year=tax_year,
+            education_expenses=credit_inputs.education_expenses,
+            education_credit_type=credit_inputs.education_credit_type,
+            retirement_contributions=credit_inputs.retirement_contributions,
             earned_income=income_summary.total_wages,
             tax_liability=tax_result.gross_tax,
         )
@@ -1118,6 +1134,38 @@ class PersonalTaxAgent:
         nec_data = [
             e["data"] for e in extractions if isinstance(e.get("data"), Form1099NEC)
         ]
+        mortgage_1098_data = [
+            e["data"] for e in extractions if isinstance(e.get("data"), Form1098)
+        ]
+        income_1099_r_data = [
+            e["data"] for e in extractions if isinstance(e.get("data"), Form1099R)
+        ]
+        income_1099_g_data = [
+            e["data"] for e in extractions if isinstance(e.get("data"), Form1099G)
+        ]
+        education_1098_t_data = [
+            e["data"] for e in extractions if isinstance(e.get("data"), Form1098T)
+        ]
+        retirement_5498_data = [
+            e["data"] for e in extractions if isinstance(e.get("data"), Form5498)
+        ]
+        real_estate_1099_s_data = [
+            e["data"] for e in extractions if isinstance(e.get("data"), Form1099S)
+        ]
+        k1_data = [
+            e["data"] for e in extractions if isinstance(e.get("data"), FormK1)
+        ]
+        # 1099-B extraction returns list of transactions per form
+        transactions_1099_b = []
+        for e in extractions:
+            data = e.get("data")
+            if isinstance(data, list) and all(isinstance(t, Form1099B) for t in data):
+                transactions_1099_b.extend(data)
+            elif isinstance(data, Form1099B):
+                transactions_1099_b.append(data)
+        form_1095a_data = [
+            e["data"] for e in extractions if isinstance(e.get("data"), Form1095A)
+        ]
 
         # Generate Drake worksheet
         worksheet_path = self.output_dir / f"drake_worksheet_{tax_year}.xlsx"
@@ -1128,6 +1176,15 @@ class PersonalTaxAgent:
             income_1099_int=int_data,
             income_1099_div=div_data,
             income_1099_nec=nec_data,
+            mortgage_1098=mortgage_1098_data,
+            income_1099_r=income_1099_r_data,
+            income_1099_g=income_1099_g_data,
+            education_1098_t=education_1098_t_data,
+            retirement_5498=retirement_5498_data,
+            real_estate_1099_s=real_estate_1099_s_data,
+            k1_data=k1_data,
+            transactions_1099_b=transactions_1099_b,
+            form_1095a_data=form_1095a_data,
             income_summary=income_summary,
             deduction_result=deduction_result,
             tax_result=tax_result,
