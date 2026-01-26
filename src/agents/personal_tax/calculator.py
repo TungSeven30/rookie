@@ -631,6 +631,113 @@ class ScheduleDResult:
 
 
 @dataclass
+class QBIComponent:
+    """QBI component from a single qualified trade or business.
+
+    Tracks qualified business income and W-2 wage/property limitations
+    for Section 199A deduction calculation.
+
+    Attributes:
+        business_name: Name of the trade or business.
+        qualified_business_income: Net income from business (QBI).
+        w2_wages: W-2 wages paid by the business (for limitation).
+        unadjusted_basis_qualified_property: UBIA of qualified property.
+        is_sstb: Whether business is a Specified Service Trade or Business.
+        sstb_reason: Reason for SSTB classification (from auto-detect).
+        source: Source of income (schedule_c, k1_partnership, k1_s_corp, rental).
+    """
+
+    business_name: str
+    qualified_business_income: Decimal
+
+    # W-2 wages (for limitation above threshold)
+    w2_wages: Decimal = field(default_factory=lambda: Decimal("0"))
+
+    # Qualified property (for limitation)
+    unadjusted_basis_qualified_property: Decimal = field(
+        default_factory=lambda: Decimal("0")
+    )
+
+    # SSTB status
+    is_sstb: bool = False
+    sstb_reason: str | None = None
+
+    # Source
+    source: str = "schedule_c"  # schedule_c, k1_partnership, k1_s_corp, rental
+
+    @property
+    def tentative_qbi_deduction(self) -> Decimal:
+        """20% of QBI before limitations."""
+        return max(Decimal("0"), self.qualified_business_income * Decimal("0.20"))
+
+    @property
+    def w2_wage_limit(self) -> Decimal:
+        """50% of W-2 wages limitation."""
+        return self.w2_wages * Decimal("0.50")
+
+    @property
+    def wage_plus_property_limit(self) -> Decimal:
+        """25% of W-2 wages + 2.5% of UBIA limitation."""
+        return (
+            self.w2_wages * Decimal("0.25")
+            + self.unadjusted_basis_qualified_property * Decimal("0.025")
+        )
+
+    @property
+    def wage_limit(self) -> Decimal:
+        """Greater of the two wage-based limits."""
+        return max(self.w2_wage_limit, self.wage_plus_property_limit)
+
+
+@dataclass
+class QBIDeduction:
+    """Final QBI deduction calculation result.
+
+    Attributes:
+        components: List of QBI components from each business.
+        total_qbi: Sum of qualified business income.
+        total_tentative_deduction: Sum of tentative deductions before limits.
+        filing_status: Filing status for threshold determination.
+        taxable_income: Taxable income before QBI deduction.
+        threshold: Income threshold for this filing status.
+        phaseout_range: Range over which limitations phase in.
+        is_above_threshold: Whether in or above phaseout range.
+        is_fully_phased_out: Whether fully above threshold + phaseout.
+        wage_limit_applied: Whether W-2 wage limitation reduced deduction.
+        sstb_exclusion_applied: Whether any SSTB was excluded/reduced.
+        taxable_income_limit_applied: Whether 20% TI limit applied.
+        qbi_deduction_before_limit: Deduction before TI limitation.
+        taxable_income_limit: 20% of (TI - net capital gains).
+        final_qbi_deduction: Final allowed deduction.
+    """
+
+    # Components
+    components: list[QBIComponent]
+
+    # Total QBI amounts
+    total_qbi: Decimal
+    total_tentative_deduction: Decimal
+
+    # Threshold info
+    filing_status: FilingStatus
+    taxable_income: Decimal
+    threshold: Decimal
+    phaseout_range: Decimal
+    is_above_threshold: bool
+    is_fully_phased_out: bool
+
+    # Limitations applied
+    wage_limit_applied: bool
+    sstb_exclusion_applied: bool
+    taxable_income_limit_applied: bool
+
+    # Final deduction
+    qbi_deduction_before_limit: Decimal
+    taxable_income_limit: Decimal
+    final_qbi_deduction: Decimal
+
+
+@dataclass
 class ItemizedDeductionBreakdown:
     """Itemized deduction components and totals.
 
@@ -1420,6 +1527,282 @@ def convert_1099b_to_transactions(
             missing_basis.append(form)
 
     return transactions, missing_basis
+
+
+# =============================================================================
+# QBI Deduction - Section 199A (PTAX-04-06)
+# =============================================================================
+
+# QBI Section 199A thresholds (2024)
+# Format: (threshold, phaseout_range)
+QBI_THRESHOLDS: dict[FilingStatus, tuple[Decimal, Decimal]] = {
+    FilingStatus.SINGLE: (Decimal("191950"), Decimal("50000")),
+    FilingStatus.MARRIED_FILING_JOINTLY: (Decimal("383900"), Decimal("100000")),
+    FilingStatus.MARRIED_FILING_SEPARATELY: (Decimal("191950"), Decimal("50000")),
+    FilingStatus.HEAD_OF_HOUSEHOLD: (Decimal("191950"), Decimal("50000")),
+    FilingStatus.QUALIFYING_WIDOW: (Decimal("383900"), Decimal("100000")),
+}
+
+
+def calculate_qbi_deduction(
+    components: list[QBIComponent],
+    taxable_income: Decimal,
+    net_capital_gains: Decimal,
+    filing_status: FilingStatus,
+) -> QBIDeduction:
+    """Calculate QBI deduction under Section 199A.
+
+    Implements the simplified QBI rules:
+    1. Below threshold: 20% of QBI, no W-2 wage limitation
+    2. In phaseout range: Phased limitation on SSTB and wage limit
+    3. Above phaseout: Full W-2 wage limitation, no SSTB deduction
+
+    Final deduction is lesser of:
+    - Combined QBI deduction from all businesses
+    - 20% of (taxable income - net capital gains)
+
+    Args:
+        components: List of QBI components from each business.
+        taxable_income: Taxable income before QBI deduction.
+        net_capital_gains: Net capital gains (for final limitation).
+        filing_status: For threshold determination.
+
+    Returns:
+        QBIDeduction with complete breakdown.
+
+    Example:
+        >>> comp = QBIComponent(
+        ...     business_name="Consulting",
+        ...     qualified_business_income=Decimal("100000"),
+        ... )
+        >>> result = calculate_qbi_deduction(
+        ...     [comp],
+        ...     taxable_income=Decimal("150000"),
+        ...     net_capital_gains=Decimal("0"),
+        ...     filing_status=FilingStatus.SINGLE,
+        ... )
+        >>> result.final_qbi_deduction
+        Decimal('20000.00')
+    """
+    threshold, phaseout = QBI_THRESHOLDS.get(
+        filing_status,
+        (Decimal("191950"), Decimal("50000")),
+    )
+
+    phaseout_end = threshold + phaseout
+
+    is_above_threshold = taxable_income > threshold
+    is_fully_phased_out = taxable_income >= phaseout_end
+
+    # Calculate deduction for each component
+    total_deduction = Decimal("0")
+    wage_limit_applied = False
+    sstb_exclusion_applied = False
+
+    for comp in components:
+        if comp.qualified_business_income <= Decimal("0"):
+            continue
+
+        tentative = comp.tentative_qbi_deduction
+
+        # Handle SSTB
+        if comp.is_sstb:
+            if is_fully_phased_out:
+                # No deduction for SSTB above threshold
+                sstb_exclusion_applied = True
+                continue
+            elif is_above_threshold:
+                # Partial SSTB in phaseout
+                sstb_exclusion_applied = True
+                phaseout_pct = (taxable_income - threshold) / phaseout
+                tentative = tentative * (Decimal("1") - phaseout_pct)
+
+        # Apply W-2 wage limitation if above threshold
+        if is_above_threshold and not is_fully_phased_out:
+            # Phased-in limitation
+            phaseout_pct = (taxable_income - threshold) / phaseout
+            limit = comp.wage_limit
+            reduction = (tentative - limit) * phaseout_pct
+            if reduction > Decimal("0"):
+                tentative = max(tentative - reduction, limit)
+                wage_limit_applied = True
+        elif is_fully_phased_out:
+            # Full limitation
+            if tentative > comp.wage_limit:
+                tentative = comp.wage_limit
+                wage_limit_applied = True
+
+        total_deduction += tentative
+
+    # Final limitation: 20% of (taxable income - net capital gains)
+    taxable_income_limit = (taxable_income - net_capital_gains) * Decimal("0.20")
+    taxable_income_limit = max(Decimal("0"), taxable_income_limit)
+
+    final_deduction = min(total_deduction, taxable_income_limit)
+    taxable_income_limit_applied = total_deduction > taxable_income_limit
+
+    return QBIDeduction(
+        components=components,
+        total_qbi=sum(c.qualified_business_income for c in components),
+        total_tentative_deduction=sum(c.tentative_qbi_deduction for c in components),
+        filing_status=filing_status,
+        taxable_income=taxable_income,
+        threshold=threshold,
+        phaseout_range=phaseout,
+        is_above_threshold=is_above_threshold,
+        is_fully_phased_out=is_fully_phased_out,
+        wage_limit_applied=wage_limit_applied,
+        sstb_exclusion_applied=sstb_exclusion_applied,
+        taxable_income_limit_applied=taxable_income_limit_applied,
+        qbi_deduction_before_limit=total_deduction.quantize(Decimal("0.01")),
+        taxable_income_limit=taxable_income_limit.quantize(Decimal("0.01")),
+        final_qbi_deduction=final_deduction.quantize(Decimal("0.01")),
+    )
+
+
+def build_qbi_from_schedule_c(
+    schedule_c: ScheduleCData,
+    se_tax_deduction: Decimal,
+    is_sstb: bool | None = None,
+) -> QBIComponent:
+    """Build QBI component from Schedule C data.
+
+    QBI = Net profit - 50% SE tax - SE health insurance - retirement contributions
+    Simplified: QBI = Net profit - 50% SE tax
+
+    If is_sstb is None, automatically classifies based on NAICS code
+    and business description using classify_sstb().
+
+    Args:
+        schedule_c: Schedule C data for the business.
+        se_tax_deduction: Deductible portion of SE tax (50%).
+        is_sstb: Override SSTB classification (None = auto-detect).
+
+    Returns:
+        QBIComponent for the Schedule C business.
+
+    Example:
+        >>> sch_c = ScheduleCData(
+        ...     business_name="Tech Consulting",
+        ...     business_activity="Consulting",
+        ...     principal_business_code="541611",
+        ...     gross_receipts=Decimal("150000"),
+        ...     expenses=ScheduleCExpenses(),
+        ... )
+        >>> qbi = build_qbi_from_schedule_c(sch_c, Decimal("7000"))
+        >>> qbi.is_sstb  # Auto-detected as consulting SSTB
+        True
+    """
+    from src.agents.personal_tax.sstb import classify_sstb
+
+    # Auto-classify SSTB if not explicitly provided
+    sstb_reason = None
+    if is_sstb is None:
+        is_sstb, sstb_reason = classify_sstb(
+            schedule_c.principal_business_code,
+            schedule_c.business_activity,
+            schedule_c.business_name,
+        )
+    elif is_sstb:
+        sstb_reason = "Manually specified"
+
+    qbi = schedule_c.net_profit_or_loss - se_tax_deduction
+
+    return QBIComponent(
+        business_name=schedule_c.business_name,
+        qualified_business_income=max(Decimal("0"), qbi),
+        w2_wages=Decimal("0"),  # Sole prop has no W-2 wages
+        is_sstb=is_sstb,
+        sstb_reason=sstb_reason,
+        source="schedule_c",
+    )
+
+
+def build_qbi_from_k1(
+    k1: FormK1,
+    is_sstb: bool = False,
+) -> QBIComponent:
+    """Build QBI component from K-1 data.
+
+    IMPORTANT: Guaranteed payments (Box 4) are NOT QBI.
+    - Guaranteed payments are treated like wages for partners
+    - QBI = Box 1 (ordinary income) EXCLUDING guaranteed payments
+    - In reality, K-1 QBI statement would provide exact amount
+
+    For K-1: QBI = Box 1 (ordinary income) only
+    W-2 wages and UBIA may be reported on K-1 supplemental.
+
+    Args:
+        k1: K-1 data from partnership or S-corp.
+        is_sstb: Whether business is SSTB (from K-1 supplemental).
+
+    Returns:
+        QBIComponent for the K-1 entity.
+
+    Example:
+        >>> k1 = FormK1(
+        ...     entity_name="ABC Partners",
+        ...     entity_ein="12-3456789",
+        ...     entity_type="partnership",
+        ...     ordinary_business_income=Decimal("50000"),
+        ...     guaranteed_payments=Decimal("20000"),  # NOT included in QBI
+        ... )
+        >>> qbi = build_qbi_from_k1(k1)
+        >>> qbi.qualified_business_income
+        Decimal('50000')
+    """
+    # Use ordinary income only - guaranteed payments are NOT QBI
+    # Note: K-1s often include a QBI statement with exact amounts
+    qbi = k1.ordinary_business_income or Decimal("0")
+
+    # Guaranteed payments are subject to SE tax but NOT QBI
+    # They are reported separately and handled in aggregate_income()
+
+    return QBIComponent(
+        business_name=k1.entity_name,
+        qualified_business_income=max(Decimal("0"), qbi),
+        w2_wages=Decimal("0"),  # Would come from K-1 supplemental
+        unadjusted_basis_qualified_property=Decimal("0"),
+        is_sstb=is_sstb,
+        source="k1_partnership" if k1.entity_type == "partnership" else "k1_s_corp",
+    )
+
+
+def build_qbi_from_rental(
+    rental_net_income: Decimal,
+    property_name: str,
+    qualifies_safe_harbor: bool = True,
+) -> QBIComponent | None:
+    """Build QBI component from rental income (if qualifying).
+
+    Rental qualifies for QBI under safe harbor if:
+    - 250+ hours of rental services per year
+    - Separate books and records
+    - Not triple net lease
+
+    Args:
+        rental_net_income: Net rental income from Schedule E.
+        property_name: Name/address of the property.
+        qualifies_safe_harbor: Whether rental meets safe harbor requirements.
+
+    Returns:
+        QBIComponent if qualifying rental income, None otherwise.
+
+    Example:
+        >>> qbi = build_qbi_from_rental(Decimal("15000"), "123 Main St")
+        >>> qbi.qualified_business_income
+        Decimal('15000')
+    """
+    if not qualifies_safe_harbor or rental_net_income <= Decimal("0"):
+        return None
+
+    return QBIComponent(
+        business_name=f"Rental: {property_name}",
+        qualified_business_income=rental_net_income,
+        w2_wages=Decimal("0"),
+        is_sstb=False,  # Rentals are never SSTB
+        source="rental",
+    )
 
 
 # =============================================================================

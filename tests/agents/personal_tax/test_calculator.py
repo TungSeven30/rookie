@@ -21,6 +21,8 @@ from src.agents.personal_tax.calculator import (
     FilingStatus,
     IncomeSummary,
     ItemizedDeductionBreakdown,
+    QBIComponent,
+    QBIDeduction,
     RentalExpenses,
     RentalProperty,
     ScheduleCData,
@@ -33,7 +35,11 @@ from src.agents.personal_tax.calculator import (
     VarianceItem,
     aggregate_income,
     build_credit_inputs,
+    build_qbi_from_k1,
+    build_qbi_from_rental,
+    build_qbi_from_schedule_c,
     calculate_deductions,
+    calculate_qbi_deduction,
     calculate_schedule_c,
     calculate_schedule_d,
     calculate_schedule_e,
@@ -3052,3 +3058,278 @@ class TestAggregateIncomeWithScheduleD:
         assert result.capital_gains_net == Decimal("5000")
         # W-2 + Schedule C + Schedule E + Capital Gains
         assert result.total_income == Decimal("95000")
+
+
+# =============================================================================
+# QBI Deduction (Section 199A) Tests - PTAX-04-06
+# =============================================================================
+
+
+class TestQBIComponent:
+    """Tests for QBIComponent dataclass."""
+
+    def test_qbi_component_tentative_deduction(self) -> None:
+        """QBIComponent calculates 20% tentative deduction."""
+        qbi = QBIComponent(
+            business_name="Test Business",
+            qualified_business_income=Decimal("100000"),
+        )
+        assert qbi.tentative_qbi_deduction == Decimal("20000.00")
+
+    def test_qbi_component_w2_wage_limit(self) -> None:
+        """QBIComponent calculates 50% W-2 wage limit."""
+        qbi = QBIComponent(
+            business_name="Test Business",
+            qualified_business_income=Decimal("100000"),
+            w2_wages=Decimal("60000"),
+        )
+        assert qbi.w2_wage_limit == Decimal("30000.00")
+
+    def test_qbi_component_wage_plus_property_limit(self) -> None:
+        """QBIComponent calculates 25% wages + 2.5% property limit."""
+        qbi = QBIComponent(
+            business_name="Test Business",
+            qualified_business_income=Decimal("100000"),
+            w2_wages=Decimal("40000"),
+            unadjusted_basis_qualified_property=Decimal("200000"),
+        )
+        # 25% of 40k = 10k + 2.5% of 200k = 5k = 15k
+        assert qbi.wage_plus_property_limit == Decimal("15000.00")
+
+    def test_qbi_component_wage_limit_greater_of_two(self) -> None:
+        """QBIComponent.wage_limit is greater of the two limits."""
+        qbi = QBIComponent(
+            business_name="Test Business",
+            qualified_business_income=Decimal("100000"),
+            w2_wages=Decimal("60000"),  # 50% = 30k, 25% = 15k
+            unadjusted_basis_qualified_property=Decimal("100000"),  # 2.5% = 2.5k
+        )
+        # 50% of wages (30k) > 25% + 2.5% (17.5k)
+        assert qbi.wage_limit == Decimal("30000.00")
+
+    def test_qbi_component_negative_income_zero_deduction(self) -> None:
+        """QBIComponent with negative income gives zero deduction."""
+        qbi = QBIComponent(
+            business_name="Loss Business",
+            qualified_business_income=Decimal("-10000"),
+        )
+        assert qbi.tentative_qbi_deduction == Decimal("0")
+
+
+class TestQBIDeduction:
+    """Tests for calculate_qbi_deduction() function."""
+
+    def test_qbi_below_threshold(self) -> None:
+        """QBI below threshold gets full 20% deduction."""
+        components = [
+            QBIComponent(
+                business_name="Test Business",
+                qualified_business_income=Decimal("100000"),
+            ),
+        ]
+        result = calculate_qbi_deduction(
+            components,
+            taxable_income=Decimal("150000"),
+            net_capital_gains=Decimal("0"),
+            filing_status=FilingStatus.SINGLE,
+        )
+        assert result.final_qbi_deduction == Decimal("20000.00")
+        assert not result.is_above_threshold
+        assert not result.wage_limit_applied
+
+    def test_qbi_above_threshold_with_wages(self) -> None:
+        """QBI above threshold applies W-2 wage limitation."""
+        components = [
+            QBIComponent(
+                business_name="Test Business",
+                qualified_business_income=Decimal("100000"),
+                w2_wages=Decimal("30000"),  # 50% = 15k
+            ),
+        ]
+        result = calculate_qbi_deduction(
+            components,
+            taxable_income=Decimal("300000"),  # Above phaseout
+            net_capital_gains=Decimal("0"),
+            filing_status=FilingStatus.SINGLE,
+        )
+        assert result.is_fully_phased_out
+        assert result.final_qbi_deduction == Decimal("15000.00")
+        assert result.wage_limit_applied
+
+    def test_qbi_sstb_exclusion_above_threshold(self) -> None:
+        """SSTB excluded above threshold."""
+        components = [
+            QBIComponent(
+                business_name="Law Firm",
+                qualified_business_income=Decimal("200000"),
+                is_sstb=True,
+            ),
+        ]
+        result = calculate_qbi_deduction(
+            components,
+            taxable_income=Decimal("300000"),  # Fully phased out
+            net_capital_gains=Decimal("0"),
+            filing_status=FilingStatus.SINGLE,
+        )
+        assert result.sstb_exclusion_applied
+        assert result.final_qbi_deduction == Decimal("0.00")
+
+    def test_qbi_taxable_income_limit(self) -> None:
+        """QBI limited to 20% of taxable income."""
+        components = [
+            QBIComponent(
+                business_name="Test Business",
+                qualified_business_income=Decimal("200000"),
+            ),
+        ]
+        result = calculate_qbi_deduction(
+            components,
+            taxable_income=Decimal("50000"),  # 20% = 10k
+            net_capital_gains=Decimal("0"),
+            filing_status=FilingStatus.SINGLE,
+        )
+        # Tentative = 40k, but limited to 20% of TI = 10k
+        assert result.final_qbi_deduction == Decimal("10000.00")
+        assert result.taxable_income_limit_applied
+
+    def test_qbi_multiple_businesses(self) -> None:
+        """Multiple QBI components aggregated."""
+        components = [
+            QBIComponent(
+                business_name="Business 1",
+                qualified_business_income=Decimal("50000"),
+            ),
+            QBIComponent(
+                business_name="Business 2",
+                qualified_business_income=Decimal("30000"),
+            ),
+        ]
+        result = calculate_qbi_deduction(
+            components,
+            taxable_income=Decimal("150000"),
+            net_capital_gains=Decimal("0"),
+            filing_status=FilingStatus.SINGLE,
+        )
+        # Total QBI = 80k, deduction = 20% = 16k
+        assert result.total_qbi == Decimal("80000")
+        assert result.final_qbi_deduction == Decimal("16000.00")
+
+    def test_qbi_mfj_higher_threshold(self) -> None:
+        """MFJ has higher threshold ($383,900)."""
+        components = [
+            QBIComponent(
+                business_name="Test Business",
+                qualified_business_income=Decimal("100000"),
+            ),
+        ]
+        result = calculate_qbi_deduction(
+            components,
+            taxable_income=Decimal("350000"),  # Below MFJ threshold
+            net_capital_gains=Decimal("0"),
+            filing_status=FilingStatus.MARRIED_FILING_JOINTLY,
+        )
+        assert not result.is_above_threshold
+        assert result.final_qbi_deduction == Decimal("20000.00")
+
+    def test_qbi_with_capital_gains_limit(self) -> None:
+        """QBI limited by 20% of (TI - capital gains)."""
+        components = [
+            QBIComponent(
+                business_name="Test Business",
+                qualified_business_income=Decimal("50000"),
+            ),
+        ]
+        result = calculate_qbi_deduction(
+            components,
+            taxable_income=Decimal("60000"),
+            net_capital_gains=Decimal("30000"),  # High cap gains
+            filing_status=FilingStatus.SINGLE,
+        )
+        # 20% of (60k - 30k) = 6k < tentative 10k
+        assert result.final_qbi_deduction == Decimal("6000.00")
+        assert result.taxable_income_limit_applied
+
+
+class TestQBIHelpers:
+    """Tests for QBI helper functions."""
+
+    def test_build_qbi_from_schedule_c(self) -> None:
+        """Build QBI from Schedule C with auto SSTB detection."""
+        sch_c = ScheduleCData(
+            business_name="Tech Consulting",
+            business_activity="Management consulting",
+            principal_business_code="541611",  # SSTB
+            gross_receipts=Decimal("150000"),
+            expenses=ScheduleCExpenses(office_expense=Decimal("10000")),
+        )
+        qbi = build_qbi_from_schedule_c(sch_c, Decimal("7000"))
+        # Net = 140k, minus SE deduction 7k = 133k
+        assert qbi.qualified_business_income == Decimal("133000")
+        assert qbi.is_sstb is True
+        assert qbi.source == "schedule_c"
+
+    def test_build_qbi_from_schedule_c_non_sstb(self) -> None:
+        """Build QBI from non-SSTB Schedule C."""
+        sch_c = ScheduleCData(
+            business_name="Johns Plumbing",
+            business_activity="Plumbing services",
+            principal_business_code="238220",  # Not SSTB
+            gross_receipts=Decimal("100000"),
+            expenses=ScheduleCExpenses(),
+        )
+        qbi = build_qbi_from_schedule_c(sch_c, Decimal("5000"))
+        assert qbi.is_sstb is False
+
+    def test_build_qbi_from_k1_partnership(self) -> None:
+        """Build QBI from partnership K-1."""
+        k1 = FormK1(
+            entity_name="ABC Partners",
+            entity_ein="12-3456789",
+            entity_type="partnership",
+            recipient_tin="111-22-3333",
+            recipient_name="John Doe",
+            tax_year=2024,
+            ownership_percentage=Decimal("10"),
+            ordinary_business_income=Decimal("50000"),
+            guaranteed_payments=Decimal("20000"),  # NOT QBI
+        )
+        qbi = build_qbi_from_k1(k1)
+        # Only Box 1 (ordinary income) is QBI
+        assert qbi.qualified_business_income == Decimal("50000")
+        assert qbi.source == "k1_partnership"
+
+    def test_build_qbi_from_k1_scorp(self) -> None:
+        """Build QBI from S-corp K-1."""
+        k1 = FormK1(
+            entity_name="XYZ Corp",
+            entity_ein="98-7654321",
+            entity_type="s_corp",
+            recipient_tin="111-22-3333",
+            recipient_name="Jane Doe",
+            tax_year=2024,
+            ownership_percentage=Decimal("25"),
+            ordinary_business_income=Decimal("100000"),
+        )
+        qbi = build_qbi_from_k1(k1)
+        assert qbi.qualified_business_income == Decimal("100000")
+        assert qbi.source == "k1_s_corp"
+
+    def test_build_qbi_from_rental(self) -> None:
+        """Build QBI from qualifying rental income."""
+        qbi = build_qbi_from_rental(Decimal("15000"), "123 Main St")
+        assert qbi is not None
+        assert qbi.qualified_business_income == Decimal("15000")
+        assert qbi.is_sstb is False  # Rentals never SSTB
+        assert qbi.source == "rental"
+
+    def test_build_qbi_from_rental_loss_returns_none(self) -> None:
+        """Rental with loss returns None (no QBI)."""
+        qbi = build_qbi_from_rental(Decimal("-5000"), "456 Oak Ave")
+        assert qbi is None
+
+    def test_build_qbi_from_rental_not_qualifying(self) -> None:
+        """Non-qualifying rental returns None."""
+        qbi = build_qbi_from_rental(
+            Decimal("15000"), "789 Elm St", qualifies_safe_harbor=False
+        )
+        assert qbi is None
