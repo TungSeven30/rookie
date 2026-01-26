@@ -17,9 +17,13 @@ from src.documents.models import (
     Box12Code,
     ConfidenceLevel,
     DocumentType,
+    Form1095A,
+    Form1099B,
+    Form1099BSummary,
     Form1099DIV,
     Form1099INT,
     Form1099NEC,
+    FormK1,
     W2Data,
     validate_ein,
     validate_ssn,
@@ -389,7 +393,9 @@ class TestDocumentType:
 
     def test_document_type_count(self) -> None:
         """DocumentType has expected number of values."""
-        assert len(DocumentType) == 5
+        # W2, 1099-INT, 1099-DIV, 1099-NEC, 1098, 1099-R, 1099-G, 1098-T, 5498, 1099-S,
+        # K-1, 1099-B, 1095-A, UNKNOWN = 14 types
+        assert len(DocumentType) == 14
 
 
 class TestConfidenceLevel:
@@ -420,3 +426,375 @@ class TestBox12Code:
         code = Box12Code(code="DD", amount=Decimal("12500.00"))
         assert code.code == "DD"
         assert code.amount == Decimal("12500.00")
+
+
+class TestFormK1:
+    """Tests for FormK1 model."""
+
+    @pytest.fixture
+    def valid_k1_data(self) -> dict:
+        """Return valid K-1 data for testing."""
+        return {
+            "entity_name": "ABC Partnership",
+            "entity_ein": "12-3456789",
+            "entity_type": "partnership",
+            "tax_year": 2024,
+            "recipient_name": "John Smith",
+            "recipient_tin": "123-45-6789",
+            "ownership_percentage": Decimal("25.0"),
+        }
+
+    def test_k1_basic_creation(self, valid_k1_data: dict) -> None:
+        """K-1 can be created with required fields."""
+        k1 = FormK1(**valid_k1_data)
+        assert k1.entity_name == "ABC Partnership"
+        assert k1.entity_ein == "12-3456789"
+        assert k1.entity_type == "partnership"
+        assert k1.tax_year == 2024
+        assert k1.recipient_name == "John Smith"
+        assert k1.ownership_percentage == Decimal("25.0")
+
+    def test_k1_ein_validation(self, valid_k1_data: dict) -> None:
+        """K-1 validates entity EIN format."""
+        valid_k1_data["entity_ein"] = "123456789"  # Without dash
+        k1 = FormK1(**valid_k1_data)
+        assert k1.entity_ein == "12-3456789"
+
+    def test_k1_ein_invalid(self, valid_k1_data: dict) -> None:
+        """K-1 rejects invalid EIN."""
+        valid_k1_data["entity_ein"] = "12345"
+        with pytest.raises(ValidationError):
+            FormK1(**valid_k1_data)
+
+    def test_k1_recipient_tin_validation(self, valid_k1_data: dict) -> None:
+        """K-1 validates recipient TIN format."""
+        valid_k1_data["recipient_tin"] = "123456789"  # Without dashes
+        k1 = FormK1(**valid_k1_data)
+        assert k1.recipient_tin == "123-45-6789"
+
+    def test_k1_default_income_values(self, valid_k1_data: dict) -> None:
+        """K-1 income fields default to zero."""
+        k1 = FormK1(**valid_k1_data)
+        assert k1.ordinary_business_income == Decimal("0")
+        assert k1.net_rental_real_estate == Decimal("0")
+        assert k1.guaranteed_payments == Decimal("0")
+        assert k1.interest_income == Decimal("0")
+        assert k1.dividend_income == Decimal("0")
+        assert k1.net_short_term_capital_gain == Decimal("0")
+        assert k1.net_long_term_capital_gain == Decimal("0")
+        assert k1.distributions == Decimal("0")
+
+    def test_k1_entity_types(self, valid_k1_data: dict) -> None:
+        """K-1 accepts partnership and s_corp entity types."""
+        valid_k1_data["entity_type"] = "partnership"
+        k1 = FormK1(**valid_k1_data)
+        assert k1.entity_type == "partnership"
+
+        valid_k1_data["entity_type"] = "s_corp"
+        k1 = FormK1(**valid_k1_data)
+        assert k1.entity_type == "s_corp"
+
+    def test_k1_total_income(self, valid_k1_data: dict) -> None:
+        """K-1 total_k1_income property calculates correctly."""
+        valid_k1_data["ordinary_business_income"] = Decimal("50000")
+        valid_k1_data["interest_income"] = Decimal("1000")
+        valid_k1_data["dividend_income"] = Decimal("500")
+        k1 = FormK1(**valid_k1_data)
+        assert k1.total_k1_income == Decimal("51500")
+
+    def test_k1_requires_basis_escalation_no_loss(self, valid_k1_data: dict) -> None:
+        """K-1 with no loss does not require basis escalation."""
+        valid_k1_data["ordinary_business_income"] = Decimal("50000")
+        k1 = FormK1(**valid_k1_data)
+        assert k1.requires_basis_escalation is False
+
+    def test_k1_requires_basis_escalation_small_loss(self, valid_k1_data: dict) -> None:
+        """K-1 with small loss (<$10k) does not require basis escalation."""
+        valid_k1_data["ordinary_business_income"] = Decimal("-5000")
+        k1 = FormK1(**valid_k1_data)
+        assert k1.requires_basis_escalation is False
+
+    def test_k1_requires_basis_escalation_large_loss_no_basis(
+        self, valid_k1_data: dict
+    ) -> None:
+        """K-1 with large loss (>$10k) and no capital account requires escalation."""
+        valid_k1_data["ordinary_business_income"] = Decimal("-15000")
+        k1 = FormK1(**valid_k1_data)
+        assert k1.requires_basis_escalation is True
+
+    def test_k1_requires_basis_escalation_large_loss_with_basis(
+        self, valid_k1_data: dict
+    ) -> None:
+        """K-1 with large loss but capital account info does not require escalation."""
+        valid_k1_data["ordinary_business_income"] = Decimal("-15000")
+        valid_k1_data["capital_account_ending"] = Decimal("50000")
+        k1 = FormK1(**valid_k1_data)
+        assert k1.requires_basis_escalation is False
+
+    def test_k1_capital_account_fields(self, valid_k1_data: dict) -> None:
+        """K-1 capital account fields work correctly."""
+        valid_k1_data["capital_account_beginning"] = Decimal("100000")
+        valid_k1_data["capital_account_ending"] = Decimal("120000")
+        valid_k1_data["current_year_increase"] = Decimal("30000")
+        valid_k1_data["current_year_decrease"] = Decimal("10000")
+        k1 = FormK1(**valid_k1_data)
+        assert k1.capital_account_beginning == Decimal("100000")
+        assert k1.capital_account_ending == Decimal("120000")
+
+    def test_k1_debt_basis_fields(self, valid_k1_data: dict) -> None:
+        """K-1 debt basis fields work correctly."""
+        valid_k1_data["share_of_recourse_liabilities"] = Decimal("25000")
+        valid_k1_data["share_of_nonrecourse_liabilities"] = Decimal("75000")
+        k1 = FormK1(**valid_k1_data)
+        assert k1.share_of_recourse_liabilities == Decimal("25000")
+        assert k1.share_of_nonrecourse_liabilities == Decimal("75000")
+
+
+class TestForm1099B:
+    """Tests for Form1099B model."""
+
+    @pytest.fixture
+    def valid_1099b_data(self) -> dict:
+        """Return valid 1099-B data for testing."""
+        return {
+            "payer_name": "Fidelity Investments",
+            "payer_tin": "12-3456789",
+            "recipient_tin": "123-45-6789",
+            "description": "AAPL - Apple Inc",
+            "date_sold": "2024-06-15",
+            "proceeds": Decimal("10000"),
+        }
+
+    def test_1099b_basic_creation(self, valid_1099b_data: dict) -> None:
+        """1099-B can be created with required fields."""
+        form = Form1099B(**valid_1099b_data)
+        assert form.payer_name == "Fidelity Investments"
+        assert form.description == "AAPL - Apple Inc"
+        assert form.proceeds == Decimal("10000")
+
+    def test_1099b_tin_validation(self, valid_1099b_data: dict) -> None:
+        """1099-B validates TIN formats."""
+        valid_1099b_data["payer_tin"] = "123456789"  # Without dash
+        valid_1099b_data["recipient_tin"] = "987654321"  # Without dashes
+        form = Form1099B(**valid_1099b_data)
+        assert form.payer_tin == "12-3456789"
+        assert form.recipient_tin == "987-65-4321"
+
+    def test_1099b_optional_cost_basis(self, valid_1099b_data: dict) -> None:
+        """1099-B allows None for cost basis (not reported)."""
+        form = Form1099B(**valid_1099b_data)
+        assert form.cost_basis is None
+
+    def test_1099b_with_cost_basis(self, valid_1099b_data: dict) -> None:
+        """1099-B with cost basis works correctly."""
+        valid_1099b_data["cost_basis"] = Decimal("8000")
+        form = Form1099B(**valid_1099b_data)
+        assert form.cost_basis == Decimal("8000")
+
+    def test_1099b_short_long_term(self, valid_1099b_data: dict) -> None:
+        """1099-B tracks short-term vs long-term."""
+        valid_1099b_data["is_short_term"] = True
+        form = Form1099B(**valid_1099b_data)
+        assert form.is_short_term is True
+        assert form.is_long_term is False
+
+        valid_1099b_data["is_short_term"] = False
+        valid_1099b_data["is_long_term"] = True
+        form = Form1099B(**valid_1099b_data)
+        assert form.is_short_term is False
+        assert form.is_long_term is True
+
+    def test_1099b_basis_reported_to_irs(self, valid_1099b_data: dict) -> None:
+        """1099-B basis_reported_to_irs flag works correctly."""
+        form = Form1099B(**valid_1099b_data)
+        assert form.basis_reported_to_irs is True  # Default
+
+        valid_1099b_data["basis_reported_to_irs"] = False
+        form = Form1099B(**valid_1099b_data)
+        assert form.basis_reported_to_irs is False
+
+    def test_1099b_requires_basis_escalation_with_basis(
+        self, valid_1099b_data: dict
+    ) -> None:
+        """1099-B with cost basis does not require escalation."""
+        valid_1099b_data["cost_basis"] = Decimal("8000")
+        form = Form1099B(**valid_1099b_data)
+        assert form.requires_basis_escalation is False
+
+    def test_1099b_requires_basis_escalation_no_basis_reported(
+        self, valid_1099b_data: dict
+    ) -> None:
+        """1099-B without cost basis but reported does not require escalation."""
+        valid_1099b_data["basis_reported_to_irs"] = True
+        form = Form1099B(**valid_1099b_data)
+        assert form.requires_basis_escalation is False
+
+    def test_1099b_requires_basis_escalation_no_basis_not_reported(
+        self, valid_1099b_data: dict
+    ) -> None:
+        """1099-B without cost basis and not reported requires escalation."""
+        valid_1099b_data["basis_reported_to_irs"] = False
+        form = Form1099B(**valid_1099b_data)
+        assert form.requires_basis_escalation is True
+
+    def test_1099b_wash_sale(self, valid_1099b_data: dict) -> None:
+        """1099-B wash sale field works correctly."""
+        valid_1099b_data["wash_sale_loss_disallowed"] = Decimal("500")
+        form = Form1099B(**valid_1099b_data)
+        assert form.wash_sale_loss_disallowed == Decimal("500")
+
+    def test_1099b_special_types(self, valid_1099b_data: dict) -> None:
+        """1099-B special type flags work correctly."""
+        valid_1099b_data["is_collectibles"] = True
+        valid_1099b_data["is_qof"] = True
+        form = Form1099B(**valid_1099b_data)
+        assert form.is_collectibles is True
+        assert form.is_qof is True
+
+
+class TestForm1099BSummary:
+    """Tests for Form1099BSummary model."""
+
+    @pytest.fixture
+    def valid_summary_data(self) -> dict:
+        """Return valid 1099-B summary data for testing."""
+        return {
+            "payer_name": "Fidelity Investments",
+            "payer_tin": "12-3456789",
+            "recipient_tin": "123-45-6789",
+        }
+
+    def test_summary_basic_creation(self, valid_summary_data: dict) -> None:
+        """Summary can be created with required fields."""
+        summary = Form1099BSummary(**valid_summary_data)
+        assert summary.payer_name == "Fidelity Investments"
+
+    def test_summary_category_a_fields(self, valid_summary_data: dict) -> None:
+        """Summary Category A fields work correctly."""
+        valid_summary_data["cat_a_proceeds"] = Decimal("50000")
+        valid_summary_data["cat_a_cost_basis"] = Decimal("45000")
+        valid_summary_data["cat_a_gain_loss"] = Decimal("5000")
+        valid_summary_data["cat_a_transaction_count"] = 75
+        summary = Form1099BSummary(**valid_summary_data)
+        assert summary.cat_a_proceeds == Decimal("50000")
+        assert summary.cat_a_gain_loss == Decimal("5000")
+        assert summary.cat_a_transaction_count == 75
+
+    def test_summary_category_d_fields(self, valid_summary_data: dict) -> None:
+        """Summary Category D fields work correctly."""
+        valid_summary_data["cat_d_proceeds"] = Decimal("100000")
+        valid_summary_data["cat_d_cost_basis"] = Decimal("80000")
+        valid_summary_data["cat_d_gain_loss"] = Decimal("20000")
+        valid_summary_data["cat_d_transaction_count"] = 120
+        summary = Form1099BSummary(**valid_summary_data)
+        assert summary.cat_d_proceeds == Decimal("100000")
+        assert summary.cat_d_gain_loss == Decimal("20000")
+        assert summary.cat_d_transaction_count == 120
+
+    def test_summary_has_missing_basis_false(self, valid_summary_data: dict) -> None:
+        """Summary has_missing_basis is False when no B/E transactions."""
+        summary = Form1099BSummary(**valid_summary_data)
+        assert summary.has_missing_basis is False
+
+    def test_summary_has_missing_basis_true_cat_b(
+        self, valid_summary_data: dict
+    ) -> None:
+        """Summary has_missing_basis is True when Cat B has no basis."""
+        valid_summary_data["cat_b_transaction_count"] = 10
+        valid_summary_data["cat_b_proceeds"] = Decimal("5000")
+        # cat_b_cost_basis is None by default
+        summary = Form1099BSummary(**valid_summary_data)
+        assert summary.has_missing_basis is True
+
+    def test_summary_has_missing_basis_false_with_basis(
+        self, valid_summary_data: dict
+    ) -> None:
+        """Summary has_missing_basis is False when Cat B has basis."""
+        valid_summary_data["cat_b_transaction_count"] = 10
+        valid_summary_data["cat_b_proceeds"] = Decimal("5000")
+        valid_summary_data["cat_b_cost_basis"] = Decimal("4000")
+        summary = Form1099BSummary(**valid_summary_data)
+        assert summary.has_missing_basis is False
+
+    def test_summary_total_short_term_gain_loss(
+        self, valid_summary_data: dict
+    ) -> None:
+        """Summary total_short_term_gain_loss calculates correctly."""
+        valid_summary_data["cat_a_gain_loss"] = Decimal("5000")
+        valid_summary_data["cat_b_proceeds"] = Decimal("10000")
+        valid_summary_data["cat_b_cost_basis"] = Decimal("8000")
+        valid_summary_data["cat_b_transaction_count"] = 5
+        summary = Form1099BSummary(**valid_summary_data)
+        assert summary.total_short_term_gain_loss == Decimal("7000")
+
+    def test_summary_total_long_term_gain_loss(self, valid_summary_data: dict) -> None:
+        """Summary total_long_term_gain_loss calculates correctly."""
+        valid_summary_data["cat_d_gain_loss"] = Decimal("20000")
+        valid_summary_data["cat_e_proceeds"] = Decimal("15000")
+        valid_summary_data["cat_e_cost_basis"] = Decimal("10000")
+        valid_summary_data["cat_e_transaction_count"] = 3
+        summary = Form1099BSummary(**valid_summary_data)
+        assert summary.total_long_term_gain_loss == Decimal("25000")
+
+    def test_summary_total_transaction_count(self, valid_summary_data: dict) -> None:
+        """Summary total_transaction_count tracks all categories."""
+        valid_summary_data["cat_a_transaction_count"] = 50
+        valid_summary_data["cat_d_transaction_count"] = 100
+        valid_summary_data["total_transaction_count"] = 150
+        summary = Form1099BSummary(**valid_summary_data)
+        assert summary.total_transaction_count == 150
+
+
+class TestForm1095A:
+    """Tests for Form1095A model."""
+
+    @pytest.fixture
+    def valid_1095a_data(self) -> dict:
+        """Return valid 1095-A data for testing."""
+        return {
+            "recipient_name": "John Smith",
+            "recipient_tin": "123-45-6789",
+        }
+
+    def test_1095a_basic_creation(self, valid_1095a_data: dict) -> None:
+        """1095-A can be created with required fields."""
+        form = Form1095A(**valid_1095a_data)
+        assert form.recipient_name == "John Smith"
+        assert form.recipient_tin == "123-45-6789"
+
+    def test_1095a_tin_validation(self, valid_1095a_data: dict) -> None:
+        """1095-A validates TIN format."""
+        valid_1095a_data["recipient_tin"] = "123456789"  # Without dashes
+        form = Form1095A(**valid_1095a_data)
+        assert form.recipient_tin == "123-45-6789"
+
+    def test_1095a_monthly_data_defaults(self, valid_1095a_data: dict) -> None:
+        """1095-A monthly data lists default to 12 zeros."""
+        form = Form1095A(**valid_1095a_data)
+        assert len(form.monthly_enrollment_premium) == 12
+        assert len(form.monthly_slcsp_premium) == 12
+        assert len(form.monthly_advance_ptc) == 12
+        assert all(p == Decimal("0") for p in form.monthly_enrollment_premium)
+
+    def test_1095a_with_monthly_data(self, valid_1095a_data: dict) -> None:
+        """1095-A with monthly data works correctly."""
+        monthly_premiums = [Decimal("400")] * 12
+        monthly_slcsp = [Decimal("500")] * 12
+        monthly_aptc = [Decimal("300")] * 12
+        valid_1095a_data["monthly_enrollment_premium"] = monthly_premiums
+        valid_1095a_data["monthly_slcsp_premium"] = monthly_slcsp
+        valid_1095a_data["monthly_advance_ptc"] = monthly_aptc
+        form = Form1095A(**valid_1095a_data)
+        assert form.monthly_enrollment_premium[0] == Decimal("400")
+        assert form.monthly_slcsp_premium[5] == Decimal("500")
+        assert form.monthly_advance_ptc[11] == Decimal("300")
+
+    def test_1095a_annual_totals(self, valid_1095a_data: dict) -> None:
+        """1095-A annual totals work correctly."""
+        valid_1095a_data["annual_enrollment_premium"] = Decimal("4800")
+        valid_1095a_data["annual_slcsp_premium"] = Decimal("6000")
+        valid_1095a_data["annual_advance_ptc"] = Decimal("3600")
+        form = Form1095A(**valid_1095a_data)
+        assert form.annual_enrollment_premium == Decimal("4800")
+        assert form.annual_slcsp_premium == Decimal("6000")
+        assert form.annual_advance_ptc == Decimal("3600")

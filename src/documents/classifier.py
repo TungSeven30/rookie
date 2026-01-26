@@ -103,10 +103,33 @@ Document Types and Distinguishing Features:
     - Has property address/description (Box 3)
     - Common fields: "Gross proceeds", "Address or legal description"
 
+11. K-1 (Schedule K-1):
+    - Title: "Schedule K-1" from Partnership (Form 1065) or S-Corporation (Form 1120-S)
+    - Contains entity information (Part I), partner/shareholder information (Part II)
+    - Contains boxes for various income, deductions, credits (Part III)
+    - Common fields: "Ordinary business income", "Net rental real estate income",
+      "Guaranteed payments", "Interest income", "Distributions"
+    - Look for "Schedule K-1" header and "Partner's Share" or "Shareholder's Share"
+
+12. 1099-B (Proceeds from Broker and Barter Exchange Transactions):
+    - Title: "Proceeds From Broker and Barter Exchange Transactions" or "Form 1099-B"
+    - Contains stock/security sales with dates acquired/sold, proceeds, cost basis
+    - Shows gain/loss calculations and wash sale adjustments
+    - Common fields: "Proceeds", "Cost or other basis", "Date sold", "Description"
+    - Look for broker name and multiple transaction listings
+
+13. 1095-A (Health Insurance Marketplace Statement):
+    - Title: "Health Insurance Marketplace Statement" or "Form 1095-A"
+    - Shows monthly premiums, SLCSP amounts, and advance payments of premium tax credit
+    - Contains coverage dates and marketplace policy information
+    - Common fields: "Monthly enrollment premiums", "Monthly SLCSP premiums",
+      "Monthly advance payment of PTC"
+    - Look for "1095-A" and Marketplace coverage information
+
 If you cannot determine the document type with confidence, classify as UNKNOWN.
 
 Analyze the document and provide:
-1. document_type: One of W2, 1099-INT, 1099-DIV, 1099-NEC, 1098, 1099-R, 1099-G, 1098-T, 5498, 1099-S, or UNKNOWN
+1. document_type: One of W2, 1099-INT, 1099-DIV, 1099-NEC, 1098, 1099-R, 1099-G, 1098-T, 5498, 1099-S, K-1, 1099-B, 1095-A, or UNKNOWN
 2. confidence: A score from 0.0 to 1.0 indicating classification confidence
 3. reasoning: Brief explanation of why you classified it this way"""
 

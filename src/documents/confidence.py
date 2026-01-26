@@ -23,7 +23,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from typing import TYPE_CHECKING
+
 from src.documents.models import ConfidenceLevel, DocumentType
+
+if TYPE_CHECKING:
+    from src.documents.models import Form1099B
 
 
 @dataclass
@@ -66,6 +71,25 @@ CRITICAL_FIELDS: dict[DocumentType, list[str]] = {
         "recipient_tin",
         "nonemployee_compensation",
     ],
+    DocumentType.FORM_K1: [
+        "entity_ein",
+        "recipient_tin",
+        "entity_type",
+        "ordinary_business_income",
+    ],
+    DocumentType.FORM_1099_B: [
+        "payer_tin",
+        "recipient_tin",
+        "proceeds",
+        # NOTE: cost_basis is conditionally critical based on basis_reported_to_irs
+        # If basis_reported_to_irs=False, missing cost_basis is expected (escalate, don't fail)
+        # See get_critical_fields_for_1099b() for conditional logic
+    ],
+    DocumentType.FORM_1095_A: [
+        "recipient_tin",
+        "annual_slcsp_premium",
+        "annual_advance_ptc",
+    ],
     DocumentType.UNKNOWN: [],
 }
 
@@ -105,6 +129,41 @@ def get_critical_fields(document_type: DocumentType) -> list[str]:
         ['employee_ssn', 'employer_ein', 'wages_tips_compensation', 'federal_tax_withheld']
     """
     return CRITICAL_FIELDS.get(document_type, [])
+
+
+def get_critical_fields_for_1099b(form: "Form1099B") -> list[str]:
+    """Get critical fields for 1099-B, considering basis_reported_to_irs.
+
+    Cost basis is only critical if it was reported to IRS (basis_reported_to_irs=True).
+    If basis_reported_to_irs=False, missing basis is expected and should escalate
+    for client input, not be treated as an extraction failure.
+
+    Args:
+        form: The Form1099B instance to evaluate.
+
+    Returns:
+        List of critical field names for this specific 1099-B.
+
+    Example:
+        >>> from src.documents.models import Form1099B
+        >>> form = Form1099B(
+        ...     payer_name="Broker", payer_tin="12-3456789",
+        ...     recipient_tin="123-45-6789", description="AAPL",
+        ...     date_sold="2024-06-15", proceeds=Decimal("10000"),
+        ...     basis_reported_to_irs=True
+        ... )
+        >>> get_critical_fields_for_1099b(form)
+        ['payer_tin', 'recipient_tin', 'proceeds', 'cost_basis']
+    """
+    base_fields = ["payer_tin", "recipient_tin", "proceeds"]
+
+    # cost_basis is only critical if it was reported to IRS
+    # If basis_reported_to_irs=False, missing basis is expected and should escalate,
+    # not be treated as extraction failure
+    if form.basis_reported_to_irs:
+        base_fields.append("cost_basis")
+
+    return base_fields
 
 
 def calculate_confidence(

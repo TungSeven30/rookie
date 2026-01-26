@@ -33,6 +33,9 @@ class DocumentType(str, Enum):
     FORM_1098_T = "1098-T"
     FORM_5498 = "5498"
     FORM_1099_S = "1099-S"
+    FORM_K1 = "K-1"
+    FORM_1099_B = "1099-B"
+    FORM_1095_A = "1095-A"
     UNKNOWN = "UNKNOWN"
 
 
@@ -657,4 +660,467 @@ class Form1099S(BaseModel):
     @classmethod
     def validate_transferor_tin(cls, v: str) -> str:
         """Validate transferor TIN."""
+        return validate_tin(v, default_format="ssn")
+
+
+class FormK1(BaseModel):
+    """Schedule K-1 data from Partnership (Form 1065) or S-Corp (Form 1120-S).
+
+    K-1 forms report a partner's or shareholder's share of income, deductions,
+    credits, and other items from pass-through entities. The form has three parts:
+    - Part I: Information about the partnership/S-corp
+    - Part II: Information about the partner/shareholder
+    - Part III: Partner's/Shareholder's share of current year income, deductions, etc.
+    """
+
+    # Entity information (Part I)
+    entity_name: str = Field(description="Partnership or S-corp name")
+    entity_ein: EIN = Field(description="Entity's EIN")
+    entity_type: str = Field(description="Entity type: 'partnership' or 's_corp'")
+    tax_year: int = Field(description="Tax year of the K-1")
+
+    # Partner/Shareholder information (Part II)
+    recipient_name: str = Field(description="Partner or shareholder name")
+    recipient_tin: TIN = Field(description="Partner's SSN or EIN")
+    ownership_percentage: Decimal = Field(description="Ownership percentage")
+
+    # Capital account (Part II, Item L) - for basis tracking
+    capital_account_beginning: Decimal | None = Field(
+        default=None, description="Beginning capital account"
+    )
+    capital_account_ending: Decimal | None = Field(
+        default=None, description="Ending capital account"
+    )
+    current_year_increase: Decimal | None = Field(
+        default=None, description="Current year increase"
+    )
+    current_year_decrease: Decimal | None = Field(
+        default=None, description="Current year decrease"
+    )
+
+    # Debt basis (partnerships) - from K-1 supplemental
+    share_of_recourse_liabilities: Decimal | None = Field(
+        default=None, description="Share of recourse liabilities"
+    )
+    share_of_nonrecourse_liabilities: Decimal | None = Field(
+        default=None, description="Share of nonrecourse liabilities"
+    )
+    share_of_qualified_nonrecourse: Decimal | None = Field(
+        default=None, description="Share of qualified nonrecourse financing"
+    )
+
+    # Income items (Part III)
+    ordinary_business_income: Decimal = Field(
+        default=Decimal("0"), description="Box 1: Ordinary business income (loss)"
+    )
+    net_rental_real_estate: Decimal = Field(
+        default=Decimal("0"), description="Box 2: Net rental real estate income (loss)"
+    )
+    other_rental_income: Decimal = Field(
+        default=Decimal("0"), description="Box 3: Other net rental income (loss)"
+    )
+    guaranteed_payments: Decimal = Field(
+        default=Decimal("0"), description="Box 4: Guaranteed payments"
+    )
+    interest_income: Decimal = Field(
+        default=Decimal("0"), description="Box 5: Interest income"
+    )
+    dividend_income: Decimal = Field(
+        default=Decimal("0"), description="Box 6a: Ordinary dividends"
+    )
+    royalties: Decimal = Field(default=Decimal("0"), description="Box 7: Royalties")
+    net_short_term_capital_gain: Decimal = Field(
+        default=Decimal("0"), description="Box 8: Net short-term capital gain (loss)"
+    )
+    net_long_term_capital_gain: Decimal = Field(
+        default=Decimal("0"), description="Box 9a: Net long-term capital gain (loss)"
+    )
+    net_section_1231_gain: Decimal = Field(
+        default=Decimal("0"), description="Box 10: Net section 1231 gain (loss)"
+    )
+    other_income: Decimal = Field(
+        default=Decimal("0"), description="Box 11: Other income (loss)"
+    )
+
+    # Deductions
+    section_179_deduction: Decimal = Field(
+        default=Decimal("0"), description="Box 12: Section 179 deduction"
+    )
+    other_deductions: Decimal = Field(
+        default=Decimal("0"), description="Box 13: Other deductions"
+    )
+
+    # Self-employment
+    self_employment_earnings: Decimal = Field(
+        default=Decimal("0"), description="Box 14: Self-employment earnings (loss)"
+    )
+
+    # Credits and foreign (simplified)
+    credits: Decimal = Field(default=Decimal("0"), description="Box 15: Credits")
+    foreign_transactions: Decimal = Field(
+        default=Decimal("0"), description="Box 16: Foreign transactions (for escalation)"
+    )
+
+    # Distributions
+    distributions: Decimal = Field(
+        default=Decimal("0"), description="Box 19: Distributions"
+    )
+
+    # Metadata
+    confidence: ConfidenceLevel = Field(
+        default=ConfidenceLevel.HIGH, description="Extraction confidence level"
+    )
+    uncertain_fields: list[str] = Field(
+        default_factory=list, description="Fields with low confidence"
+    )
+
+    @field_validator("entity_ein", mode="before")
+    @classmethod
+    def validate_entity_ein(cls, v: str) -> str:
+        """Validate and format entity EIN."""
+        return validate_ein(v)
+
+    @field_validator("recipient_tin", mode="before")
+    @classmethod
+    def validate_recipient_tin(cls, v: str) -> str:
+        """Validate recipient TIN (usually SSN for individuals)."""
+        return validate_tin(v, default_format="ssn")
+
+    @property
+    def requires_basis_escalation(self) -> bool:
+        """Check if basis limitation may affect loss deductibility.
+
+        Escalate if:
+        - Net K-1 loss > $10k AND no capital account info
+        - This prevents silent disallowance of legitimate losses
+
+        Returns:
+            True if the K-1 should be escalated for basis review.
+        """
+        net_loss = self.ordinary_business_income + self.net_rental_real_estate
+        has_significant_loss = net_loss < Decimal("-10000")
+        missing_basis_info = self.capital_account_ending is None
+        return has_significant_loss and missing_basis_info
+
+    @property
+    def total_k1_income(self) -> Decimal:
+        """Sum of all income items from K-1.
+
+        Returns:
+            Total of all K-1 income boxes.
+        """
+        return (
+            self.ordinary_business_income
+            + self.net_rental_real_estate
+            + self.other_rental_income
+            + self.guaranteed_payments
+            + self.interest_income
+            + self.dividend_income
+            + self.royalties
+            + self.net_short_term_capital_gain
+            + self.net_long_term_capital_gain
+            + self.net_section_1231_gain
+            + self.other_income
+        )
+
+
+class Form1099B(BaseModel):
+    """Form 1099-B Proceeds from Broker and Barter Exchange Transactions.
+
+    Reports sales of stocks, bonds, commodities, and other securities.
+    Each transaction shows proceeds, cost basis (if reported), and holding period.
+    """
+
+    # Payer/Recipient
+    payer_name: str = Field(description="Broker or barter exchange name")
+    payer_tin: TIN = Field(description="Broker's TIN")
+    recipient_tin: TIN = Field(description="Recipient's TIN")
+    account_number: str | None = Field(default=None, description="Account number")
+
+    # Transaction details
+    description: str = Field(description="Security name/description")
+    date_acquired: str | None = Field(
+        default=None, description="Date acquired (may be 'Various')"
+    )
+    date_sold: str = Field(description="Date of sale")
+    proceeds: Decimal = Field(description="Box 1d: Proceeds from sale")
+    cost_basis: Decimal | None = Field(
+        default=None, description="Box 1e: Cost or other basis (may be blank)"
+    )
+
+    # Gain/loss calculation
+    gain_loss: Decimal | None = Field(
+        default=None, description="Calculated or reported gain/loss"
+    )
+    wash_sale_loss_disallowed: Decimal = Field(
+        default=Decimal("0"), description="Box 1g: Wash sale loss disallowed"
+    )
+
+    # Classification
+    is_short_term: bool = Field(
+        default=False, description="Box 2: Short-term (held ≤1 year)"
+    )
+    is_long_term: bool = Field(
+        default=False, description="Box 3: Long-term (held >1 year)"
+    )
+    basis_reported_to_irs: bool = Field(
+        default=True, description="Box 12: Basis reported to IRS"
+    )
+
+    # Special types
+    is_collectibles: bool = Field(
+        default=False, description="Collectibles (28% rate)"
+    )
+    is_qof: bool = Field(default=False, description="Qualified Opportunity Fund")
+
+    # Metadata
+    confidence: ConfidenceLevel = Field(
+        default=ConfidenceLevel.HIGH, description="Extraction confidence level"
+    )
+    uncertain_fields: list[str] = Field(
+        default_factory=list, description="Fields with low confidence"
+    )
+
+    @field_validator("payer_tin", mode="before")
+    @classmethod
+    def validate_payer_tin(cls, v: str) -> str:
+        """Validate payer TIN (usually EIN)."""
+        return validate_tin(v, default_format="ein")
+
+    @field_validator("recipient_tin", mode="before")
+    @classmethod
+    def validate_recipient_tin(cls, v: str) -> str:
+        """Validate recipient TIN (usually SSN)."""
+        return validate_tin(v, default_format="ssn")
+
+    @property
+    def requires_basis_escalation(self) -> bool:
+        """Check if transaction needs basis escalation.
+
+        Escalate when cost basis is missing and was not reported to IRS.
+        This means the taxpayer must provide basis information.
+
+        Returns:
+            True if basis escalation is needed.
+        """
+        return self.cost_basis is None and not self.basis_reported_to_irs
+
+
+class Form1099BSummary(BaseModel):
+    """Aggregated 1099-B summary for high-volume broker statements.
+
+    When a broker statement has >50 transactions, extract category totals
+    instead of individual transactions. This matches IRS Form 8949 categories:
+    - Category A: Short-term, basis reported to IRS
+    - Category B: Short-term, basis NOT reported to IRS
+    - Category D: Long-term, basis reported to IRS
+    - Category E: Long-term, basis NOT reported to IRS
+    """
+
+    # Payer info (same for all transactions)
+    payer_name: str = Field(description="Broker name")
+    payer_tin: TIN = Field(description="Broker's TIN")
+    recipient_tin: TIN = Field(description="Recipient's TIN")
+
+    # Category A: Short-term, basis reported to IRS
+    cat_a_proceeds: Decimal = Field(
+        default=Decimal("0"), description="Category A total proceeds"
+    )
+    cat_a_cost_basis: Decimal = Field(
+        default=Decimal("0"), description="Category A total cost basis"
+    )
+    cat_a_adjustments: Decimal = Field(
+        default=Decimal("0"), description="Category A adjustments (wash sales, etc.)"
+    )
+    cat_a_gain_loss: Decimal = Field(
+        default=Decimal("0"), description="Category A net gain/loss"
+    )
+    cat_a_transaction_count: int = Field(
+        default=0, description="Number of Category A transactions"
+    )
+
+    # Category B: Short-term, basis NOT reported to IRS
+    cat_b_proceeds: Decimal = Field(
+        default=Decimal("0"), description="Category B total proceeds"
+    )
+    cat_b_cost_basis: Decimal | None = Field(
+        default=None, description="Category B cost basis (may need client input)"
+    )
+    cat_b_adjustments: Decimal = Field(
+        default=Decimal("0"), description="Category B adjustments"
+    )
+    cat_b_transaction_count: int = Field(
+        default=0, description="Number of Category B transactions"
+    )
+
+    # Category D: Long-term, basis reported to IRS
+    cat_d_proceeds: Decimal = Field(
+        default=Decimal("0"), description="Category D total proceeds"
+    )
+    cat_d_cost_basis: Decimal = Field(
+        default=Decimal("0"), description="Category D total cost basis"
+    )
+    cat_d_adjustments: Decimal = Field(
+        default=Decimal("0"), description="Category D adjustments"
+    )
+    cat_d_gain_loss: Decimal = Field(
+        default=Decimal("0"), description="Category D net gain/loss"
+    )
+    cat_d_transaction_count: int = Field(
+        default=0, description="Number of Category D transactions"
+    )
+
+    # Category E: Long-term, basis NOT reported to IRS
+    cat_e_proceeds: Decimal = Field(
+        default=Decimal("0"), description="Category E total proceeds"
+    )
+    cat_e_cost_basis: Decimal | None = Field(
+        default=None, description="Category E cost basis (may need client input)"
+    )
+    cat_e_adjustments: Decimal = Field(
+        default=Decimal("0"), description="Category E adjustments"
+    )
+    cat_e_transaction_count: int = Field(
+        default=0, description="Number of Category E transactions"
+    )
+
+    # Wash sale totals (summed across all categories)
+    total_wash_sale_disallowed: Decimal = Field(
+        default=Decimal("0"), description="Total wash sale loss disallowed"
+    )
+
+    # Collectibles and other special categories
+    collectibles_gain: Decimal = Field(
+        default=Decimal("0"), description="Collectibles gain (28% rate)"
+    )
+    section_1202_gain: Decimal = Field(
+        default=Decimal("0"), description="Section 1202 qualified small business stock gain"
+    )
+
+    # Metadata
+    confidence: ConfidenceLevel = Field(
+        default=ConfidenceLevel.HIGH, description="Extraction confidence level"
+    )
+    total_transaction_count: int = Field(
+        default=0, description="Total number of transactions"
+    )
+
+    @field_validator("payer_tin", mode="before")
+    @classmethod
+    def validate_payer_tin(cls, v: str) -> str:
+        """Validate payer TIN (usually EIN)."""
+        return validate_tin(v, default_format="ein")
+
+    @field_validator("recipient_tin", mode="before")
+    @classmethod
+    def validate_recipient_tin(cls, v: str) -> str:
+        """Validate recipient TIN (usually SSN)."""
+        return validate_tin(v, default_format="ssn")
+
+    @property
+    def has_missing_basis(self) -> bool:
+        """Check if any non-reported categories need basis input.
+
+        Returns:
+            True if Category B or E has transactions but no cost basis.
+        """
+        return (
+            (self.cat_b_transaction_count > 0 and self.cat_b_cost_basis is None)
+            or (self.cat_e_transaction_count > 0 and self.cat_e_cost_basis is None)
+        )
+
+    @property
+    def total_short_term_gain_loss(self) -> Decimal:
+        """Total short-term gain/loss from categories A and B.
+
+        Returns:
+            Combined short-term gain/loss.
+        """
+        cat_a = self.cat_a_gain_loss
+        cat_b = (
+            self.cat_b_proceeds - (self.cat_b_cost_basis or Decimal("0"))
+            if self.cat_b_cost_basis is not None
+            else Decimal("0")
+        )
+        return cat_a + cat_b
+
+    @property
+    def total_long_term_gain_loss(self) -> Decimal:
+        """Total long-term gain/loss from categories D and E.
+
+        Returns:
+            Combined long-term gain/loss.
+        """
+        cat_d = self.cat_d_gain_loss
+        cat_e = (
+            self.cat_e_proceeds - (self.cat_e_cost_basis or Decimal("0"))
+            if self.cat_e_cost_basis is not None
+            else Decimal("0")
+        )
+        return cat_d + cat_e
+
+
+class Form1095A(BaseModel):
+    """Form 1095-A Health Insurance Marketplace Statement.
+
+    Reports monthly health insurance marketplace coverage, premiums, SLCSP amounts,
+    and advance payments of the premium tax credit. Used to reconcile PTC on Form 8962.
+    """
+
+    # Recipient information
+    recipient_name: str = Field(description="Recipient's name")
+    recipient_tin: TIN = Field(description="Recipient's TIN (SSN)")
+    recipient_address: str | None = Field(default=None, description="Recipient's address")
+
+    # Marketplace information
+    marketplace_id: str | None = Field(
+        default=None, description="Marketplace identifier"
+    )
+    policy_number: str | None = Field(default=None, description="Policy number")
+
+    # Coverage dates
+    coverage_start_date: str | None = Field(
+        default=None, description="Coverage start date"
+    )
+    coverage_termination_date: str | None = Field(
+        default=None, description="Coverage termination date (if terminated)"
+    )
+
+    # Monthly data (lists of 12 values for Jan-Dec)
+    monthly_enrollment_premium: list[Decimal] = Field(
+        default_factory=lambda: [Decimal("0")] * 12,
+        description="Box 21-32: Monthly enrollment premiums",
+    )
+    monthly_slcsp_premium: list[Decimal] = Field(
+        default_factory=lambda: [Decimal("0")] * 12,
+        description="Box 33-44: Monthly SLCSP premiums",
+    )
+    monthly_advance_ptc: list[Decimal] = Field(
+        default_factory=lambda: [Decimal("0")] * 12,
+        description="Box 45-56: Monthly advance payments of PTC",
+    )
+
+    # Annual totals (convenience fields)
+    annual_enrollment_premium: Decimal = Field(
+        default=Decimal("0"), description="Total enrollment premium for the year"
+    )
+    annual_slcsp_premium: Decimal = Field(
+        default=Decimal("0"), description="Total SLCSP premium for the year"
+    )
+    annual_advance_ptc: Decimal = Field(
+        default=Decimal("0"), description="Total advance PTC for the year"
+    )
+
+    # Metadata
+    confidence: ConfidenceLevel = Field(
+        default=ConfidenceLevel.HIGH, description="Extraction confidence level"
+    )
+    uncertain_fields: list[str] = Field(
+        default_factory=list, description="Fields with low confidence"
+    )
+
+    @field_validator("recipient_tin", mode="before")
+    @classmethod
+    def validate_recipient_tin(cls, v: str) -> str:
+        """Validate recipient TIN (SSN)."""
         return validate_tin(v, default_format="ssn")

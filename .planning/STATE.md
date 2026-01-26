@@ -1,8 +1,8 @@
 # Project State: Rookie
 
-**Last Updated:** 2026-01-25
-**Current Phase:** 3 - Personal Tax Simple
-**Status:** Complete
+**Last Updated:** 2026-01-26
+**Current Phase:** 4 - Personal Tax Complex
+**Status:** In Progress
 
 ## Project Reference
 
@@ -19,20 +19,20 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 1 - Foundation | Complete | 5/5 | 100% |
 | 2 - Core Framework | Complete | 6/6 | 100% |
 | 3 - Personal Tax Simple | Complete | 7/7 | 100% |
-| 4 - Personal Tax Complex | Planned | 0/8 | 0% |
+| 4 - Personal Tax Complex | In Progress | 1/8 | 12.5% |
 | 5 - Review Infrastructure | Pending | 0/0 | 0% |
 | 6 - Business Tax | Pending | 0/0 | 0% |
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall Progress:** [######__] 45%
+**Overall Progress:** [######__] 48%
 
 ## Current Position
 
 - **Phase:** 4 of 8 (Personal Tax Complex)
-- **Plan:** All 8 plans created (04-01 through 04-08)
-- **Status:** Phase Planned - Ready for Execution
-- **Last activity:** 2026-01-25 - Created Phase 4 plans
+- **Plan:** 04-02-PLAN.md (K-1 and 1099-B Extractors)
+- **Status:** 04-01 Complete - Executing 04-02 next
+- **Last activity:** 2026-01-26 - Completed K-1 and 1099-B Document Models
 
 ## Performance Metrics
 
@@ -139,7 +139,7 @@ None currently.
 - [x] Execute 03-06-PLAN.md (Output Generators)
 - [x] Execute 03-07-PLAN.md (Personal Tax Agent)
 - [x] Plan Phase 4 (Personal Tax Complex)
-- [ ] Execute 04-01-PLAN.md (K-1 and 1099-B Document Models)
+- [x] Execute 04-01-PLAN.md (K-1 and 1099-B Document Models)
 - [ ] Execute 04-02-PLAN.md (K-1 and 1099-B Extractors)
 - [ ] Execute 04-03-PLAN.md (Schedule C Calculator)
 - [ ] Execute 04-04-PLAN.md (Schedule E Calculator)
@@ -179,29 +179,30 @@ None currently.
 | 2026-01-24 | Completed 03-06: Output Generators (5 min) |
 | 2026-01-25 | Completed 03-07: Personal Tax Agent (5 min) |
 | 2026-01-25 | **Phase 3 Complete** - Personal Tax Simple operational |
+| 2026-01-26 | Completed 04-01: K-1 and 1099-B Document Models (5 min) |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Created Phase 4 plans for Personal Tax Complex:
-- 04-01-PLAN.md: K-1 and 1099-B Document Models (FormK1, Form1099B Pydantic models)
-- 04-02-PLAN.md: K-1 and 1099-B Extractors (prompts and extraction functions)
-- 04-03-PLAN.md: Schedule C Calculator and Self-Employment Tax
-- 04-04-PLAN.md: Schedule E Calculator (Rental Income with passive loss rules)
-- 04-05-PLAN.md: Schedule D Calculator (Capital Gains with loss limitations)
-- 04-06-PLAN.md: QBI Deduction (Section 199A with thresholds/phaseouts)
-- 04-07-PLAN.md: Form 8962 ACA Reconciliation (Premium Tax Credit)
-- 04-08-PLAN.md: Complex Return Agent Integration
+Completed 04-01-PLAN.md: K-1 and 1099-B Document Models:
+- Added FORM_K1, FORM_1099_B, FORM_1095_A to DocumentType enum
+- Created FormK1 model with all K-1 boxes, capital account tracking, debt basis fields
+- Created Form1099B model for broker transactions with basis_reported_to_irs flag
+- Created Form1099BSummary model for high-volume statements (Form 8949 categories A/B/D/E)
+- Created Form1095A model for ACA marketplace statements
+- Added requires_basis_escalation property to FormK1 and Form1099B
+- Updated CRITICAL_FIELDS in confidence.py for new document types
+- Added get_critical_fields_for_1099b() for conditional cost_basis validation
+- Updated classifier prompt to recognize K-1, 1099-B, 1095-A
+- Created 38 comprehensive tests for new models
+- Updated module exports in __init__.py
 
-Also created:
-- 04-RESEARCH.md: Research on K-1 fields, Schedule C/E/D rules, QBI thresholds, FPL tables
-
-**Phase 4 Planned** - 8 plans ready for execution.
+**04-01 Complete** - 219 document tests passing.
 
 ### Next Session Starting Point
 
-Execute Phase 4 (Personal Tax Complex) - Start with 04-01-PLAN.md (K-1 and 1099-B Document Models).
+Execute 04-02-PLAN.md (K-1 and 1099-B Extractors) - Add extraction prompts and functions for K-1, 1099-B, and 1095-A documents.
 
 ### Context to Preserve
 
@@ -278,10 +279,11 @@ Execute Phase 4 (Personal Tax Complex) - Start with 04-01-PLAN.md (K-1 and 1099-
 **Phase 2 Dependencies Added:**
 - python-statemachine, pybreaker, pydantic-yaml, ruamel.yaml, voyageai
 
-**Document Models (03-01):**
+**Document Models (03-01, 04-01):**
 - `src/documents/__init__.py` - Module exports
-- `src/documents/models.py` - W2Data, Form1099INT, Form1099DIV, Form1099NEC models
-- `tests/documents/test_models.py` - 44 model tests
+- `src/documents/models.py` - W2Data, Form1099INT, Form1099DIV, Form1099NEC, FormK1, Form1099B, Form1099BSummary, Form1095A models
+- `src/documents/confidence.py` - CRITICAL_FIELDS + get_critical_fields_for_1099b() for conditional validation
+- `tests/documents/test_models.py` - 84 model tests (including 38 new K-1/1099-B tests)
 
 **Storage Integration (03-02):**
 - `src/integrations/__init__.py` - Module exports
@@ -347,4 +349,4 @@ Phase 1 -> 2 -> 3 -> 4 -> 5 -> 7 -> 8
 ---
 
 *State initialized: 2026-01-23*
-*Last updated: 2026-01-25*
+*Last updated: 2026-01-26*
