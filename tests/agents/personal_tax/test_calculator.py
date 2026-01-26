@@ -20,8 +20,11 @@ from src.agents.personal_tax.calculator import (
     FilingStatus,
     IncomeSummary,
     ItemizedDeductionBreakdown,
+    RentalExpenses,
+    RentalProperty,
     ScheduleCData,
     ScheduleCExpenses,
+    ScheduleEData,
     TaxResult,
     TaxSituation,
     VarianceItem,
@@ -29,6 +32,7 @@ from src.agents.personal_tax.calculator import (
     build_credit_inputs,
     calculate_deductions,
     calculate_schedule_c,
+    calculate_schedule_e,
     calculate_self_employment_tax,
     calculate_tax,
     compute_itemized_deductions,
@@ -1805,3 +1809,536 @@ class TestAggregateIncomeWithBusiness:
         # No SE tax on loss
         assert result.self_employment_income == Decimal("-10000")
         assert result.se_tax == Decimal("0")
+
+
+# =============================================================================
+# Schedule E Tests (PTAX-04-04)
+# =============================================================================
+
+
+class TestRentalExpenses:
+    """Tests for RentalExpenses dataclass."""
+
+    def test_rental_expenses_total(self) -> None:
+        """RentalExpenses computes total correctly."""
+        expenses = RentalExpenses(
+            mortgage_interest=Decimal("8000"),
+            taxes=Decimal("3000"),
+            insurance=Decimal("1500"),
+            depreciation=Decimal("5000"),
+        )
+
+        assert expenses.total == Decimal("17500")
+
+    def test_rental_expenses_default_zero(self) -> None:
+        """RentalExpenses defaults all fields to zero."""
+        expenses = RentalExpenses()
+        assert expenses.total == Decimal("0")
+
+    def test_rental_expenses_all_categories(self) -> None:
+        """RentalExpenses includes all IRS categories."""
+        expenses = RentalExpenses(
+            advertising=Decimal("100"),
+            auto_travel=Decimal("100"),
+            cleaning_maintenance=Decimal("100"),
+            commissions=Decimal("100"),
+            insurance=Decimal("100"),
+            legal_professional=Decimal("100"),
+            management_fees=Decimal("100"),
+            mortgage_interest=Decimal("100"),
+            other_interest=Decimal("100"),
+            repairs=Decimal("100"),
+            supplies=Decimal("100"),
+            taxes=Decimal("100"),
+            utilities=Decimal("100"),
+            depreciation=Decimal("100"),
+            other_expenses=Decimal("100"),
+        )
+
+        # 15 categories * $100 = $1500
+        assert expenses.total == Decimal("1500")
+
+
+class TestRentalProperty:
+    """Tests for RentalProperty dataclass."""
+
+    def test_rental_property_net_income(self) -> None:
+        """RentalProperty calculates net income correctly."""
+        prop = RentalProperty(
+            property_address="123 Main St",
+            property_type="Single Family",
+            fair_rental_days=365,
+            rental_income=Decimal("24000"),
+            expenses=RentalExpenses(
+                mortgage_interest=Decimal("6000"),
+                taxes=Decimal("3000"),
+                depreciation=Decimal("5000"),
+            ),
+        )
+
+        assert prop.net_income_loss == Decimal("10000")
+
+    def test_rental_property_net_loss(self) -> None:
+        """RentalProperty handles loss correctly."""
+        prop = RentalProperty(
+            property_address="456 Oak Ave",
+            property_type="Single Family",
+            fair_rental_days=365,
+            rental_income=Decimal("12000"),
+            expenses=RentalExpenses(
+                mortgage_interest=Decimal("10000"),
+                taxes=Decimal("5000"),
+                depreciation=Decimal("10000"),
+            ),
+        )
+
+        assert prop.net_income_loss == Decimal("-13000")
+
+    def test_rental_property_not_personal_use(self) -> None:
+        """Property with minimal personal use passes rental test."""
+        prop = RentalProperty(
+            property_address="123 Main St",
+            property_type="Single Family",
+            fair_rental_days=365,
+            personal_use_days=10,
+            rental_income=Decimal("24000"),
+        )
+
+        assert prop.is_personal_use_property is False
+
+    def test_rental_property_personal_use_over_14_days(self) -> None:
+        """Property with >14 personal days fails rental test."""
+        prop = RentalProperty(
+            property_address="Beach House",
+            property_type="Vacation",
+            fair_rental_days=100,
+            personal_use_days=15,  # Over 14 days
+            rental_income=Decimal("15000"),
+        )
+
+        assert prop.is_personal_use_property is True
+
+    def test_rental_property_personal_use_over_10_percent(self) -> None:
+        """Property with >10% personal use fails rental test."""
+        prop = RentalProperty(
+            property_address="Vacation Condo",
+            property_type="Vacation",
+            fair_rental_days=200,
+            personal_use_days=25,  # 12.5% > 10%
+            rental_income=Decimal("25000"),
+        )
+
+        assert prop.is_personal_use_property is True
+
+    def test_rental_property_personal_use_under_10_percent(self) -> None:
+        """Property with <10% personal use passes rental test."""
+        prop = RentalProperty(
+            property_address="Vacation Condo",
+            property_type="Vacation",
+            fair_rental_days=200,
+            personal_use_days=15,  # 7.5% < 10%
+            rental_income=Decimal("25000"),
+        )
+
+        assert prop.is_personal_use_property is False
+
+
+class TestScheduleEData:
+    """Tests for ScheduleEData dataclass."""
+
+    def test_schedule_e_data_totals(self) -> None:
+        """ScheduleEData aggregates multiple properties."""
+        prop1 = RentalProperty(
+            property_address="Property A",
+            property_type="Single Family",
+            fair_rental_days=365,
+            rental_income=Decimal("18000"),
+            expenses=RentalExpenses(taxes=Decimal("3000")),
+        )
+        prop2 = RentalProperty(
+            property_address="Property B",
+            property_type="Multi-Family",
+            fair_rental_days=365,
+            rental_income=Decimal("30000"),
+            expenses=RentalExpenses(taxes=Decimal("5000")),
+        )
+
+        sch_e = ScheduleEData(properties=[prop1, prop2])
+
+        assert sch_e.total_rental_income == Decimal("48000")
+        assert sch_e.total_expenses == Decimal("8000")
+        assert sch_e.net_before_limitations == Decimal("40000")
+
+    def test_schedule_e_data_net_loss(self) -> None:
+        """ScheduleEData handles aggregate loss."""
+        prop = RentalProperty(
+            property_address="Property A",
+            property_type="Single Family",
+            fair_rental_days=365,
+            rental_income=Decimal("12000"),
+            expenses=RentalExpenses(
+                mortgage_interest=Decimal("15000"),
+                depreciation=Decimal("10000"),
+            ),
+        )
+
+        sch_e = ScheduleEData(properties=[prop])
+
+        assert sch_e.net_before_limitations == Decimal("-13000")
+
+
+class TestCalculateScheduleE:
+    """Tests for calculate_schedule_e function."""
+
+    def test_schedule_e_net_income(self) -> None:
+        """Profitable rental has no limitations."""
+        prop = RentalProperty(
+            property_address="123 Main St",
+            property_type="Single Family",
+            fair_rental_days=365,
+            rental_income=Decimal("30000"),
+            expenses=RentalExpenses(
+                mortgage_interest=Decimal("6000"),
+                taxes=Decimal("4000"),
+            ),
+        )
+        sch_e = ScheduleEData(properties=[prop], actively_participates=True)
+
+        result = calculate_schedule_e(sch_e, Decimal("80000"), FilingStatus.SINGLE)
+
+        assert result.net_rental_income_loss == Decimal("20000")
+        assert result.loss_limited is False
+        assert result.suspended_loss == Decimal("0")
+
+    def test_schedule_e_loss_under_100k_magi(self) -> None:
+        """Rental loss fully allowed under $100k MAGI with active participation."""
+        prop = RentalProperty(
+            property_address="123 Main St",
+            property_type="Single Family",
+            fair_rental_days=365,
+            rental_income=Decimal("12000"),
+            expenses=RentalExpenses(
+                mortgage_interest=Decimal("10000"),
+                taxes=Decimal("5000"),
+                depreciation=Decimal("10000"),
+            ),
+        )
+        sch_e = ScheduleEData(properties=[prop], actively_participates=True)
+
+        result = calculate_schedule_e(sch_e, Decimal("80000"), FilingStatus.SINGLE)
+
+        # Loss of $13000, under $25k allowance
+        assert result.net_before_limitations == Decimal("-13000")
+        assert result.net_rental_income_loss == Decimal("-13000")
+        assert result.loss_limited is False
+        assert result.suspended_loss == Decimal("0")
+
+    def test_schedule_e_loss_at_125k_magi(self) -> None:
+        """Rental loss partially limited at $125k MAGI (phaseout region)."""
+        prop = RentalProperty(
+            property_address="123 Main St",
+            property_type="Single Family",
+            fair_rental_days=365,
+            rental_income=Decimal("12000"),
+            expenses=RentalExpenses(
+                mortgage_interest=Decimal("12000"),
+                taxes=Decimal("6000"),
+                depreciation=Decimal("12000"),
+            ),
+        )
+        sch_e = ScheduleEData(properties=[prop], actively_participates=True)
+
+        result = calculate_schedule_e(sch_e, Decimal("125000"), FilingStatus.SINGLE)
+
+        # At $125k: $25k over threshold, $12.5k reduction
+        # Allowance = $25k - $12.5k = $12.5k
+        # Loss of $18k limited to $12.5k
+        assert result.net_before_limitations == Decimal("-18000")
+        assert result.allowed_loss == Decimal("12500")
+        assert result.suspended_loss == Decimal("5500")
+        assert result.net_rental_income_loss == Decimal("-12500")
+        assert result.loss_limited is True
+
+    def test_schedule_e_loss_at_150k_magi(self) -> None:
+        """Rental loss fully limited at $150k MAGI (no allowance)."""
+        prop = RentalProperty(
+            property_address="123 Main St",
+            property_type="Single Family",
+            fair_rental_days=365,
+            rental_income=Decimal("12000"),
+            expenses=RentalExpenses(
+                mortgage_interest=Decimal("15000"),
+                taxes=Decimal("6000"),
+                depreciation=Decimal("12000"),
+            ),
+        )
+        sch_e = ScheduleEData(properties=[prop], actively_participates=True)
+
+        result = calculate_schedule_e(sch_e, Decimal("160000"), FilingStatus.SINGLE)
+
+        # At $160k: phaseout complete, no allowance
+        assert result.net_before_limitations == Decimal("-21000")
+        assert result.allowed_loss == Decimal("0")
+        assert result.suspended_loss == Decimal("21000")
+        assert result.net_rental_income_loss == Decimal("0")
+        assert result.loss_limited is True
+
+    def test_schedule_e_no_active_participation(self) -> None:
+        """Rental loss fully suspended without active participation."""
+        prop = RentalProperty(
+            property_address="123 Main St",
+            property_type="Single Family",
+            fair_rental_days=365,
+            rental_income=Decimal("12000"),
+            expenses=RentalExpenses(
+                mortgage_interest=Decimal("15000"),
+            ),
+        )
+        sch_e = ScheduleEData(properties=[prop], actively_participates=False)
+
+        result = calculate_schedule_e(sch_e, Decimal("50000"), FilingStatus.SINGLE)
+
+        # No active participation = no allowance
+        assert result.allowed_loss == Decimal("0")
+        assert result.suspended_loss == Decimal("3000")
+        assert result.net_rental_income_loss == Decimal("0")
+        assert result.loss_limited is True
+
+    def test_schedule_e_real_estate_professional(self) -> None:
+        """Real estate professional has no passive loss limitations."""
+        prop = RentalProperty(
+            property_address="123 Main St",
+            property_type="Single Family",
+            fair_rental_days=365,
+            rental_income=Decimal("12000"),
+            expenses=RentalExpenses(
+                mortgage_interest=Decimal("30000"),
+            ),
+        )
+        sch_e = ScheduleEData(
+            properties=[prop],
+            actively_participates=True,
+            is_real_estate_professional=True,
+        )
+
+        result = calculate_schedule_e(sch_e, Decimal("200000"), FilingStatus.SINGLE)
+
+        # RE professional can deduct full loss
+        assert result.net_before_limitations == Decimal("-18000")
+        assert result.allowed_loss == Decimal("18000")
+        assert result.suspended_loss == Decimal("0")
+        assert result.net_rental_income_loss == Decimal("-18000")
+        assert result.loss_limited is False
+
+    def test_schedule_e_loss_limited_to_actual_loss(self) -> None:
+        """Loss allowed cannot exceed actual loss."""
+        prop = RentalProperty(
+            property_address="123 Main St",
+            property_type="Single Family",
+            fair_rental_days=365,
+            rental_income=Decimal("20000"),
+            expenses=RentalExpenses(taxes=Decimal("25000")),
+        )
+        sch_e = ScheduleEData(properties=[prop], actively_participates=True)
+
+        result = calculate_schedule_e(sch_e, Decimal("80000"), FilingStatus.SINGLE)
+
+        # Loss of $5k, allowance is $25k
+        # Should allow full $5k, not $25k
+        assert result.allowed_loss == Decimal("5000")
+        assert result.suspended_loss == Decimal("0")
+
+    def test_schedule_e_qbi_income(self) -> None:
+        """QBI rental income includes eligible profitable properties."""
+        prop1 = RentalProperty(
+            property_address="Property A",
+            property_type="Single Family",
+            fair_rental_days=365,
+            rental_income=Decimal("20000"),
+            expenses=RentalExpenses(taxes=Decimal("5000")),
+            qbi_eligible=True,
+        )
+        prop2 = RentalProperty(
+            property_address="Property B",
+            property_type="Single Family",
+            fair_rental_days=365,
+            rental_income=Decimal("10000"),
+            expenses=RentalExpenses(taxes=Decimal("15000")),
+            qbi_eligible=True,
+        )
+        sch_e = ScheduleEData(properties=[prop1, prop2])
+
+        result = calculate_schedule_e(sch_e, Decimal("80000"), FilingStatus.SINGLE)
+
+        # Only profitable properties contribute to QBI
+        # prop1: $15000 profit, prop2: -$5000 loss
+        assert result.qbi_rental_income == Decimal("15000")
+
+
+class TestAggregateIncomeWithScheduleE:
+    """Tests for aggregate_income with Schedule E data."""
+
+    def test_aggregate_with_schedule_e_income(self) -> None:
+        """Aggregate income includes Schedule E rental income."""
+        prop = RentalProperty(
+            property_address="123 Main St",
+            property_type="Single Family",
+            fair_rental_days=365,
+            rental_income=Decimal("24000"),
+            expenses=RentalExpenses(taxes=Decimal("4000")),
+        )
+        sch_e = ScheduleEData(properties=[prop])
+
+        result = aggregate_income(
+            documents=[],
+            schedule_e_data=sch_e,
+            filing_status=FilingStatus.SINGLE,
+        )
+
+        assert result.schedule_e_rental_income == Decimal("24000")
+        assert result.schedule_e_expenses == Decimal("4000")
+        assert result.schedule_e_net == Decimal("20000")
+        assert result.total_income == Decimal("20000")
+
+    def test_aggregate_with_schedule_e_loss(self) -> None:
+        """Aggregate income handles Schedule E loss correctly."""
+        prop = RentalProperty(
+            property_address="123 Main St",
+            property_type="Single Family",
+            fair_rental_days=365,
+            rental_income=Decimal("12000"),
+            expenses=RentalExpenses(
+                mortgage_interest=Decimal("10000"),
+                taxes=Decimal("5000"),
+            ),
+        )
+        sch_e = ScheduleEData(properties=[prop], actively_participates=True)
+
+        result = aggregate_income(
+            documents=[],
+            schedule_e_data=sch_e,
+            filing_status=FilingStatus.SINGLE,
+        )
+
+        # Loss of $3000 should be fully allowed at low MAGI
+        assert result.schedule_e_net == Decimal("-3000")
+        assert result.total_income == Decimal("-3000")
+
+    def test_aggregate_with_w2_and_schedule_e(self) -> None:
+        """Aggregate income combines W-2 and Schedule E."""
+        w2 = W2Data(
+            employee_ssn="123-45-6789",
+            employer_ein="12-3456789",
+            employer_name="Acme Corp",
+            employee_name="John Doe",
+            wages_tips_compensation=Decimal("75000"),
+            federal_tax_withheld=Decimal("10000"),
+            social_security_wages=Decimal("75000"),
+            social_security_tax=Decimal("4650"),
+            medicare_wages=Decimal("75000"),
+            medicare_tax=Decimal("1088"),
+            confidence=ConfidenceLevel.HIGH,
+        )
+        prop = RentalProperty(
+            property_address="123 Main St",
+            property_type="Single Family",
+            fair_rental_days=365,
+            rental_income=Decimal("18000"),
+            expenses=RentalExpenses(taxes=Decimal("3000")),
+        )
+        sch_e = ScheduleEData(properties=[prop])
+
+        result = aggregate_income(
+            documents=[w2],
+            schedule_e_data=sch_e,
+            filing_status=FilingStatus.SINGLE,
+        )
+
+        assert result.total_wages == Decimal("75000")
+        assert result.schedule_e_net == Decimal("15000")
+        assert result.total_income == Decimal("90000")
+
+    def test_aggregate_with_high_magi_limits_rental_loss(self) -> None:
+        """High MAGI limits rental loss deduction."""
+        w2 = W2Data(
+            employee_ssn="123-45-6789",
+            employer_ein="12-3456789",
+            employer_name="Acme Corp",
+            employee_name="John Doe",
+            wages_tips_compensation=Decimal("150000"),
+            federal_tax_withheld=Decimal("25000"),
+            social_security_wages=Decimal("150000"),
+            social_security_tax=Decimal("9300"),
+            medicare_wages=Decimal("150000"),
+            medicare_tax=Decimal("2175"),
+            confidence=ConfidenceLevel.HIGH,
+        )
+        prop = RentalProperty(
+            property_address="123 Main St",
+            property_type="Single Family",
+            fair_rental_days=365,
+            rental_income=Decimal("12000"),
+            expenses=RentalExpenses(
+                mortgage_interest=Decimal("18000"),
+                taxes=Decimal("6000"),
+            ),
+        )
+        sch_e = ScheduleEData(properties=[prop], actively_participates=True)
+
+        result = aggregate_income(
+            documents=[w2],
+            schedule_e_data=sch_e,
+            filing_status=FilingStatus.SINGLE,
+            modified_agi_for_pal=Decimal("150000"),  # Above phaseout end
+        )
+
+        # At $150k MAGI, no loss allowance
+        assert result.schedule_e_net == Decimal("0")
+        assert result.schedule_e_suspended_loss == Decimal("12000")
+        assert result.total_income == Decimal("150000")
+
+    def test_aggregate_with_all_business_types(self) -> None:
+        """Aggregate income handles W-2 + Schedule C + Schedule E."""
+        w2 = W2Data(
+            employee_ssn="123-45-6789",
+            employer_ein="12-3456789",
+            employer_name="Acme Corp",
+            employee_name="John Doe",
+            wages_tips_compensation=Decimal("60000"),
+            federal_tax_withheld=Decimal("9000"),
+            social_security_wages=Decimal("60000"),
+            social_security_tax=Decimal("3720"),
+            medicare_wages=Decimal("60000"),
+            medicare_tax=Decimal("870"),
+            confidence=ConfidenceLevel.HIGH,
+        )
+        sch_c = ScheduleCData(
+            business_name="Side Consulting",
+            business_activity="IT",
+            principal_business_code="541511",
+            gross_receipts=Decimal("20000"),
+            expenses=ScheduleCExpenses(supplies=Decimal("5000")),
+        )
+        prop = RentalProperty(
+            property_address="123 Main St",
+            property_type="Single Family",
+            fair_rental_days=365,
+            rental_income=Decimal("18000"),
+            expenses=RentalExpenses(taxes=Decimal("3000")),
+        )
+        sch_e = ScheduleEData(properties=[prop])
+
+        result = aggregate_income(
+            documents=[w2],
+            schedule_c_data=[sch_c],
+            schedule_e_data=sch_e,
+            filing_status=FilingStatus.SINGLE,
+        )
+
+        assert result.total_wages == Decimal("60000")
+        assert result.schedule_c_profit == Decimal("15000")
+        assert result.schedule_e_net == Decimal("15000")
+        # W-2 + Schedule C + Schedule E
+        assert result.total_income == Decimal("90000")
+        # SE tax on Schedule C profit
+        assert result.se_tax > Decimal("0")

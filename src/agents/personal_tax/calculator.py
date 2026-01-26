@@ -75,6 +75,10 @@ class IncomeSummary:
         self_employment_income: Total SE income (Schedule C + K-1 Box 14).
         se_tax: Total self-employment tax liability.
         se_tax_deduction: Above-the-line deduction (50% of SE tax).
+        schedule_e_rental_income: Total rental income from Schedule E.
+        schedule_e_expenses: Total rental expenses from Schedule E.
+        schedule_e_net: Net rental income/loss after limitations.
+        schedule_e_suspended_loss: Suspended loss carried forward.
     """
 
     total_wages: Decimal
@@ -98,6 +102,12 @@ class IncomeSummary:
     self_employment_income: Decimal = field(default_factory=lambda: Decimal("0"))
     se_tax: Decimal = field(default_factory=lambda: Decimal("0"))
     se_tax_deduction: Decimal = field(default_factory=lambda: Decimal("0"))
+
+    # Rental income fields (Schedule E)
+    schedule_e_rental_income: Decimal = field(default_factory=lambda: Decimal("0"))
+    schedule_e_expenses: Decimal = field(default_factory=lambda: Decimal("0"))
+    schedule_e_net: Decimal = field(default_factory=lambda: Decimal("0"))
+    schedule_e_suspended_loss: Decimal = field(default_factory=lambda: Decimal("0"))
 
 
 @dataclass
@@ -269,6 +279,170 @@ class SelfEmploymentTax:
     deductible_portion: Decimal
     social_security_wage_base: Decimal
     additional_medicare_threshold: Decimal
+
+
+@dataclass
+class RentalExpenses:
+    """Rental property expense categories (Schedule E Part I).
+
+    All IRS Schedule E Part I expense categories with corresponding line numbers.
+    Defaults to zero - only populate what applies to the property.
+
+    Example:
+        >>> expenses = RentalExpenses(
+        ...     mortgage_interest=Decimal("8000"),
+        ...     taxes=Decimal("3000"),
+        ...     depreciation=Decimal("5000"),
+        ... )
+        >>> expenses.total
+        Decimal('16000')
+    """
+
+    advertising: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 5
+    auto_travel: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 6
+    cleaning_maintenance: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 7
+    commissions: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 8
+    insurance: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 9
+    legal_professional: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 10
+    management_fees: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 11
+    mortgage_interest: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 12
+    other_interest: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 13
+    repairs: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 14
+    supplies: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 15
+    taxes: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 16
+    utilities: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 17
+    depreciation: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 18
+    other_expenses: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 19
+
+    @property
+    def total(self) -> Decimal:
+        """Line 20: Total expenses."""
+        return (
+            self.advertising
+            + self.auto_travel
+            + self.cleaning_maintenance
+            + self.commissions
+            + self.insurance
+            + self.legal_professional
+            + self.management_fees
+            + self.mortgage_interest
+            + self.other_interest
+            + self.repairs
+            + self.supplies
+            + self.taxes
+            + self.utilities
+            + self.depreciation
+            + self.other_expenses
+        )
+
+
+@dataclass
+class RentalProperty:
+    """Single rental property data for Schedule E Part I.
+
+    Represents one rental unit with its income, expenses, and rental/personal use days.
+    Personal use exceeding limits affects loss deductibility.
+
+    Example:
+        >>> prop = RentalProperty(
+        ...     property_address="123 Main St, Austin TX",
+        ...     property_type="Single Family",
+        ...     fair_rental_days=365,
+        ...     rental_income=Decimal("24000"),
+        ...     expenses=RentalExpenses(taxes=Decimal("3000")),
+        ... )
+        >>> prop.net_income_loss
+        Decimal('21000')
+    """
+
+    property_address: str
+    property_type: str  # Single Family, Multi-Family, Vacation, Commercial
+    fair_rental_days: int
+    personal_use_days: int = 0
+    rental_income: Decimal = field(default_factory=lambda: Decimal("0"))  # Line 3
+    expenses: RentalExpenses = field(default_factory=RentalExpenses)
+    qbi_eligible: bool = True  # Rental can qualify for QBI under safe harbor
+
+    @property
+    def is_personal_use_property(self) -> bool:
+        """Check if property fails rental test due to excessive personal use.
+
+        IRS Rule: Personal use >14 days OR >10% of rental days disqualifies
+        certain deductions and converts rental to mixed-use property.
+        """
+        if self.fair_rental_days == 0:
+            return True
+        max_personal = max(14, int(self.fair_rental_days * Decimal("0.10")))
+        return self.personal_use_days > max_personal
+
+    @property
+    def net_income_loss(self) -> Decimal:
+        """Net rental income or loss before passive activity limitations."""
+        return self.rental_income - self.expenses.total
+
+
+@dataclass
+class ScheduleEData:
+    """Schedule E Part I - Rental Real Estate aggregated data.
+
+    Holds all rental properties and taxpayer participation status for
+    determining passive activity loss limitations.
+
+    Example:
+        >>> sch_e = ScheduleEData(
+        ...     properties=[prop1, prop2],
+        ...     actively_participates=True,
+        ... )
+        >>> sch_e.net_before_limitations
+        Decimal('15000')
+    """
+
+    properties: list[RentalProperty] = field(default_factory=list)
+    actively_participates: bool = True  # For $25k loss allowance
+    is_real_estate_professional: bool = False  # No passive limits if True
+    prior_year_suspended_loss: Decimal = field(default_factory=lambda: Decimal("0"))
+
+    @property
+    def total_rental_income(self) -> Decimal:
+        """Sum of all rental income across properties."""
+        return sum(p.rental_income for p in self.properties)
+
+    @property
+    def total_expenses(self) -> Decimal:
+        """Sum of all expenses across properties."""
+        return sum(p.expenses.total for p in self.properties)
+
+    @property
+    def net_before_limitations(self) -> Decimal:
+        """Net rental income/loss before passive activity limitations."""
+        return sum(p.net_income_loss for p in self.properties)
+
+
+@dataclass
+class ScheduleEResult:
+    """Result of Schedule E calculation with passive loss limitations.
+
+    Attributes:
+        total_rental_income: Sum of all rental income.
+        total_expenses: Sum of all expenses.
+        net_before_limitations: Net before passive activity rules.
+        loss_limited: Whether loss was limited by passive rules.
+        allowed_loss: Amount of loss allowed this year.
+        suspended_loss: Loss suspended for future years.
+        net_rental_income_loss: Final amount included in AGI.
+        qbi_rental_income: Rental income eligible for QBI deduction.
+        property_results: Per-property breakdown.
+    """
+
+    total_rental_income: Decimal
+    total_expenses: Decimal
+    net_before_limitations: Decimal
+    loss_limited: bool
+    allowed_loss: Decimal
+    suspended_loss: Decimal
+    net_rental_income_loss: Decimal
+    qbi_rental_income: Decimal
+    property_results: list[dict]
 
 
 @dataclass
@@ -729,6 +903,118 @@ def calculate_self_employment_tax(
 
 
 # =============================================================================
+# Schedule E Calculation (PTAX-04-04)
+# =============================================================================
+
+
+def calculate_schedule_e(
+    data: ScheduleEData,
+    modified_agi: Decimal,
+    filing_status: FilingStatus,
+) -> ScheduleEResult:
+    """Calculate Schedule E rental income with passive activity loss limitations.
+
+    Passive Activity Loss Rules (simplified):
+    - Rental activities are generally passive (can't offset other income)
+    - Active participation: $25,000 loss allowance
+    - Allowance phases out from $100k to $150k MAGI
+    - Real estate professionals: No passive limitations
+
+    Args:
+        data: ScheduleEData with all rental properties.
+        modified_agi: MAGI for phaseout calculation.
+        filing_status: For determining phaseout thresholds.
+
+    Returns:
+        ScheduleEResult with final figures and limitation details.
+
+    Example:
+        >>> sch_e = ScheduleEData(properties=[prop], actively_participates=True)
+        >>> result = calculate_schedule_e(sch_e, Decimal("90000"), FilingStatus.SINGLE)
+        >>> result.net_rental_income_loss
+        Decimal('-10000')  # Full loss allowed under $100k MAGI
+    """
+    config = get_tax_year_config(2024)
+
+    # Calculate per-property results
+    property_results = []
+    for prop in data.properties:
+        property_results.append(
+            {
+                "address": prop.property_address,
+                "income": prop.rental_income,
+                "expenses": prop.expenses.total,
+                "net": prop.net_income_loss,
+                "qbi_eligible": prop.qbi_eligible and not prop.is_personal_use_property,
+            }
+        )
+
+    net_before = data.net_before_limitations
+
+    # QBI-eligible rental income (only profitable, eligible properties)
+    qbi_eligible_income = sum(
+        p["net"]
+        for p in property_results
+        if p["qbi_eligible"] and p["net"] > Decimal("0")
+    )
+
+    # If net income (not loss), no limitations apply
+    if net_before >= Decimal("0"):
+        return ScheduleEResult(
+            total_rental_income=data.total_rental_income,
+            total_expenses=data.total_expenses,
+            net_before_limitations=net_before,
+            loss_limited=False,
+            allowed_loss=Decimal("0"),
+            suspended_loss=Decimal("0"),
+            net_rental_income_loss=net_before,
+            qbi_rental_income=qbi_eligible_income,
+            property_results=property_results,
+        )
+
+    # Handle rental loss
+    rental_loss = abs(net_before)
+
+    # Real estate professional: No limitation
+    if data.is_real_estate_professional:
+        allowed_loss = rental_loss
+        suspended_loss = Decimal("0")
+    # Active participation: $25k allowance with phaseout
+    elif data.actively_participates:
+        phaseout_start = config.pal_phaseout_start
+        phaseout_end = config.pal_phaseout_end
+        max_allowance = config.pal_allowance
+
+        if modified_agi <= phaseout_start:
+            allowance = max_allowance
+        elif modified_agi >= phaseout_end:
+            allowance = Decimal("0")
+        else:
+            # Reduce by $1 for every $2 over $100k
+            reduction = (modified_agi - phaseout_start) * Decimal("0.5")
+            allowance = max(Decimal("0"), max_allowance - reduction)
+
+        allowed_loss = min(rental_loss, allowance)
+        suspended_loss = rental_loss - allowed_loss
+    else:
+        # No active participation: No current year loss allowed
+        allowed_loss = Decimal("0")
+        suspended_loss = rental_loss
+
+    return ScheduleEResult(
+        total_rental_income=data.total_rental_income,
+        total_expenses=data.total_expenses,
+        net_before_limitations=net_before,
+        loss_limited=suspended_loss > Decimal("0"),
+        allowed_loss=allowed_loss,
+        suspended_loss=suspended_loss,
+        net_rental_income_loss=-allowed_loss,  # Negative = loss
+        qbi_rental_income=Decimal("0"),  # No QBI for loss
+        property_results=property_results,
+    )
+
+
+# =============================================================================
 # Income Aggregation (PTAX-03)
 # =============================================================================
 
@@ -736,14 +1022,18 @@ def calculate_self_employment_tax(
 def aggregate_income(
     documents: list[TaxDocument],
     schedule_c_data: list[ScheduleCData] | None = None,
+    schedule_e_data: ScheduleEData | None = None,
     filing_status: FilingStatus = FilingStatus.SINGLE,
+    modified_agi_for_pal: Decimal | None = None,
 ) -> IncomeSummary:
     """Aggregate income from all tax documents.
 
     Args:
         documents: List of supported tax document models (W-2, 1099s, K-1).
         schedule_c_data: Optional list of Schedule C business data.
+        schedule_e_data: Optional Schedule E rental property data.
         filing_status: Filing status for SE tax calculation.
+        modified_agi_for_pal: MAGI for passive activity loss calculation.
 
     Returns:
         IncomeSummary with totals by income type including business income.
@@ -754,6 +1044,7 @@ def aggregate_income(
         - K-1 SE income comes from Box 14 (self_employment_earnings), NOT Box 1.
         - S-corp K-1s do NOT generate SE tax (shareholders receive W-2 wages).
         - Guaranteed payments (Box 4) are included in Box 14 when subject to SE.
+        - Schedule E losses may be limited by passive activity rules.
 
     Example:
         >>> w2 = W2Data(wages_tips_compensation=Decimal("50000"), ...)
@@ -841,6 +1132,30 @@ def aggregate_income(
     # K-1 ordinary income is added to total_other for tax calculation
     total_other += k1_ordinary_income
 
+    # Schedule E rental income (with passive activity loss limitations)
+    schedule_e_rental_income = Decimal("0")
+    schedule_e_expenses = Decimal("0")
+    schedule_e_net = Decimal("0")
+    schedule_e_suspended_loss = Decimal("0")
+    if schedule_e_data:
+        # Use provided MAGI or estimate from known income for PAL calculation
+        # Note: In practice, MAGI may need iterative calculation
+        magi = modified_agi_for_pal or (
+            total_wages
+            + total_interest
+            + total_dividends
+            + total_nec
+            + total_retirement_distributions
+            + total_unemployment
+            + total_other
+            + schedule_c_profit
+        )
+        sch_e_result = calculate_schedule_e(schedule_e_data, magi, filing_status)
+        schedule_e_rental_income = sch_e_result.total_rental_income
+        schedule_e_expenses = sch_e_result.total_expenses
+        schedule_e_net = sch_e_result.net_rental_income_loss
+        schedule_e_suspended_loss = sch_e_result.suspended_loss
+
     total_income = (
         total_wages
         + total_interest
@@ -850,6 +1165,7 @@ def aggregate_income(
         + total_unemployment
         + total_other
         + schedule_c_profit  # Schedule C net profit is part of total income
+        + schedule_e_net  # Schedule E net rental income/loss (after PAL limits)
     )
     # Note: state_tax_refund may be taxable if itemized in prior year,
     # but this requires additional context - handle in escalation
@@ -872,6 +1188,10 @@ def aggregate_income(
         self_employment_income=self_employment_income,
         se_tax=se_tax,
         se_tax_deduction=se_tax_deduction,
+        schedule_e_rental_income=schedule_e_rental_income,
+        schedule_e_expenses=schedule_e_expenses,
+        schedule_e_net=schedule_e_net,
+        schedule_e_suspended_loss=schedule_e_suspended_loss,
     )
 
 
