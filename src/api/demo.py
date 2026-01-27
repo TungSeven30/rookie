@@ -115,6 +115,9 @@ class IncomeBreakdown(BaseModel):
     total_dividends: str
     total_qualified_dividends: str
     total_nec: str
+    total_retirement_distributions: str
+    total_unemployment: str
+    total_state_tax_refund: str
     total_income: str
     federal_withholding: str
 
@@ -149,6 +152,7 @@ class ExtractionItem(BaseModel):
     classification_confidence: float | None = None
     classification_reasoning: str | None = None
     classification_overridden: bool = False
+    classification_override_source: str | None = None
     classification_original_type: str | None = None
     classification_original_confidence: float | None = None
     classification_original_reasoning: str | None = None
@@ -490,6 +494,11 @@ async def _build_results_payload(
             "total_dividends": str(result.income_summary.total_dividends),
             "total_qualified_dividends": str(result.income_summary.total_qualified_dividends),
             "total_nec": str(result.income_summary.total_nec),
+            "total_retirement_distributions": str(
+                result.income_summary.total_retirement_distributions
+            ),
+            "total_unemployment": str(result.income_summary.total_unemployment),
+            "total_state_tax_refund": str(result.income_summary.total_state_tax_refund),
             "total_income": str(result.income_summary.total_income),
             "federal_withholding": str(result.income_summary.federal_withholding),
         },
@@ -509,6 +518,9 @@ async def _build_results_payload(
                 "classification_confidence": ext.get("classification_confidence"),
                 "classification_reasoning": ext.get("classification_reasoning"),
                 "classification_overridden": ext.get("classification_overridden", False),
+                "classification_override_source": ext.get(
+                    "classification_override_source"
+                ),
                 "classification_original_type": ext.get("classification_original_type"),
                 "classification_original_confidence": ext.get(
                     "classification_original_confidence"

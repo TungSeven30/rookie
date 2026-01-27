@@ -43,6 +43,9 @@ export interface IncomeBreakdown {
   total_dividends: string
   total_qualified_dividends: string
   total_nec: string
+  total_retirement_distributions: string
+  total_unemployment: string
+  total_state_tax_refund: string
   total_income: string
   federal_withholding: string
 }
@@ -74,6 +77,7 @@ export interface ExtractionItem {
   classification_confidence?: number | null
   classification_reasoning?: string | null
   classification_overridden?: boolean
+  classification_override_source?: string | null
   classification_original_type?: string | null
   classification_original_confidence?: number | null
   classification_original_reasoning?: string | null

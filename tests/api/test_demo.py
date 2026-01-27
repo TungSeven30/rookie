@@ -254,6 +254,7 @@ async def test_build_results_payload_includes_classification_details() -> None:
                 "classification_reasoning": "Mock classification",
                 "classification_overridden": True,
                 "classification_original_type": "1099-NEC",
+                "classification_override_source": "user",
             }
         ],
         escalations=["Missing expected document: W2"],
@@ -272,7 +273,57 @@ async def test_build_results_payload_includes_classification_details() -> None:
     extraction = payload["extractions"][0]
     assert extraction["classification_reasoning"] == "Mock classification"
     assert extraction["classification_original_type"] == "1099-NEC"
+    assert extraction["classification_override_source"] == "user"
     assert payload["escalations"] == ["Missing expected document: W2"]
+
+
+@pytest.mark.asyncio
+async def test_build_results_payload_includes_new_income_fields() -> None:
+    """Results payload includes retirement and unemployment fields."""
+    income_summary = IncomeSummary(
+        total_wages=Decimal("1000"),
+        total_interest=Decimal("0"),
+        total_dividends=Decimal("0"),
+        total_qualified_dividends=Decimal("0"),
+        total_nec=Decimal("0"),
+        total_retirement_distributions=Decimal("4000"),
+        total_unemployment=Decimal("2500"),
+        total_state_tax_refund=Decimal("300"),
+        total_other=Decimal("0"),
+        total_income=Decimal("7500"),
+        federal_withholding=Decimal("0"),
+    )
+    tax_result = TaxResult(
+        gross_tax=Decimal("0"),
+        bracket_breakdown=[],
+        effective_rate=Decimal("0"),
+        credits_applied=Decimal("0"),
+        final_liability=Decimal("0"),
+        refundable_credits=Decimal("0"),
+    )
+    result = PersonalTaxResult(
+        drake_worksheet_path=Path("worksheet.xlsx"),
+        preparer_notes_path=Path("notes.md"),
+        income_summary=income_summary,
+        tax_result=tax_result,
+        variances=[],
+        extractions=[],
+        escalations=[],
+        overall_confidence="HIGH",
+    )
+
+    payload = await _build_results_payload(
+        task_id=1,
+        client_name="Test Client",
+        tax_year=2024,
+        filing_status="single",
+        result=result,
+    )
+
+    income = payload["income"]
+    assert income["total_retirement_distributions"] == "4000"
+    assert income["total_unemployment"] == "2500"
+    assert income["total_state_tax_refund"] == "300"
 
 
 @pytest.mark.asyncio

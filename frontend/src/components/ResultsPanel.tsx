@@ -257,6 +257,16 @@ export function ResultsPanel({ results, onReset, onReprocess }: ResultsPanelProp
                 secondary
               />
               <DataRow label="Self-Employment (1099-NEC)" value={income.total_nec} />
+              <DataRow
+                label="Retirement Distributions (1099-R)"
+                value={income.total_retirement_distributions}
+              />
+              <DataRow label="Unemployment (1099-G)" value={income.total_unemployment} />
+              <DataRow
+                label="State Tax Refunds"
+                value={income.total_state_tax_refund}
+                secondary
+              />
               <div className="pt-3 border-t border-surface-200">
                 <DataRow label="Total Income" value={income.total_income} bold />
               </div>
@@ -545,8 +555,12 @@ export function ResultsPanel({ results, onReset, onReprocess }: ResultsPanelProp
                       )}
                       {doc.classification_overridden && (
                         <div className="text-xs text-amber-700">
-                          Filename override applied. Classifier predicted{' '}
-                          {doc.classification_original_type ?? 'unknown'}
+                          {doc.classification_override_source === 'user'
+                            ? 'User-selected override applied.'
+                            : doc.classification_override_source === 'filename'
+                              ? 'Filename hint override applied.'
+                              : 'Override applied.'}{' '}
+                          Classifier predicted {doc.classification_original_type ?? 'unknown'}
                           {typeof doc.classification_original_confidence === 'number'
                             ? ` (${(doc.classification_original_confidence * 100).toFixed(0)}%)`
                             : ''}
