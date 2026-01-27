@@ -201,14 +201,14 @@ Plans:
 **Plans:** 8 plans in 5 waves
 
 Plans:
-- [ ] 04-01-PLAN.md (Wave 1) — K-1 and 1099-B Document Models
-- [ ] 04-02-PLAN.md (Wave 1) — K-1 and 1099-B Extractors
-- [ ] 04-03-PLAN.md (Wave 2) — Schedule C Calculator and Self-Employment Tax
-- [ ] 04-04-PLAN.md (Wave 3) — Schedule E Calculator (Rental Income)
-- [ ] 04-05-PLAN.md (Wave 3) — Schedule D Calculator (Capital Gains)
-- [ ] 04-06-PLAN.md (Wave 4) — QBI Deduction (Section 199A)
-- [ ] 04-07-PLAN.md (Wave 4) — Form 8962 ACA Reconciliation
-- [ ] 04-08-PLAN.md (Wave 5) — Complex Return Agent Integration
+- [x] 04-01-PLAN.md (Wave 1) — K-1 and 1099-B Document Models
+- [x] 04-02-PLAN.md (Wave 1) — K-1 and 1099-B Extractors
+- [x] 04-03-PLAN.md (Wave 2) — Schedule C Calculator and Self-Employment Tax
+- [x] 04-04-PLAN.md (Wave 3) — Schedule E Calculator (Rental Income)
+- [x] 04-05-PLAN.md (Wave 3) — Schedule D Calculator (Capital Gains)
+- [x] 04-06-PLAN.md (Wave 4) — QBI Deduction (Section 199A)
+- [x] 04-07-PLAN.md (Wave 4) — Form 8962 ACA Reconciliation
+- [x] 04-08-PLAN.md (Wave 5) — Complex Return Agent Integration
 
 ---
 
@@ -327,13 +327,13 @@ Plans:
 | 1 - Foundation | Complete | 5/5 | 100% |
 | 2 - Core Framework | Complete | 6/6 | 100% |
 | 3 - Personal Tax Simple | Complete | 7/7 | 100% |
-| 4 - Personal Tax Complex | Planned | 0/8 | 0% |
+| 4 - Personal Tax Complex | Complete | 8/8 | 100% |
 | 5 - Review Infrastructure | Pending | 0/0 | 0% |
 | 6 - Business Tax | Pending | 0/0 | 0% |
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall:** 3/8 phases complete (37.5%)
+**Overall:** 4/8 phases complete (50%)
 
 ---
 
@@ -349,4 +349,4 @@ Plans:
 ---
 
 *Roadmap created: 2026-01-23*
-*Last updated: 2026-01-25 (Phase 4 planned)*
+*Last updated: 2026-01-27 (Phase 4 complete)*
