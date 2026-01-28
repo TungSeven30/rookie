@@ -779,11 +779,30 @@ def _add_1099_b_sheet(workbook: Workbook, data: list[Form1099B]) -> None:
         ws.cell(row=row, column=3, value=txn.date_sold)
         ws.cell(row=row, column=4, value=_format_decimal(txn.proceeds))
         ws.cell(row=row, column=5, value=_format_decimal(txn.cost_basis))
-        gain_loss = txn.proceeds - txn.cost_basis if txn.cost_basis else txn.proceeds
+        gain_loss = None
+        if txn.cost_basis is not None:
+            gain_loss = (
+                txn.proceeds - txn.cost_basis + txn.wash_sale_loss_disallowed
+            )
         ws.cell(row=row, column=6, value=_format_decimal(gain_loss))
-        ws.cell(row=row, column=7, value=txn.term or "Unknown")
-        ws.cell(row=row, column=8, value="Yes" if txn.is_covered_security else "No")
-        ws.cell(row=row, column=9, value=_format_decimal(txn.wash_sale_disallowed) if txn.wash_sale_disallowed else "N/A")
+        term = (
+            "Short"
+            if txn.is_short_term
+            else "Long"
+            if txn.is_long_term
+            else "Unknown"
+        )
+        ws.cell(row=row, column=7, value=term)
+        ws.cell(
+            row=row,
+            column=8,
+            value="Yes" if txn.basis_reported_to_irs else "No",
+        )
+        ws.cell(
+            row=row,
+            column=9,
+            value=_format_decimal(txn.wash_sale_loss_disallowed),
+        )
 
         for col in [4, 5, 6]:
             ws.cell(row=row, column=col).number_format = '"$"#,##0.00'

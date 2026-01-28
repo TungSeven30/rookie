@@ -405,6 +405,7 @@ def _build_key_fields(extraction: dict[str, Any]) -> dict[str, str]:
             "ira_contributions": _format_currency(data.ira_contributions),
             "roth_contributions": _format_currency(data.roth_ira_contributions),
             "rollover": _format_currency(data.rollover_contributions),
+            "recharacterized": _format_currency(data.recharacterized_contributions),
             "fmv": _format_currency(data.fair_market_value),
         }
     elif isinstance(data, Form1099S):
@@ -1232,6 +1233,15 @@ async def get_results(
                 _to_decimal(income.get("total_qualified_dividends", 0))
             ),
             total_nec=_format_currency(_to_decimal(income.get("total_nec", 0))),
+            total_retirement_distributions=_format_currency(
+                _to_decimal(income.get("total_retirement_distributions", 0))
+            ),
+            total_unemployment=_format_currency(
+                _to_decimal(income.get("total_unemployment", 0))
+            ),
+            total_state_tax_refund=_format_currency(
+                _to_decimal(income.get("total_state_tax_refund", 0))
+            ),
             total_income=_format_currency(_to_decimal(income.get("total_income", 0))),
             federal_withholding=_format_currency(
                 _to_decimal(income.get("federal_withholding", 0))

@@ -109,12 +109,25 @@ def validate_tin(value: str, default_format: str) -> str:
         default_format: "ssn" or "ein" when input is ambiguous.
 
     Returns:
-        Formatted TIN in SSN or EIN format.
+        Formatted TIN in SSN or EIN format, or masked format if partially hidden.
 
     Raises:
-        ValueError: If TIN is not exactly 9 digits after cleaning.
+        ValueError: If TIN is not valid after cleaning.
     """
     cleaned = re.sub(r"\s", "", value)
+    
+    # Handle masked SSNs like ***-**-1146 or XXX-XX-1146
+    masked_ssn_pattern = r"[\*Xx]{3}-[\*Xx]{2}-(\d{4})"
+    masked_match = re.fullmatch(masked_ssn_pattern, cleaned)
+    if masked_match:
+        # Return standardized masked format with last 4 digits
+        return f"***-**-{masked_match.group(1)}"
+    
+    # Handle partially masked formats without dashes
+    masked_no_dash = re.fullmatch(r"[\*Xx]+(\d{4})", cleaned)
+    if masked_no_dash:
+        return f"***-**-{masked_no_dash.group(1)}"
+    
     digits = re.sub(r"\D", "", cleaned)
 
     if len(digits) != 9:

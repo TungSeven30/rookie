@@ -27,6 +27,7 @@ from src.documents.models import (
     Form1098,
     Form1098T,
     Form1099DIV,
+    Form1099B,
     Form1099G,
     Form1099INT,
     Form1099NEC,
@@ -122,6 +123,25 @@ def sample_1099_nec() -> Form1099NEC:
         recipient_tin="123-45-6789",
         nonemployee_compensation=Decimal("5000"),
         federal_tax_withheld=Decimal("0"),
+        confidence="HIGH",
+    )
+
+
+@pytest.fixture
+def sample_1099_b() -> Form1099B:
+    """Create sample 1099-B data."""
+    return Form1099B(
+        payer_name="Broker Inc",
+        payer_tin="12-3456789",
+        recipient_tin="123-45-6789",
+        description="100 sh ABC",
+        date_acquired="2022-06-01",
+        date_sold="2024-06-15",
+        proceeds=Decimal("10000"),
+        cost_basis=Decimal("8000"),
+        wash_sale_loss_disallowed=Decimal("200"),
+        is_long_term=True,
+        basis_reported_to_irs=True,
         confidence="HIGH",
     )
 
@@ -1099,6 +1119,46 @@ class TestDrakeWorksheetDataPopulation:
 
             assert ws.cell(row=2, column=1).value == "Title Company"
             assert ws.cell(row=2, column=3).value == 250000.0  # Gross proceeds
+
+    def test_worksheet_1099_b_data_populated(
+        self,
+        sample_1099_b: Form1099B,
+        sample_income_summary: IncomeSummary,
+        sample_deduction_result: DeductionResult,
+        sample_tax_result: TaxResult,
+    ) -> None:
+        """1099-B data is populated correctly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = generate_drake_worksheet(
+                "John Doe",
+                2024,
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                sample_income_summary,
+                sample_deduction_result,
+                sample_tax_result,
+                Path(tmpdir) / "test.xlsx",
+                transactions_1099_b=[sample_1099_b],
+            )
+
+            wb = load_workbook(path)
+            ws = wb["1099-B"]
+
+            assert ws.cell(row=2, column=1).value == "100 sh ABC"
+            assert ws.cell(row=2, column=4).value == 10000.0  # Proceeds
+            assert ws.cell(row=2, column=5).value == 8000.0  # Cost basis
+            assert ws.cell(row=2, column=6).value == 2200.0  # Gain/loss
+            assert ws.cell(row=2, column=7).value == "Long"
+            assert ws.cell(row=2, column=8).value == "Yes"
+            assert ws.cell(row=2, column=9).value == 200.0
 
     def test_worksheet_summary_totals(
         self,

@@ -27,17 +27,32 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from src.agents.personal_tax.calculator import (
+    CapitalTransaction,
     DeductionResult,
+    FilingStatus,
     IncomeSummary,
+    RentalExpenses,
+    RentalProperty,
+    ScheduleCData,
+    ScheduleCExpenses,
+    ScheduleDData,
+    ScheduleEData,
     TaxResult,
     TaxSituation,
     VarianceItem,
     aggregate_income,
     build_credit_inputs,
+    build_qbi_from_k1,
+    build_qbi_from_rental,
+    build_qbi_from_schedule_c,
     calculate_deductions,
+    calculate_premium_tax_credit,
+    calculate_qbi_deduction,
+    calculate_schedule_d,
     calculate_tax,
     compare_years,
     compute_itemized_deductions,
+    convert_1099b_to_transactions,
     evaluate_credits,
 )
 from src.agents.personal_tax.output import (
@@ -993,11 +1008,126 @@ class PersonalTaxAgent:
         Returns:
             Tuple of (IncomeSummary, DeductionResult, TaxResult).
         """
-        # Extract data objects
-        documents = [ext["data"] for ext in extractions if ext.get("data")]
+        # Extract data objects and normalize 1099-B transaction lists
+        documents: list[Any] = []
+        forms_1099b: list[Form1099B] = []
+        for extraction in extractions:
+            data = extraction.get("data")
+            if data is None:
+                continue
+            if isinstance(data, list) and data and all(
+                isinstance(item, Form1099B) for item in data
+            ):
+                forms_1099b.extend(data)
+                continue
+            if isinstance(data, Form1099B):
+                forms_1099b.append(data)
+                continue
+            documents.append(data)
+
+        try:
+            filing_status_enum = FilingStatus(filing_status)
+        except ValueError:
+            logger.warning("unknown_filing_status", filing_status=filing_status)
+            filing_status_enum = FilingStatus.SINGLE
+
+        schedule_c_data: list[ScheduleCData] = []
+        for doc in documents:
+            if (
+                isinstance(doc, Form1099NEC)
+                and doc.nonemployee_compensation > 0
+            ):
+                schedule_c_data.append(
+                    ScheduleCData(
+                        business_name=doc.payer_name,
+                        business_activity="Independent contractor",
+                        principal_business_code="999999",
+                        gross_receipts=doc.nonemployee_compensation,
+                        expenses=ScheduleCExpenses(),
+                    )
+                )
+
+        rental_properties: list[RentalProperty] = []
+        for doc in documents:
+            if isinstance(doc, FormK1):
+                rental_income = (
+                    (doc.net_rental_real_estate or Decimal("0"))
+                    + (doc.other_rental_income or Decimal("0"))
+                )
+                if rental_income != Decimal("0"):
+                    rental_properties.append(
+                        RentalProperty(
+                            property_address=f"K-1 {doc.entity_name}",
+                            property_type="K-1",
+                            fair_rental_days=365,
+                            rental_income=rental_income,
+                            expenses=RentalExpenses(),
+                        )
+                    )
+        schedule_e_data = (
+            ScheduleEData(
+                properties=rental_properties,
+                actively_participates=True,
+            )
+            if rental_properties
+            else None
+        )
+
+        transactions: list[CapitalTransaction] = []
+        missing_basis: list[Form1099B] = []
+        if forms_1099b:
+            converted, missing = convert_1099b_to_transactions(forms_1099b)
+            transactions.extend(converted)
+            missing_basis.extend(missing)
+
+        for doc in documents:
+            if not isinstance(doc, FormK1):
+                continue
+            k1_short = doc.net_short_term_capital_gain or Decimal("0")
+            k1_long = doc.net_long_term_capital_gain or Decimal("0")
+            k1_section_1231 = doc.net_section_1231_gain or Decimal("0")
+            for amount, label, is_long in (
+                (k1_short, "Short-term", False),
+                (k1_long, "Long-term", True),
+                (k1_section_1231, "Section 1231", True),
+            ):
+                if amount == Decimal("0"):
+                    continue
+                proceeds = amount if amount > 0 else Decimal("0")
+                cost_basis = Decimal("0") if amount > 0 else abs(amount)
+                transactions.append(
+                    CapitalTransaction(
+                        description=f"K-1 {doc.entity_name} {label}",
+                        date_acquired=None,
+                        date_sold="Various",
+                        proceeds=proceeds,
+                        cost_basis=cost_basis,
+                        is_short_term=not is_long,
+                        is_long_term=is_long,
+                        basis_reported_to_irs=True,
+                        wash_sale_disallowed=Decimal("0"),
+                    )
+                )
+
+        schedule_d_data = (
+            ScheduleDData(transactions=transactions) if transactions else None
+        )
+
+        for form in missing_basis:
+            self.escalations.append(
+                "1099-B transaction missing cost basis for "
+                f"{form.description} (proceeds ${form.proceeds:.2f}). "
+                "Client basis is required to compute gains/losses."
+            )
 
         # Aggregate income
-        income_summary = aggregate_income(documents)
+        income_summary = aggregate_income(
+            documents=documents,
+            schedule_c_data=schedule_c_data or None,
+            schedule_e_data=schedule_e_data,
+            schedule_d_data=schedule_d_data,
+            filing_status=filing_status_enum,
+        )
 
         # Calculate itemized deductions and select best option
         itemized_breakdown = compute_itemized_deductions(documents, filing_status)
@@ -1013,6 +1143,59 @@ class PersonalTaxAgent:
             Decimal("0"),
             income_summary.total_income - deduction_result.amount,
         )
+
+        # Apply QBI deduction (Section 199A)
+        qbi_components = []
+        if schedule_c_data:
+            schedule_c_profit = sum(
+                max(Decimal("0"), sch_c.net_profit_or_loss)
+                for sch_c in schedule_c_data
+            )
+            for sch_c in schedule_c_data:
+                if sch_c.net_profit_or_loss <= Decimal("0"):
+                    continue
+                allocated_se_tax = (
+                    income_summary.se_tax_deduction
+                    * (sch_c.net_profit_or_loss / schedule_c_profit)
+                    if schedule_c_profit > 0
+                    else Decimal("0")
+                )
+                qbi_components.append(
+                    build_qbi_from_schedule_c(sch_c, allocated_se_tax)
+                )
+        for doc in documents:
+            if isinstance(doc, FormK1):
+                qbi_components.append(build_qbi_from_k1(doc))
+        if schedule_e_data:
+            for prop in schedule_e_data.properties:
+                qbi_component = build_qbi_from_rental(
+                    prop.net_income_loss,
+                    prop.property_address,
+                    prop.qbi_eligible,
+                )
+                if qbi_component:
+                    qbi_components.append(qbi_component)
+
+        net_capital_gains = Decimal("0")
+        if schedule_d_data:
+            schedule_d_result = calculate_schedule_d(
+                schedule_d_data, filing_status_enum
+            )
+            net_capital_gains = max(
+                Decimal("0"), schedule_d_result.net_capital_gain_loss
+            )
+
+        qbi_deduction = Decimal("0")
+        if qbi_components and taxable_income > Decimal("0"):
+            qbi_result = calculate_qbi_deduction(
+                qbi_components,
+                taxable_income,
+                net_capital_gains,
+                filing_status_enum,
+            )
+            qbi_deduction = qbi_result.final_qbi_deduction
+
+        taxable_income = max(Decimal("0"), taxable_income - qbi_deduction)
 
         # Calculate tax
         tax_result = calculate_tax(taxable_income, filing_status, tax_year)
@@ -1041,6 +1224,41 @@ class PersonalTaxAgent:
             tax_result.gross_tax - tax_result.credits_applied,
         )
         tax_result.refundable_credits = credits_result.total_refundable
+
+        # Apply Premium Tax Credit (Form 8962) reconciliation
+        form_1095a_data = [
+            doc
+            for doc in documents
+            if isinstance(doc, Form1095A)
+        ]
+        if form_1095a_data:
+            additional_credit_total = Decimal("0")
+            repayment_total = Decimal("0")
+            for form in form_1095a_data:
+                ptc_result = calculate_premium_tax_credit(
+                    income_summary.total_income,
+                    1,
+                    form,
+                    filing_status_enum,
+                )
+                additional_credit_total += ptc_result.additional_credit
+                repayment_total += ptc_result.repayment_amount
+                if ptc_result.repayment_required:
+                    self.escalations.append(
+                        "Premium tax credit repayment required "
+                        f"(${ptc_result.repayment_amount:.2f}). "
+                        "Confirm household income and coverage details."
+                    )
+                if not ptc_result.is_eligible:
+                    self.escalations.append(
+                        "Premium tax credit ineligible: "
+                        f"{ptc_result.ineligibility_reason}."
+                    )
+
+            tax_result.refundable_credits += additional_credit_total
+            tax_result.final_liability = max(
+                Decimal("0"), tax_result.final_liability + repayment_total
+            )
 
         return income_summary, deduction_result, tax_result
 

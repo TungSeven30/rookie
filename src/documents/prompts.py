@@ -324,20 +324,24 @@ Payments received (Box 1) and scholarships (Box 5) are the most critical fields 
 
 FORM_5498_PROMPT = """Extract all data from this 5498 IRA Contribution Information form.
 
-For each field, extract the exact value shown. Box locations on a standard 5498:
+**CRITICAL INSTRUCTIONS:**
+1. Extract the EXACT dollar amounts shown - do NOT round, do NOT combine digits from different fields
+2. Each box has a SEPARATE value - read each one independently
+3. If a box is empty or shows no value, use 0 (zero)
+4. Preserve exact cents (e.g., $3,490.81 not $3,491 or $3490.81)
 
 **IDENTITY FIELDS:**
 - TRUSTEE'S or ISSUER'S name (the financial institution)
 - TRUSTEE'S or ISSUER'S TIN (format as XX-XXXXXXX for EIN)
 - PARTICIPANT'S name
-- PARTICIPANT'S TIN (format as XXX-XX-XXXX for SSN)
+- PARTICIPANT'S TIN (format as XXX-XX-XXXX for SSN, may be masked as ***-**-1234)
 
-**CONTRIBUTION FIELDS:**
-- Box 1: IRA contributions (other than amounts in boxes 2-4, 8-10, 13a, and 14a)
+**CONTRIBUTION FIELDS (read EACH box separately):**
+- Box 1: IRA contributions (traditional IRA contributions for the year)
 - Box 2: Rollover contributions
 - Box 3: Roth IRA conversion amount
-- Box 4: Recharacterized contributions
-- Box 5: Fair market value of account
+- Box 4: Recharacterized contributions (IMPORTANT: often shown, extract exact value)
+- Box 5: Fair market value of account (end-of-year account balance)
 - Box 6: Life insurance cost included in box 1
 - Box 7: Checkbox for IRA type (IRA, SEP, SIMPLE, Roth IRA)
 - Box 8: SEP contributions
@@ -349,17 +353,24 @@ For each field, extract the exact value shown. Box locations on a standard 5498:
 - Box 14a: Repayments
 - Box 15a: FMV of certain specified assets
 
+**COMMON FORM LAYOUTS:**
+- Fidelity forms show boxes in a table format with dotted lines
+- Box labels like "4.Recharacterized contributions" or "5.Fair market value"
+- Values appear after the box description, often right-aligned
+- CRITICAL: Box 4 and Box 5 values are SEPARATE - do NOT combine digits!
+  Example: If Box 4 shows $3,490.81 and Box 5 shows $4,154.19, 
+  extract them separately as 3490.81 and 4154.19 - NOT as 34154.19
+
 **IRA TYPE (Box 7):**
 Look for checkboxes indicating: IRA, SEP, SIMPLE, or Roth IRA
 
 **CONFIDENCE ASSESSMENT:**
 - HIGH: All fields clearly visible and readable
 - MEDIUM: Some fields partially obscured or unclear
-- LOW: IRA contributions (Box 1), Roth contributions (Box 10), or identity fields hard to read
+- LOW: Key fields hard to read or potentially misread
 
 Add any uncertain field names to the uncertain_fields list.
-For empty boxes, use 0 (zero).
-IRA contributions (Box 1) and Roth IRA contributions (Box 10) are the most critical fields."""
+Box 4 (Recharacterized contributions) and Box 5 (Fair market value) are commonly populated - extract them carefully."""
 
 
 FORM_1099_S_PROMPT = """Extract all data from this 1099-S Proceeds From Real Estate Transactions form.

@@ -27,15 +27,28 @@ from src.agents.personal_tax.agent import (
     PersonalTaxResult,
     personal_tax_handler,
 )
-from src.agents.personal_tax.calculator import IncomeSummary, TaxResult
+from src.agents.personal_tax.calculator import (
+    FilingStatus,
+    IncomeSummary,
+    ScheduleCData,
+    ScheduleCExpenses,
+    TaxResult,
+    build_qbi_from_schedule_c,
+    calculate_premium_tax_credit,
+    calculate_qbi_deduction,
+    calculate_self_employment_tax,
+    calculate_tax,
+)
 from src.context.builder import AgentContext
 from src.documents.classifier import ClassificationResult
 from src.documents.models import (
     ConfidenceLevel,
     DocumentType,
     Form1099DIV,
+    Form1099B,
     Form1099INT,
     Form1099NEC,
+    Form1095A,
     W2Batch,
     W2Data,
 )
@@ -133,6 +146,43 @@ def sample_1099_nec() -> Form1099NEC:
         recipient_tin="123-45-6789",
         nonemployee_compensation=Decimal("15000"),
         confidence=ConfidenceLevel.LOW,
+    )
+
+
+@pytest.fixture
+def sample_1099_b() -> Form1099B:
+    """Create a sample 1099-B for testing."""
+    return Form1099B(
+        payer_name="Broker Inc",
+        payer_tin="12-3456789",
+        recipient_tin="123-45-6789",
+        description="100 sh ABC",
+        date_acquired="2022-06-01",
+        date_sold="2024-06-15",
+        proceeds=Decimal("10000"),
+        cost_basis=Decimal("8000"),
+        is_long_term=True,
+        basis_reported_to_irs=True,
+        confidence=ConfidenceLevel.HIGH,
+    )
+
+
+@pytest.fixture
+def sample_1095a() -> Form1095A:
+    """Create a sample 1095-A for testing."""
+    return Form1095A(
+        recipient_name="John Doe",
+        recipient_tin="123-45-6789",
+        marketplace_id="FFM123",
+        policy_number="POL123",
+        coverage_start_date="2024-01-01",
+        monthly_enrollment_premium=[Decimal("600")] * 12,
+        monthly_slcsp_premium=[Decimal("800")] * 12,
+        monthly_advance_ptc=[Decimal("0")] * 12,
+        annual_enrollment_premium=Decimal("7200"),
+        annual_slcsp_premium=Decimal("9600"),
+        annual_advance_ptc=Decimal("0"),
+        confidence=ConfidenceLevel.HIGH,
     )
 
 
@@ -1164,6 +1214,115 @@ class TestAgentProcessWorkflow:
         assert len(result.variances) >= 1
         wage_variances = [v for v in result.variances if "wages" in v.field]
         assert len(wage_variances) >= 1
+
+
+# =============================================================================
+# Phase 4 Integration Tests
+# =============================================================================
+
+
+class TestPhase4TaxIntegration:
+    """Tests for Phase 4 tax integration in the agent pipeline."""
+
+    def test_calculate_tax_includes_schedule_d(
+        self,
+        temp_output_dir: Path,
+        sample_1099_b: Form1099B,
+    ) -> None:
+        """1099-B transactions flow into Schedule D and income totals."""
+        agent = PersonalTaxAgent(
+            storage_url="/tmp/storage",
+            output_dir=temp_output_dir,
+        )
+        extractions = [{"data": [sample_1099_b]}]
+
+        income_summary, _, _ = agent._calculate_tax(extractions, "single", 2024)
+
+        assert income_summary.capital_gains_net == Decimal("2000")
+        assert income_summary.total_income == Decimal("2000")
+
+    def test_calculate_tax_applies_qbi_deduction(
+        self,
+        temp_output_dir: Path,
+        sample_1099_nec: Form1099NEC,
+    ) -> None:
+        """QBI deduction reduces taxable income for Schedule C profits."""
+        agent = PersonalTaxAgent(
+            storage_url="/tmp/storage",
+            output_dir=temp_output_dir,
+        )
+        extractions = [{"data": sample_1099_nec}]
+
+        income_summary, deduction_result, tax_result = agent._calculate_tax(
+            extractions, "single", 2024
+        )
+
+        schedule_c = ScheduleCData(
+            business_name=sample_1099_nec.payer_name,
+            business_activity="Independent contractor",
+            principal_business_code="999999",
+            gross_receipts=sample_1099_nec.nonemployee_compensation,
+            expenses=ScheduleCExpenses(),
+        )
+        se_result = calculate_self_employment_tax(
+            schedule_c.net_profit_or_loss, FilingStatus.SINGLE
+        )
+        qbi_component = build_qbi_from_schedule_c(
+            schedule_c, se_result.deductible_portion
+        )
+        taxable_income = max(
+            Decimal("0"),
+            income_summary.total_income - deduction_result.amount,
+        )
+        qbi_result = calculate_qbi_deduction(
+            [qbi_component],
+            taxable_income,
+            Decimal("0"),
+            FilingStatus.SINGLE,
+        )
+        expected_taxable = max(
+            Decimal("0"),
+            taxable_income - qbi_result.final_qbi_deduction,
+        )
+        expected_tax = calculate_tax(expected_taxable, "single", 2024)
+
+        assert tax_result.gross_tax == expected_tax.gross_tax
+
+    def test_calculate_tax_applies_premium_tax_credit(
+        self,
+        temp_output_dir: Path,
+        sample_1095a: Form1095A,
+    ) -> None:
+        """Form 1095-A reconciliation adjusts refundable credits."""
+        agent = PersonalTaxAgent(
+            storage_url="/tmp/storage",
+            output_dir=temp_output_dir,
+        )
+        w2 = W2Data(
+            employee_ssn="123-45-6789",
+            employer_ein="12-3456789",
+            employer_name="Acme Corp",
+            employee_name="John Doe",
+            wages_tips_compensation=Decimal("20000"),
+            federal_tax_withheld=Decimal("1500"),
+            social_security_wages=Decimal("20000"),
+            social_security_tax=Decimal("1240"),
+            medicare_wages=Decimal("20000"),
+            medicare_tax=Decimal("290"),
+            confidence=ConfidenceLevel.HIGH,
+        )
+        extractions = [{"data": w2}, {"data": sample_1095a}]
+
+        income_summary, _, tax_result = agent._calculate_tax(extractions, "single", 2024)
+
+        ptc = calculate_premium_tax_credit(
+            income_summary.total_income,
+            1,
+            sample_1095a,
+            FilingStatus.SINGLE,
+        )
+
+        assert tax_result.refundable_credits == ptc.additional_credit
 
 
 # =============================================================================

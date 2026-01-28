@@ -2172,6 +2172,11 @@ def aggregate_income(
     k1_ordinary_income = Decimal("0")
     k1_guaranteed_payments = Decimal("0")
     k1_se_earnings = Decimal("0")  # Box 14 only - NOT Box 1 + Box 4
+    k1_interest_income = Decimal("0")
+    k1_dividend_income = Decimal("0")
+    k1_rental_income = Decimal("0")
+    k1_capital_gains = Decimal("0")
+    k1_other_income = Decimal("0")
 
     for doc in documents:
         if isinstance(doc, W2Data):
@@ -2205,6 +2210,21 @@ def aggregate_income(
             # K-1 ordinary income (Box 1) goes to total_other for income tax
             k1_ordinary_income += doc.ordinary_business_income or Decimal("0")
             k1_guaranteed_payments += doc.guaranteed_payments or Decimal("0")
+            k1_interest_income += doc.interest_income or Decimal("0")
+            k1_dividend_income += doc.dividend_income or Decimal("0")
+            k1_rental_income += (
+                (doc.net_rental_real_estate or Decimal("0"))
+                + (doc.other_rental_income or Decimal("0"))
+            )
+            k1_capital_gains += (
+                (doc.net_short_term_capital_gain or Decimal("0"))
+                + (doc.net_long_term_capital_gain or Decimal("0"))
+                + (doc.net_section_1231_gain or Decimal("0"))
+            )
+            k1_other_income += (
+                (doc.royalties or Decimal("0"))
+                + (doc.other_income or Decimal("0"))
+            )
 
             # IMPORTANT: SE income uses Box 14 (self_employment_earnings), NOT Box 1 + Box 4
             # S-corp K-1s do NOT have SE tax - shareholders receive W-2 wages instead
@@ -2235,7 +2255,17 @@ def aggregate_income(
         se_tax_deduction = se_result.deductible_portion
 
     # K-1 ordinary income is added to total_other for tax calculation
-    total_other += k1_ordinary_income
+    total_interest += k1_interest_income
+    total_dividends += k1_dividend_income
+    total_other += k1_ordinary_income + k1_guaranteed_payments + k1_other_income
+
+    # K-1 rental income only flows into totals if Schedule E not supplied
+    if schedule_e_data is None:
+        total_other += k1_rental_income
+
+    # K-1 capital gains only flow into totals if Schedule D not supplied
+    if schedule_d_data is None:
+        total_other += k1_capital_gains
 
     # Schedule E rental income (with passive activity loss limitations)
     schedule_e_rental_income = Decimal("0")
@@ -2273,11 +2303,12 @@ def aggregate_income(
         capital_gains_net = sch_d_result.net_included_in_income  # After loss limit
         capital_loss_carryforward = sch_d_result.new_loss_carryforward
 
+    nec_income = Decimal("0") if schedule_c_data else total_nec
     total_income = (
         total_wages
         + total_interest
         + total_dividends
-        + total_nec
+        + nec_income
         + total_retirement_distributions
         + total_unemployment
         + total_other

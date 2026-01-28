@@ -1702,6 +1702,33 @@ class TestAggregateIncomeWithBusiness:
         assert result.schedule_c_profit == Decimal("80000")
         assert result.self_employment_income == Decimal("80000")
 
+    def test_aggregate_schedule_c_avoids_double_count_1099_nec(self) -> None:
+        """Schedule C profit should not double count 1099-NEC income."""
+        nec = Form1099NEC(
+            payer_name="Consulting Client LLC",
+            payer_tin="34-5678901",
+            recipient_name="John Doe",
+            recipient_tin="123-45-6789",
+            nonemployee_compensation=Decimal("10000"),
+            confidence=ConfidenceLevel.HIGH,
+        )
+        sch_c = ScheduleCData(
+            business_name="Consulting Client LLC",
+            business_activity="Independent contractor",
+            principal_business_code="999999",
+            gross_receipts=Decimal("10000"),
+        )
+
+        result = aggregate_income(
+            documents=[nec],
+            schedule_c_data=[sch_c],
+            filing_status=FilingStatus.SINGLE,
+        )
+
+        assert result.total_nec == Decimal("10000")
+        assert result.schedule_c_profit == Decimal("10000")
+        assert result.total_income == Decimal("10000")
+
     def test_aggregate_with_k1_partnership(self) -> None:
         """K-1 from partnership with Box 14 SE earnings."""
         k1 = FormK1(
@@ -1729,6 +1756,37 @@ class TestAggregateIncomeWithBusiness:
         # SE income from Box 14 (not Box 1 + Box 4)
         assert result.self_employment_income == Decimal("45000")
         assert result.se_tax > Decimal("0")
+
+    def test_aggregate_k1_income_components(self) -> None:
+        """K-1 interest, dividends, and guaranteed payments flow into totals."""
+        k1 = FormK1(
+            entity_name="ABC Partnership",
+            entity_ein="12-3456789",
+            entity_type="partnership",
+            tax_year=2024,
+            recipient_name="John Doe",
+            recipient_tin="123-45-6789",
+            ownership_percentage=Decimal("25.0"),
+            ordinary_business_income=Decimal("40000"),
+            guaranteed_payments=Decimal("10000"),
+            interest_income=Decimal("500"),
+            dividend_income=Decimal("300"),
+            royalties=Decimal("200"),
+            net_short_term_capital_gain=Decimal("1000"),
+            net_long_term_capital_gain=Decimal("2000"),
+            net_section_1231_gain=Decimal("500"),
+            other_income=Decimal("100"),
+            confidence=ConfidenceLevel.HIGH,
+        )
+
+        result = aggregate_income(
+            documents=[k1],
+            filing_status=FilingStatus.SINGLE,
+        )
+
+        assert result.total_interest == Decimal("500")
+        assert result.total_dividends == Decimal("300")
+        assert result.total_other == Decimal("53800")
 
     def test_aggregate_with_k1_scorp(self) -> None:
         """S-corp K-1 should NOT generate SE tax."""
