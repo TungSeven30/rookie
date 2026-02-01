@@ -13,7 +13,7 @@ Configuration:
 import asyncio
 from enum import Enum
 from functools import wraps
-from typing import Any, Awaitable, Callable, ParamSpec, TypeVar
+from typing import Awaitable, Callable, ParamSpec, TypeVar
 
 import pybreaker
 import redis

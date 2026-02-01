@@ -4,7 +4,7 @@ Provides declarative state transitions for tasks with callbacks
 for side effects (database updates, logging, metrics).
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import structlog
@@ -118,7 +118,7 @@ class TaskStateMachine(StateMachine):
 
     def on_complete(self) -> None:
         """Called when task completes successfully."""
-        self.task.completed_at = datetime.utcnow()
+        self.task.completed_at = datetime.now(UTC)
         logger.info(
             "task_completed",
             task_id=self.task.id,

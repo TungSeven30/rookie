@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
@@ -587,7 +587,7 @@ async def _process_job(task_id: int, session_factory: Any) -> None:
         storage_url = metadata.get("storage_url", settings.default_storage_url)
         client_id = int(metadata.get("client_id", 0))
         client_name = metadata.get("client_name", f"Client {client_id}")
-        tax_year = int(metadata.get("tax_year", datetime.utcnow().year))
+        tax_year = int(metadata.get("tax_year", datetime.now(UTC).year))
         filing_status = metadata.get("filing_status", "single")
 
         output_dir = Path(settings.output_dir) / "demo" / str(task_id)
@@ -692,7 +692,7 @@ async def _process_job(task_id: int, session_factory: Any) -> None:
             await _save_results(session, task_id, payload)
 
             task.status = TaskStatus.COMPLETED
-            task.completed_at = datetime.utcnow()
+            task.completed_at = datetime.now(UTC)
 
             await _emit_progress(
                 session,
@@ -711,7 +711,7 @@ async def _process_job(task_id: int, session_factory: Any) -> None:
             escalation = Escalation(
                 task_id=task_id,
                 reason="; ".join(exc.reasons),
-                escalated_at=datetime.utcnow(),
+                escalated_at=datetime.now(UTC),
             )
             session.add(escalation)
 
@@ -968,7 +968,7 @@ async def add_documents_to_job(
 
     metadata = await _get_metadata(db, job_id)
     storage_url = metadata.get("storage_url", settings.default_storage_url)
-    tax_year = int(metadata.get("tax_year", datetime.utcnow().year))
+    tax_year = int(metadata.get("tax_year", datetime.now(UTC).year))
     storage_prefix = _build_storage_prefix(task.client_id, tax_year)
 
     for upload in files:

@@ -5,7 +5,6 @@ from collections.abc import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from src.api.clients import router as clients_router
 from src.api.demo import router as demo_router

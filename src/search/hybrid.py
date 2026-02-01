@@ -5,7 +5,7 @@ Uses Reciprocal Rank Fusion (RRF) to combine results from both search methods.
 
 from dataclasses import dataclass
 
-from sqlalchemy import func, select, text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.skill import SkillEmbedding, SkillFile

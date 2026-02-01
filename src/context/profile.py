@@ -5,7 +5,7 @@ from the append-only log of profile entries. Each entry_type retains
 only the latest value while maintaining full history.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select
@@ -101,7 +101,7 @@ async def append_profile_entry(
         client_id=client_id,
         entry_type=entry_type,
         data=data,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(UTC),
     )
     session.add(entry)
     await session.flush()  # Populate ID without committing

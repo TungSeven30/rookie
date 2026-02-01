@@ -847,7 +847,7 @@ class TestAgentProcessWorkflow:
     async def test_extract_documents_flags_multiple_w2_forms(
         self, temp_output_dir, sample_w2
     ) -> None:
-        """Multiple W-2 forms on a page with single output should escalate."""
+        """Multiple W-2 forms flag is included in extraction metadata (informational, not escalated)."""
         agent = PersonalTaxAgent(
             storage_url="/tmp/storage",
             output_dir=temp_output_dir,
@@ -898,9 +898,13 @@ class TestAgentProcessWorkflow:
                         "src.agents.personal_tax.agent.extract_document",
                         return_value=batch,
                     ):
-                        await agent._extract_documents([mock_doc])
+                        extractions = await agent._extract_documents([mock_doc])
 
-        assert any(
+        # The flag should be in extraction metadata (informational, not escalated)
+        assert len(extractions) == 1
+        assert extractions[0].get("multiple_forms_detected") is True
+        # No escalation should be raised for this informational flag
+        assert not any(
             "Multiple W-2 forms detected" in reason for reason in agent.escalations
         )
 
@@ -975,14 +979,14 @@ class TestAgentProcessWorkflow:
             output_dir=temp_output_dir,
         )
 
-        # Create mock documents
+        # Create mock documents - use jpg to avoid PDF splitting
         mock_docs = [
             ClientDocument(
-                path="client123/2024/w2.pdf",
-                name="w2.pdf",
+                path="client123/2024/w2.jpg",
+                name="w2.jpg",
                 size=1000,
                 modified=datetime.now(),
-                extension="pdf",
+                extension="jpg",
             ),
             ClientDocument(
                 path="client123/2024/1099int.jpg",
@@ -1063,12 +1067,13 @@ class TestAgentProcessWorkflow:
             output_dir=temp_output_dir,
         )
 
+        # Use jpg to avoid PDF splitting
         mock_doc = ClientDocument(
-            path="w2.pdf",
-            name="w2.pdf",
+            path="w2.jpg",
+            name="w2.jpg",
             size=1000,
             modified=datetime.now(),
-            extension="pdf",
+            extension="jpg",
         )
 
         mock_context = AgentContext(
@@ -1144,12 +1149,13 @@ class TestAgentProcessWorkflow:
             output_dir=temp_output_dir,
         )
 
+        # Use jpg to avoid PDF splitting
         mock_doc = ClientDocument(
-            path="w2.pdf",
-            name="w2.pdf",
+            path="w2.jpg",
+            name="w2.jpg",
             size=1000,
             modified=datetime.now(),
-            extension="pdf",
+            extension="jpg",
         )
 
         # Prior year had much lower wages (triggers >10% variance)
@@ -1346,12 +1352,13 @@ class TestPersonalTaxHandler:
         task.metadata = {"filing_status": "single"}
         task.status = TaskStatus.IN_PROGRESS
 
+        # Use jpg to avoid PDF splitting
         mock_doc = ClientDocument(
-            path="w2.pdf",
-            name="w2.pdf",
+            path="w2.jpg",
+            name="w2.jpg",
             size=1000,
             modified=datetime.now(),
-            extension="pdf",
+            extension="jpg",
         )
 
         mock_context = AgentContext(
@@ -1381,6 +1388,7 @@ class TestPersonalTaxHandler:
         with patch("src.core.config.settings") as mock_settings:
             mock_settings.default_storage_url = "/tmp/storage"
             mock_settings.output_dir = str(temp_output_dir)
+            mock_settings.document_processing_concurrency = 2
 
             with patch(
                 "src.agents.personal_tax.agent.build_agent_context",
@@ -1419,12 +1427,13 @@ class TestPersonalTaxHandler:
         task.metadata = {}
         task.status = TaskStatus.IN_PROGRESS
 
+        # Use jpg to avoid PDF splitting
         mock_doc = ClientDocument(
-            path="w2.pdf",
-            name="w2.pdf",
+            path="w2.jpg",
+            name="w2.jpg",
             size=1000,
             modified=datetime.now(),
-            extension="pdf",
+            extension="jpg",
         )
 
         mock_context = AgentContext(
@@ -1454,6 +1463,7 @@ class TestPersonalTaxHandler:
         with patch("src.core.config.settings") as mock_settings:
             mock_settings.default_storage_url = "/tmp/storage"
             mock_settings.output_dir = str(temp_output_dir)
+            mock_settings.document_processing_concurrency = 2
 
             with patch(
                 "src.agents.personal_tax.agent.build_agent_context",
