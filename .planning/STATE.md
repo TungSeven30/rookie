@@ -10,7 +10,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 
 **Core value:** CPAs are liable for the work, not the AI. Rookie prepares, humans approve.
 
-**Current focus:** Phase 6 - Business Tax Agent (data models + basis tracker complete)
+**Current focus:** Phase 6 - Business Tax Agent (data models + TB parsing + basis tracker complete)
 
 ## Phase Progress
 
@@ -105,6 +105,9 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2026-02-06 | Frozen dataclass for BasisAdjustmentInputs | Tax inputs must be immutable during multi-step calculation |
 | 2026-02-06 | ValueError on negative beginning basis | Fail fast on upstream data errors |
 | 2026-02-06 | losses_limited_by_basis == suspended_losses | Same quantity from different perspectives |
+| 2026-02-06 | 3-tier confidence: HIGH (pattern), MEDIUM (type-hinted name), LOW (ambiguous) | Clear CPA review prioritization |
+| 2026-02-06 | Pure regex heuristic GL mapping (no LLM) | Deterministic, fast, auditable in v1 |
+| 2026-02-06 | Credit-positive lines negate net_balance for income sign | Revenue credit balances become positive amounts |
 
 ### Deferred Items
 
@@ -159,6 +162,8 @@ None currently.
 - [ ] Execute 05-03-PLAN.md (Checker accuracy benchmark)
 - [ ] Execute 05-04-PLAN.md (TaxDome live sync hardening + fallback)
 - [x] Execute 06-01-PLAN.md (Business Tax Data Models)
+- [x] Execute 06-02-PLAN.md (Trial Balance Parsing and GL Mapping)
+- [x] Execute 06-03-PLAN.md (Shareholder Basis Tracker)
 
 ## Recent Activity
 
@@ -206,6 +211,7 @@ None currently.
 | 2026-02-06 | Phase 5 UI hardening pass: implicit reviewer-edit capture flow, keyboard/focus accessibility improvements, and end-to-end operations API flow test |
 | 2026-02-06 | Completed 06-01: Business Tax Data Models (5 min) - 8 Pydantic models for Form 1120-S, 42 tests |
 | 2026-02-06 | Completed 06-03: Shareholder Basis Tracker (3 min) - IRS 4-step ordering, 47 TDD tests |
+| 2026-02-06 | Completed 06-02: Trial Balance Parsing and GL Mapping (5 min) - Excel parser + 23-pattern heuristic mapping + 3-tier confidence, 44 TDD tests |
 
 ## Session Continuity
 
@@ -369,6 +375,13 @@ Phase 5 still has pending plans (05-02 closure, 05-03, 05-04).
 - All monetary fields use Decimal, all TIN/EIN fields validated
 - ScheduleL has balance sheet integrity checks (is_balanced_beginning/ending)
 - `tests/agents/business_tax/test_models.py` - 42 tests
+
+**Trial Balance Parsing (06-02):**
+- `src/agents/business_tax/trial_balance.py` - parse_excel_trial_balance, map_gl_to_1120s, aggregate_mapped_amounts
+- GLMapping (frozen dataclass), DEFAULT_GL_MAPPING (23 regex patterns)
+- 3-tier confidence: HIGH (pattern match), MEDIUM (type-hinted name), LOW (ambiguous)
+- Handles 2-column (debit/credit) and single net balance Excel formats
+- `tests/agents/business_tax/test_trial_balance.py` - 44 tests
 
 **Shareholder Basis Tracker (06-03):**
 - `src/agents/business_tax/basis.py` - BasisAdjustmentInputs (frozen), BasisResult, calculate_shareholder_basis()
