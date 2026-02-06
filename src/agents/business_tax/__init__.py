@@ -34,6 +34,12 @@ K-1 allocation and handoff protocol:
 - generate_k1_for_handoff: Create validated FormK1 from allocated amounts
 - serialize_k1_artifact: Serialize FormK1 to JSON for inter-agent handoff
 - deserialize_k1_artifact: Deserialize JSON back to FormK1
+
+Output generators (CPA-facing deliverables):
+- generate_1120s_drake_worksheet: Excel workbook for Drake Tax Software
+- generate_k1_worksheets: Per-shareholder K-1 detail Excel workbook
+- generate_basis_worksheets: Per-shareholder Form 7203 basis Excel workbook
+- generate_business_preparer_notes: Markdown preparer notes for CPA review
 """
 
 from src.agents.business_tax.calculator import (
@@ -57,6 +63,12 @@ from src.agents.business_tax.handoff import (
     deserialize_k1_artifact,
     generate_k1_for_handoff,
     serialize_k1_artifact,
+)
+from src.agents.business_tax.output import (
+    generate_1120s_drake_worksheet,
+    generate_basis_worksheets,
+    generate_business_preparer_notes,
+    generate_k1_worksheets,
 )
 from src.agents.business_tax.models import (
     Form1120SResult,
@@ -114,4 +126,9 @@ __all__ = [
     "generate_k1_for_handoff",
     "serialize_k1_artifact",
     "deserialize_k1_artifact",
+    # Output generators
+    "generate_1120s_drake_worksheet",
+    "generate_k1_worksheets",
+    "generate_basis_worksheets",
+    "generate_business_preparer_notes",
 ]
