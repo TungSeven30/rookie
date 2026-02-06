@@ -1,6 +1,6 @@
 # Project State: Rookie
 
-**Last Updated:** 2026-01-25
+**Last Updated:** 2026-02-06
 **Current Phase:** 5 - Review Infrastructure
 **Status:** In Progress
 
@@ -20,25 +20,25 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2 - Core Framework | Complete | 6/6 | 100% |
 | 3 - Personal Tax Simple | Complete | 7/7 | 100% |
 | 4 - Personal Tax Complex | Complete | 8/8 | 100% |
-| 5 - Review Infrastructure | Pending | 0/0 | 0% |
+| 5 - Review Infrastructure | In Progress | 1/4 | 25% |
 | 6 - Business Tax | Pending | 0/0 | 0% |
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall Progress:** [#####___] 60%
+**Overall Progress:** [#####___] 62%
 
 ## Current Position
 
 - **Phase:** 5 of 8 (Review Infrastructure)
-- **Plan:** Not started - plan Phase 5 execution
-- **Status:** Phase 4 complete - Phase 5 planning next
-- **Last activity:** 2026-01-25 - Completed Phase 4 (04-02 through 04-08)
+- **Plan:** 05-01 complete - backend review infrastructure APIs shipped
+- **Status:** Phase 5 execution started (backend slice complete, UI + validation pending)
+- **Last activity:** 2026-02-06 - Completed 05-01 (checker, feedback, status, TaxDome API scaffold)
 
 ## Performance Metrics
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Plans completed | 26 | - |
+| Plans completed | 27 | - |
 | Requirements delivered | 24/60 | 60 |
 | Phases complete | 4/8 | 8 |
 
@@ -147,6 +147,10 @@ None currently.
 - [x] Execute 04-06-PLAN.md (QBI Deduction)
 - [x] Execute 04-07-PLAN.md (Form 8962 ACA Reconciliation)
 - [x] Execute 04-08-PLAN.md (Complex Return Agent Integration)
+- [x] Execute 05-01-PLAN.md (Review Infrastructure Backend APIs)
+- [ ] Execute 05-02-PLAN.md (Reviewer Dashboard UI + WCAG checks)
+- [ ] Execute 05-03-PLAN.md (Checker accuracy benchmark)
+- [ ] Execute 05-04-PLAN.md (TaxDome live sync hardening + fallback)
 
 ## Recent Activity
 
@@ -188,19 +192,22 @@ None currently.
 | 2026-01-25 | Completed 04-07: Form 8962 ACA Reconciliation (6 min) |
 | 2026-01-25 | Completed 04-08: Complex Return Agent Integration (8 min) |
 | 2026-01-25 | **Phase 4 Complete** - Personal Tax Complex operational |
+| 2026-02-06 | Completed 05-01: Review Infrastructure Backend APIs (checker + feedback + status + TaxDome scaffold) |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Completed Phase 4 (04-01 through 04-08):
-- Added K-1, 1099-B, 1095-A models and extractors
-- Implemented Schedule C/E/D calculations, QBI deduction, and Form 8962
-- Integrated complex-return logic into the agent output pipeline
+Started Phase 5 with backend review infrastructure (05-01):
+- Added checker agent logic and review API endpoints
+- Added feedback capture endpoints (implicit + explicit)
+- Added status/dashboard APIs and TaxDome webhook/status scaffold
+- Added focused test coverage for new Phase 5 backend components
 
 ### Next Session Starting Point
 
-Plan Phase 5 (Review Infrastructure) and define execution plans.
+Implement Phase 5 frontend dashboard and run Phase 5 acceptance validation
+(checker benchmark, explicit feedback UX clicks, and TaxDome live integration).
 
 ### Context to Preserve
 

@@ -266,9 +266,9 @@ Tax law changes? Update the skill file with a new effective date. The agent know
 
 | System | Method | Status |
 |--------|--------|--------|
-| **Drake Tax** | Worksheet → manual entry (v1), evaluate XML import later | Planned |
+| **Drake Tax** | Worksheet → manual entry (v1), evaluate XML import later | In use (demo workflow) |
 | **QuickBooks Online** | REST API for transaction read/write | Planned |
-| **TaxDome** | API for task management, status updates | Planned |
+| **TaxDome** | API for task management, status updates | In progress (webhook + status API scaffold) |
 
 ---
 
@@ -292,9 +292,15 @@ Tax law changes? Update the skill file with a new effective date. The agent know
   - [x] Client Profile Manager (append-only log)
   - [x] Context Builder for agent execution
   - [x] Hybrid Search (pgvector + BM25 with RRF fusion)
-- [ ] **Phase 3**: Personal Tax Agent (simple returns) ← *next*
-- [ ] **Phase 4**: Personal Tax Agent (complex returns)
-- [ ] **Phase 5**: Review infrastructure (feedback, checker, basic status)
+- [x] **Phase 3**: Personal Tax Agent (simple returns)
+- [x] **Phase 4**: Personal Tax Agent (complex returns)
+- [ ] **Phase 5**: Review infrastructure (in progress)
+  - [x] Checker Agent core logic + review API endpoints
+  - [x] Feedback capture APIs (implicit diff + explicit tags)
+  - [x] Status/dashboard APIs (task progress, agent activity, queue + flags)
+  - [x] TaxDome integration API scaffold (assignment webhook + status sync)
+  - [ ] Frontend dashboard and WCAG 2.1 AA validation
+  - [ ] End-to-end TaxDome integration validation in non-mock environment
 - [ ] **Phase 6**: Business Tax Agent
 - [ ] **Phase 7**: Bookkeeping Agent
 - [ ] **Phase 8**: Production hardening
