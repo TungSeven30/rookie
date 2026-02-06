@@ -1,7 +1,7 @@
 # Project State: Rookie
 
 **Last Updated:** 2026-02-06
-**Current Phase:** 5 - Review Infrastructure
+**Current Phase:** 6 - Business Tax Agent
 **Status:** In Progress
 
 ## Project Reference
@@ -10,7 +10,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 
 **Core value:** CPAs are liable for the work, not the AI. Rookie prepares, humans approve.
 
-**Current focus:** Phase 5 - Review Infrastructure
+**Current focus:** Phase 6 - Business Tax Agent (data models complete)
 
 ## Phase Progress
 
@@ -20,25 +20,25 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2 - Core Framework | Complete | 6/6 | 100% |
 | 3 - Personal Tax Simple | Complete | 7/7 | 100% |
 | 4 - Personal Tax Complex | Complete | 8/8 | 100% |
-| 5 - Review Infrastructure | In Progress | 1/4 (+05-02 partial) | 40% |
-| 6 - Business Tax | Pending | 0/0 | 0% |
+| 5 - Review Infrastructure | In Progress | 1/4 (+05-02 partial) | 45% |
+| 6 - Business Tax | In Progress | 1/? | 10% |
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall Progress:** [#####___] 64%
+**Overall Progress:** [#####___] 65%
 
 ## Current Position
 
-- **Phase:** 5 of 8 (Review Infrastructure)
-- **Plan:** 05-01 complete, 05-02 partial implementation completed
-- **Status:** Phase 5 execution active (backend complete, dashboard/review UI functional, validations pending)
-- **Last activity:** 2026-02-06 - Added operations dashboard + task/review workspace integration
+- **Phase:** 6 of 8 (Business Tax Agent)
+- **Plan:** 06-01 complete - business tax data models shipped
+- **Status:** Phase 6 execution started (data models complete, calculation engine + K-1 gen + agent integration pending)
+- **Last activity:** 2026-02-06 - Completed 06-01 (8 Pydantic models for Form 1120-S, 42 tests)
 
 ## Performance Metrics
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Plans completed | 27 | - |
+| Plans completed | 28 | - |
 | Requirements delivered | 24/60 | 60 |
 | Phases complete | 4/8 | 8 |
 
@@ -99,6 +99,9 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2026-01-24 | CTC phaseout rounds up to $1,000 | IRS rounds up when calculating reduction |
 | 2026-01-24 | EITC simplified for no-children | Full EITC tables complex, defer to v2 |
 | 2026-01-24 | Variance threshold >10% (not >=) | Must exceed threshold to flag |
+| 2026-02-06 | Literal types for TB account_type/source_format | Simpler than Enum, validated at construction |
+| 2026-02-06 | Private helper properties for ScheduleL totals | DRY computation of asset/liability/equity sums |
+| 2026-02-06 | ShareholderInfo TIN defaults to SSN format | Shareholders are typically individuals |
 
 ### Deferred Items
 
@@ -149,9 +152,10 @@ None currently.
 - [x] Execute 04-08-PLAN.md (Complex Return Agent Integration)
 - [x] Execute 05-01-PLAN.md (Review Infrastructure Backend APIs)
 - [ ] Execute 05-02-PLAN.md (Reviewer Dashboard UI + WCAG checks)
-  - 2026-02-06 progress: product operations UI shipped with dashboard + checker + explicit feedback; WCAG audit and formal UI tests still pending
+  - 2026-02-06 progress: product operations UI shipped with dashboard + checker + explicit feedback + implicit correction capture; API-level operations flow test added; formal WCAG audit + frontend component test harness still pending
 - [ ] Execute 05-03-PLAN.md (Checker accuracy benchmark)
 - [ ] Execute 05-04-PLAN.md (TaxDome live sync hardening + fallback)
+- [x] Execute 06-01-PLAN.md (Business Tax Data Models)
 
 ## Recent Activity
 
@@ -196,21 +200,23 @@ None currently.
 | 2026-02-06 | Completed 05-01: Review Infrastructure Backend APIs (checker + feedback + status + TaxDome scaffold) |
 | 2026-02-06 | Sprint 1 foundation for product workflow shipped: real clients/tasks APIs + tests; frontend App switched to Operations/Demo workspaces |
 | 2026-02-06 | Phase 5 UI partial shipped: dashboard metrics, task progress, checker run panel, explicit feedback history/submit in Operations workspace |
+| 2026-02-06 | Phase 5 UI hardening pass: implicit reviewer-edit capture flow, keyboard/focus accessibility improvements, and end-to-end operations API flow test |
+| 2026-02-06 | Completed 06-01: Business Tax Data Models (5 min) - 8 Pydantic models for Form 1120-S, 42 tests |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Started Phase 5 with backend review infrastructure (05-01):
-- Added checker agent logic and review API endpoints
-- Added feedback capture endpoints (implicit + explicit)
-- Added status/dashboard APIs and TaxDome webhook/status scaffold
-- Added focused test coverage for new Phase 5 backend components
+Completed Phase 6 Plan 01 (Business Tax Data Models):
+- Created 8 Pydantic models for Form 1120-S S-Corp processing
+- ShareholderInfo, TrialBalance, ScheduleK, ScheduleL, Form1120SResult
+- 42 comprehensive tests all passing
+- No new dependencies added
 
 ### Next Session Starting Point
 
-Implement Phase 5 frontend dashboard and run Phase 5 acceptance validation
-(checker benchmark, explicit feedback UX clicks, and TaxDome live integration).
+Continue Phase 6 with calculation engine, K-1 generation, and agent integration plans.
+Phase 5 still has pending plans (05-02 closure, 05-03, 05-04).
 
 ### Context to Preserve
 
@@ -351,10 +357,18 @@ Implement Phase 5 frontend dashboard and run Phase 5 acceptance validation
 - Wave 4: 04-06 (QBI) + 04-07 (Form 8962/PTC) - parallel
 - Wave 5: 04-08 (Agent Integration)
 
+**Business Tax Data Models (06-01):**
+- `src/agents/business_tax/__init__.py` - Module exports for all 8 models
+- `src/agents/business_tax/models.py` - ShareholderInfo, TrialBalanceEntry, TrialBalance, ScheduleKLine, ScheduleK, ScheduleLLine, ScheduleL, Form1120SResult
+- Imports ConfidenceLevel, validate_ein, validate_tin from src.documents.models
+- All monetary fields use Decimal, all TIN/EIN fields validated
+- ScheduleL has balance sheet integrity checks (is_balanced_beginning/ending)
+- `tests/agents/business_tax/test_models.py` - 42 tests
+
 **Critical Path:**
 Phase 1 -> 2 -> 3 -> 4 -> 5 -> 7 -> 8
 
 ---
 
 *State initialized: 2026-01-23*
-*Last updated: 2026-01-26*
+*Last updated: 2026-02-06*
