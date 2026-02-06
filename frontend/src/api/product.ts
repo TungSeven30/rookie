@@ -5,6 +5,7 @@
 import type {
   CheckerReport,
   Client,
+  CreateImplicitFeedbackPayload,
   ClientListResponse,
   CreateExplicitFeedbackPayload,
   CreateClientPayload,
@@ -131,6 +132,17 @@ export async function createExplicitFeedback(
     body: JSON.stringify(payload),
   })
   return parseResponse<FeedbackEntry>(response, 'Failed to submit reviewer feedback')
+}
+
+export async function createImplicitFeedback(
+  payload: CreateImplicitFeedbackPayload
+): Promise<FeedbackEntry> {
+  const response = await fetch('/api/review/feedback/implicit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return parseResponse<FeedbackEntry>(response, 'Failed to submit implicit feedback')
 }
 
 export async function runChecker(payload: RunCheckerPayload): Promise<CheckerReport> {

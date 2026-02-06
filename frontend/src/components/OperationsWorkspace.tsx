@@ -17,6 +17,7 @@ import {
 import {
   createClient,
   createExplicitFeedback,
+  createImplicitFeedback,
   createTask,
   getDashboardStatus,
   getTask,
@@ -138,6 +139,13 @@ function parseJsonRecord(input: string, fieldName: string): Record<string, unkno
   return parsed as Record<string, unknown>
 }
 
+function parseTags(input: string): string[] {
+  return input
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+}
+
 interface TaskCreateForm {
   client_id: string
   task_type: string
@@ -174,6 +182,7 @@ export function OperationsWorkspace() {
   const [feedbackCorrectedContent, setFeedbackCorrectedContent] = useState('')
   const [feedbackNote, setFeedbackNote] = useState('')
   const [feedbackError, setFeedbackError] = useState<string | null>(null)
+  const [feedbackSuccess, setFeedbackSuccess] = useState<string | null>(null)
 
   const [checkerSourceValues, setCheckerSourceValues] = useState(
     '{\n  "wages": 1000,\n  "interest": 100\n}'
@@ -311,6 +320,7 @@ export function OperationsWorkspace() {
       setFeedbackError(null)
       setFeedbackNote('')
       setFeedbackCorrectedContent('')
+      setFeedbackSuccess('Explicit feedback saved.')
       if (selectedTaskId) {
         await queryClient.invalidateQueries({
           queryKey: ['product-task-feedback', selectedTaskId],
@@ -318,7 +328,25 @@ export function OperationsWorkspace() {
       }
     },
     onError: (error) => {
+      setFeedbackSuccess(null)
       setFeedbackError(error instanceof Error ? error.message : 'Failed to save feedback')
+    },
+  })
+
+  const implicitFeedbackMutation = useMutation({
+    mutationFn: createImplicitFeedback,
+    onSuccess: async () => {
+      setFeedbackError(null)
+      setFeedbackSuccess('Implicit feedback captured from reviewer edits.')
+      if (selectedTaskId) {
+        await queryClient.invalidateQueries({
+          queryKey: ['product-task-feedback', selectedTaskId],
+        })
+      }
+    },
+    onError: (error) => {
+      setFeedbackSuccess(null)
+      setFeedbackError(error instanceof Error ? error.message : 'Failed to save implicit feedback')
     },
   })
 
@@ -490,12 +518,14 @@ export function OperationsWorkspace() {
               placeholder="Client name"
               value={newClientName}
               onChange={(e) => setNewClientName(e.target.value)}
+              aria-label="Client name"
             />
             <input
               className="input"
               placeholder="Email (optional)"
               value={newClientEmail}
               onChange={(e) => setNewClientEmail(e.target.value)}
+              aria-label="Client email"
             />
             <button
               className="btn-primary px-4"
@@ -529,6 +559,7 @@ export function OperationsWorkspace() {
               className="input"
               value={taskForm.client_id}
               onChange={(e) => setTaskForm((prev) => ({ ...prev, client_id: e.target.value }))}
+              aria-label="Task client"
             >
               <option value="">Select client</option>
               {clientsQuery.data?.items.map((client) => (
@@ -542,6 +573,7 @@ export function OperationsWorkspace() {
               placeholder="Task type"
               value={taskForm.task_type}
               onChange={(e) => setTaskForm((prev) => ({ ...prev, task_type: e.target.value }))}
+              aria-label="Task type"
             />
             <input
               className="input"
@@ -550,6 +582,7 @@ export function OperationsWorkspace() {
               onChange={(e) =>
                 setTaskForm((prev) => ({ ...prev, assigned_agent: e.target.value }))
               }
+              aria-label="Assigned agent"
             />
           </div>
           <div className="mt-3">
@@ -605,6 +638,7 @@ export function OperationsWorkspace() {
               className="input"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as TaskStatus | 'all')}
+              aria-label="Filter by status"
             >
               {TASK_STATUSES.map((status) => (
                 <option key={status} value={status}>
@@ -617,6 +651,7 @@ export function OperationsWorkspace() {
               className="input"
               value={clientFilter}
               onChange={(e) => setClientFilter(e.target.value)}
+              aria-label="Filter by client"
             >
               <option value="all">All clients</option>
               {clientsQuery.data?.items.map((client) => (
@@ -631,6 +666,7 @@ export function OperationsWorkspace() {
               placeholder="Filter task type"
               value={taskTypeFilter}
               onChange={(e) => setTaskTypeFilter(e.target.value)}
+              aria-label="Filter by task type"
             />
 
             <input
@@ -638,6 +674,7 @@ export function OperationsWorkspace() {
               placeholder="Filter agent"
               value={agentFilter}
               onChange={(e) => setAgentFilter(e.target.value)}
+              aria-label="Filter by agent"
             />
           </div>
 
@@ -660,6 +697,7 @@ export function OperationsWorkspace() {
                     onClick={() => {
                       setSelectedTaskId(task.id)
                       setCheckerReport(null)
+                      setFeedbackSuccess(null)
                     }}
                     className={cn(
                       'w-full text-left rounded-xl border p-3 transition-colors',
@@ -776,12 +814,14 @@ export function OperationsWorkspace() {
                       placeholder="Assign agent (required for Assign)"
                       value={transitionAgent}
                       onChange={(e) => setTransitionAgent(e.target.value)}
+                      aria-label="Agent for status transition"
                     />
                     <input
                       className="input"
                       placeholder="Reason (for Fail/Escalate)"
                       value={transitionReason}
                       onChange={(e) => setTransitionReason(e.target.value)}
+                      aria-label="Reason for status transition"
                     />
                   </div>
 
@@ -876,6 +916,7 @@ export function OperationsWorkspace() {
                   placeholder="Injected error fields (comma-separated, optional)"
                   value={checkerInjectedErrorFields}
                   onChange={(e) => setCheckerInjectedErrorFields(e.target.value)}
+                  aria-label="Injected error fields"
                 />
 
                 <button
@@ -977,62 +1018,143 @@ export function OperationsWorkspace() {
                     className="input"
                     placeholder="Reviewer ID"
                     value={feedbackReviewerId}
-                    onChange={(e) => setFeedbackReviewerId(e.target.value)}
+                    onChange={(e) => {
+                      setFeedbackReviewerId(e.target.value)
+                      setFeedbackSuccess(null)
+                    }}
+                    aria-label="Reviewer ID"
                   />
                   <input
                     className="input"
                     placeholder="Tags (comma-separated)"
                     value={feedbackTags}
-                    onChange={(e) => setFeedbackTags(e.target.value)}
+                    onChange={(e) => {
+                      setFeedbackTags(e.target.value)
+                      setFeedbackSuccess(null)
+                    }}
+                    aria-label="Feedback tags"
                   />
                 </div>
                 <textarea
                   className="input min-h-[88px]"
                   placeholder="Original content"
                   value={feedbackOriginalContent}
-                  onChange={(e) => setFeedbackOriginalContent(e.target.value)}
+                  onChange={(e) => {
+                    setFeedbackOriginalContent(e.target.value)
+                    setFeedbackSuccess(null)
+                  }}
+                  aria-label="Original content"
                 />
                 <textarea
                   className="input min-h-[88px]"
-                  placeholder="Corrected content (optional)"
+                  placeholder="Corrected content"
                   value={feedbackCorrectedContent}
-                  onChange={(e) => setFeedbackCorrectedContent(e.target.value)}
+                  onChange={(e) => {
+                    setFeedbackCorrectedContent(e.target.value)
+                    setFeedbackSuccess(null)
+                  }}
+                  aria-label="Corrected content"
                 />
                 <input
                   className="input"
                   placeholder="Note (optional)"
                   value={feedbackNote}
-                  onChange={(e) => setFeedbackNote(e.target.value)}
+                  onChange={(e) => {
+                    setFeedbackNote(e.target.value)
+                    setFeedbackSuccess(null)
+                  }}
+                  aria-label="Feedback note"
                 />
 
                 <button
                   type="button"
                   className="btn-secondary px-3 py-2"
-                  disabled={feedbackMutation.isPending || !feedbackOriginalContent.trim()}
-                  onClick={() => {
+                  disabled={
+                    implicitFeedbackMutation.isPending ||
+                    feedbackMutation.isPending ||
+                    !feedbackOriginalContent.trim() ||
+                    !feedbackCorrectedContent.trim()
+                  }
+                  onClick={async () => {
                     if (!selectedTask) return
-                    const tags = feedbackTags
-                      .split(',')
-                      .map((value) => value.trim())
-                      .filter(Boolean)
+                    const original = feedbackOriginalContent.trim()
+                    const corrected = feedbackCorrectedContent.trim()
+                    if (original === corrected) {
+                      setFeedbackError(
+                        'Corrected content must be different to capture implicit feedback.'
+                      )
+                      return
+                    }
+
+                    setFeedbackError(null)
+                    try {
+                      await implicitFeedbackMutation.mutateAsync({
+                        task_id: selectedTask.id,
+                        reviewer_id: feedbackReviewerId.trim() || undefined,
+                        original_content: original,
+                        corrected_content: corrected,
+                        tags: parseTags(feedbackTags),
+                      })
+                    } catch {
+                      // onError already sets message
+                    }
+                  }}
+                  aria-label="Save reviewer edit as implicit feedback"
+                >
+                  {implicitFeedbackMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <MessageSquarePlus className="w-4 h-4" />
+                  )}
+                  Save Reviewer Edit (Implicit)
+                </button>
+
+                <button
+                  type="button"
+                  className="btn-secondary px-3 py-2"
+                  disabled={
+                    feedbackMutation.isPending ||
+                    implicitFeedbackMutation.isPending ||
+                    !feedbackOriginalContent.trim()
+                  }
+                  onClick={async () => {
+                    if (!selectedTask) return
+                    const tags = parseTags(feedbackTags)
 
                     if (tags.length === 0) {
                       setFeedbackError('At least one tag is required.')
                       return
                     }
 
+                    const original = feedbackOriginalContent.trim()
+                    const corrected = feedbackCorrectedContent.trim()
                     setFeedbackError(null)
-                    feedbackMutation.mutate({
-                      task_id: selectedTask.id,
-                      reviewer_id: feedbackReviewerId.trim() || undefined,
-                      tags,
-                      original_content: feedbackOriginalContent.trim(),
-                      corrected_content: feedbackCorrectedContent.trim() || undefined,
-                      note: feedbackNote.trim() || undefined,
-                    })
+                    try {
+                      if (corrected && corrected !== original) {
+                        await implicitFeedbackMutation.mutateAsync({
+                          task_id: selectedTask.id,
+                          reviewer_id: feedbackReviewerId.trim() || undefined,
+                          original_content: original,
+                          corrected_content: corrected,
+                          tags,
+                        })
+                      }
+
+                      await feedbackMutation.mutateAsync({
+                        task_id: selectedTask.id,
+                        reviewer_id: feedbackReviewerId.trim() || undefined,
+                        tags,
+                        original_content: original,
+                        corrected_content: corrected || undefined,
+                        note: feedbackNote.trim() || undefined,
+                      })
+                    } catch {
+                      // onError already sets message
+                    }
                   }}
+                  aria-label="Save explicit feedback"
                 >
-                  {feedbackMutation.isPending ? (
+                  {feedbackMutation.isPending || implicitFeedbackMutation.isPending ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
                     <Flag className="w-4 h-4" />
@@ -1040,6 +1162,11 @@ export function OperationsWorkspace() {
                   Save Explicit Feedback
                 </button>
                 {feedbackError && <p className="text-sm text-red-600">{feedbackError}</p>}
+                {feedbackSuccess && (
+                  <p className="text-sm text-green-700" aria-live="polite">
+                    {feedbackSuccess}
+                  </p>
+                )}
 
                 <div className="pt-1">
                   <p className="text-xs uppercase tracking-wide text-surface-500 mb-2">

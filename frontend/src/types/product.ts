@@ -103,6 +103,14 @@ export interface CreateExplicitFeedbackPayload {
   note?: string
 }
 
+export interface CreateImplicitFeedbackPayload {
+  task_id: number
+  reviewer_id?: string
+  original_content: string
+  corrected_content: string
+  tags?: string[]
+}
+
 export interface FeedbackEntry {
   id: number
   task_id: number
