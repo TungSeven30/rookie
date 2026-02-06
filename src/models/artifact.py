@@ -3,7 +3,7 @@
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ARRAY, DateTime, ForeignKey, String, Text
+from sqlalchemy import ARRAY, JSON, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.models.base import Base
@@ -24,7 +24,9 @@ class FeedbackEntry(Base):
     original_content: Mapped[str] = mapped_column(Text, nullable=False)
     corrected_content: Mapped[str | None] = mapped_column(Text)
     diff_summary: Mapped[str | None] = mapped_column(Text)
-    tags: Mapped[list[str] | None] = mapped_column(ARRAY(String(50)))
+    tags: Mapped[list[str] | None] = mapped_column(
+        ARRAY(String(50)).with_variant(JSON, "sqlite")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )

@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     demo_retention_days: int = 7
     """Retention period for demo uploads and artifacts."""
 
+    taxdome_webhook_secret: str | None = None
+    """Optional shared secret for validating TaxDome webhook calls."""
+
     @field_validator("allowed_upload_types", mode="before")
     @classmethod
     def parse_allowed_upload_types(cls, value: object) -> list[str]:

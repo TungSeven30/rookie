@@ -5,12 +5,14 @@ from collections.abc import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from src.api.clients import router as clients_router
 from src.api.demo import router as demo_router
 from src.api.health import router as health_router
+from src.api.integrations import router as integrations_router
 from src.api.middleware import RequestContextMiddleware
+from src.api.review import router as review_router
+from src.api.status import router as status_router
 from src.api.tasks import router as tasks_router
 from src.core.config import settings
 from src.core.database import create_engine, create_session_factory
@@ -89,3 +91,6 @@ app.include_router(health_router)
 app.include_router(tasks_router)
 app.include_router(clients_router)
 app.include_router(demo_router)
+app.include_router(review_router)
+app.include_router(status_router)
+app.include_router(integrations_router)
