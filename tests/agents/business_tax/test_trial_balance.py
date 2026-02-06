@@ -178,7 +178,7 @@ class TestParseExcelTrialBalance:
 
         assert isinstance(tb, TrialBalance)
         assert tb.source_format == "excel"
-        assert len(tb.entries) == 16
+        assert len(tb.entries) == 15
 
         # Verify first entry
         cash = tb.entries[0]

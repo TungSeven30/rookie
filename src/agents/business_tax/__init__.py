@@ -12,6 +12,13 @@ Shareholder basis tracking (Form 7203):
 - BasisAdjustmentInputs: Frozen dataclass for year's adjustment items
 - BasisResult: Computed basis result with allowed/suspended losses
 - calculate_shareholder_basis: IRS ordering rule engine
+
+Trial balance parsing and GL-to-1120S mapping:
+- parse_excel_trial_balance: Parse Excel bytes into TrialBalance
+- map_gl_to_1120s: Map GL accounts to 1120-S lines with confidence
+- aggregate_mapped_amounts: Sum mapped amounts by form line
+- GLMapping: Single account-to-line mapping with confidence
+- DEFAULT_GL_MAPPING: Pattern-to-line mapping dictionary
 """
 
 from src.agents.business_tax.basis import (
@@ -28,6 +35,13 @@ from src.agents.business_tax.models import (
     ShareholderInfo,
     TrialBalance,
     TrialBalanceEntry,
+)
+from src.agents.business_tax.trial_balance import (
+    DEFAULT_GL_MAPPING,
+    GLMapping,
+    aggregate_mapped_amounts,
+    map_gl_to_1120s,
+    parse_excel_trial_balance,
 )
 
 __all__ = [
@@ -47,4 +61,10 @@ __all__ = [
     "BasisAdjustmentInputs",
     "BasisResult",
     "calculate_shareholder_basis",
+    # Trial balance parsing & mapping
+    "DEFAULT_GL_MAPPING",
+    "GLMapping",
+    "aggregate_mapped_amounts",
+    "map_gl_to_1120s",
+    "parse_excel_trial_balance",
 ]
