@@ -277,6 +277,17 @@ Plans:
 
 **Rollback:** If K-1 accuracy <85%, defer to manual K-1 preparation.
 
+**Plans:** 7 plans in 5 waves
+
+Plans:
+- [ ] 06-01-PLAN.md (Wave 1) -- Business tax Pydantic models (Form1120S, ScheduleK, ScheduleL, ShareholderInfo, TrialBalance)
+- [ ] 06-02-PLAN.md (Wave 2) -- Trial balance extraction + GL-to-1120S mapping (TDD)
+- [ ] 06-03-PLAN.md (Wave 2) -- Shareholder basis tracker (TDD, highest risk)
+- [ ] 06-04-PLAN.md (Wave 3) -- 1120-S calculator: Page 1, Schedule K, Schedule L, M-1, M-2 (TDD)
+- [ ] 06-05-PLAN.md (Wave 3) -- K-1 allocation + handoff protocol (TDD)
+- [ ] 06-06-PLAN.md (Wave 4) -- Output generators (Drake 1120-S, K-1, basis worksheets, preparer notes)
+- [ ] 06-07-PLAN.md (Wave 5) -- BusinessTaxAgent orchestrator + dispatcher integration + end-to-end tests
+
 ---
 
 ### Phase 7: Bookkeeping Agent
@@ -337,7 +348,7 @@ Plans:
 | 3 - Personal Tax Simple | Complete | 7/7 | 100% |
 | 4 - Personal Tax Complex | Complete | 8/8 | 100% |
 | 5 - Review Infrastructure | In Progress | 1/4 | 25% |
-| 6 - Business Tax | Pending | 0/0 | 0% |
+| 6 - Business Tax | Planned | 0/7 | 0% |
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
