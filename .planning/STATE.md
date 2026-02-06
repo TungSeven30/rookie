@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-02-06
 **Current Phase:** 6 - Business Tax Agent
-**Status:** In Progress
+**Status:** Phase Complete
 
 ## Project Reference
 
@@ -10,7 +10,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 
 **Core value:** CPAs are liable for the work, not the AI. Rookie prepares, humans approve.
 
-**Current focus:** Phase 6 - Business Tax Agent (data models + TB parsing + basis tracker + calculator + K-1 handoff + output generators complete)
+**Current focus:** Phase 6 complete - Business Tax Agent fully operational (264 tests, 7/7 plans delivered)
 
 ## Phase Progress
 
@@ -21,26 +21,26 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 3 - Personal Tax Simple | Complete | 7/7 | 100% |
 | 4 - Personal Tax Complex | Complete | 8/8 | 100% |
 | 5 - Review Infrastructure | In Progress | 1/4 (+05-02 partial) | 45% |
-| 6 - Business Tax | In Progress | 6/7 | 86% |
+| 6 - Business Tax | Complete | 7/7 | 100% |
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall Progress:** [######__] 70%
+**Overall Progress:** [######__] 73%
 
 ## Current Position
 
 - **Phase:** 6 of 8 (Business Tax Agent)
-- **Plan:** 06-06 complete - Output generators shipped
-- **Status:** Phase 6 in progress (data models + TB mapping + basis tracker + calculator + K-1 handoff + output generators done; agent integration pending)
-- **Last activity:** 2026-02-06 - Completed 06-06 (Drake worksheet, K-1/basis worksheets, preparer notes, 38 tests)
+- **Plan:** 06-07 complete - Agent orchestrator + E2E tests shipped
+- **Status:** **Phase 6 COMPLETE** (7/7 plans, 264 tests, full 1120-S workflow operational)
+- **Last activity:** 2026-02-06 - Completed 06-07 (BusinessTaxAgent, 15-step workflow, 18 E2E tests)
 
 ## Performance Metrics
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Plans completed | 33 | - |
+| Plans completed | 34 | - |
 | Requirements delivered | 24/60 | 60 |
-| Phases complete | 4/8 | 8 |
+| Phases complete | 5/8 | 8 |
 
 ## Accumulated Context
 
@@ -118,6 +118,9 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2026-02-06 | Optional M-1/M-2 params on Drake generator | Form1120SResult lacks these fields; avoids model changes |
 | 2026-02-06 | Compensation/distribution ratio < 0.5 triggers warning | Common IRS audit trigger for S-Corp reasonable compensation |
 | 2026-02-06 | K-1 box descriptions hardcoded (not derived from model) | IRS form layout is stable; "Box N:" prefix needed for CPA readability |
+| 2026-02-06 | _build_basis_inputs as module-level helper | Keeps agent process() clean; separates K-1-to-BasisAdjustmentInputs mapping |
+| 2026-02-06 | business_tax_handler is stub (Task-only signature) | TaskDispatcher AgentHandler takes only Task; full implementation needs metadata extraction |
+| 2026-02-06 | Charitable contributions treated as deductions in basis | Section 179 and charitable both reduce basis like losses per IRS rules |
 
 ### Deferred Items
 
@@ -177,6 +180,7 @@ None currently.
 - [x] Execute 06-04-PLAN.md (1120-S Calculator)
 - [x] Execute 06-05-PLAN.md (K-1 Allocation and Handoff Protocol)
 - [x] Execute 06-06-PLAN.md (Output Generators)
+- [x] Execute 06-07-PLAN.md (BusinessTaxAgent Orchestrator + E2E Tests)
 
 ## Recent Activity
 
@@ -228,22 +232,27 @@ None currently.
 | 2026-02-06 | Completed 06-05: K-1 Allocation and Handoff Protocol (3 min) - pro-rata allocation, residual rounding, orjson handoff, 34 TDD tests |
 | 2026-02-06 | Completed 06-04: 1120-S Calculator (6 min) - Page 1/K/L/M-1/M-2 pure Decimal computation, 41 TDD tests |
 | 2026-02-06 | Completed 06-06: Output Generators (5 min) - Drake worksheet, K-1/basis worksheets, preparer notes, 38 tests |
+| 2026-02-06 | Completed 06-07: BusinessTaxAgent Orchestrator (4 min) - 15-step workflow, 18 E2E tests, K-1 handoff, 264 total Phase 6 tests |
+| 2026-02-06 | **Phase 6 Complete** - Business Tax Agent fully operational |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Completed Phase 6 Plan 06 (Output Generators):
-- generate_1120s_drake_worksheet: 7-sheet Excel workbook for Drake Tax Software
-- generate_k1_worksheets: per-shareholder K-1 detail with allocated boxes
-- generate_basis_worksheets: per-shareholder Form 7203 structure
-- generate_business_preparer_notes: Markdown with compensation/balance checks
-- 38 tests all passing, no new dependencies
+Completed Phase 6 Plan 07 (BusinessTaxAgent Orchestrator + E2E Tests):
+- BusinessTaxAgent with 15-step process() method
+- BusinessTaxResult dataclass with all outputs
+- EscalationRequired exception for human intervention
+- business_tax_handler stub for TaskDispatcher
+- 18 tests: orchestration, escalations, E2E, K-1 handoff
+- Phase 6 complete: 264 total tests, 7/7 plans delivered
 
 ### Next Session Starting Point
 
-Continue Phase 6 with remaining plan (06-07 Agent Integration).
-Phase 5 still has pending plans (05-02 closure, 05-03, 05-04).
+Phase 6 is complete. Next priorities:
+- Phase 5 still has pending plans (05-02 closure, 05-03, 05-04)
+- Phase 7 (Bookkeeping) planning
+- Phase 8 (Production Hardening) planning
 
 ### Context to Preserve
 
@@ -431,10 +440,20 @@ Phase 5 still has pending plans (05-02 closure, 05-03, 05-04).
 - Preparer notes: 8 sections including compensation check (ratio < 0.5 warning) and balance check
 - `tests/agents/business_tax/test_output.py` - 38 tests
 
+**Business Tax Agent (06-07):**
+- `src/agents/business_tax/agent.py` - BusinessTaxAgent class, 15-step workflow
+- BusinessTaxResult dataclass with 4 output paths + Form1120SResult + K-1 handoff + basis results
+- EscalationRequired exception (mirrors PersonalTaxAgent pattern)
+- business_tax_handler for TaskDispatcher registration
+- _build_basis_inputs: separates K-1 allocated amounts into BasisAdjustmentInputs
+- Workflow: parse TB -> map GL -> aggregate -> Page 1 -> Sch K -> allocate K-1 -> basis -> Sch L -> M-1/M-2 -> build result -> comp check -> outputs -> handoff
+- `tests/agents/business_tax/test_agent.py` - 18 tests (orchestration + escalation + E2E + K-1 handoff)
+- Total Phase 6: 264 tests across 8 test files
+
 **Critical Path:**
 Phase 1 -> 2 -> 3 -> 4 -> 5 -> 7 -> 8
 
 ---
 
 *State initialized: 2026-01-23*
-*Last updated: 2026-02-06T19:22Z*
+*Last updated: 2026-02-06T19:29Z*
