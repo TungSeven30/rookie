@@ -40,8 +40,18 @@ Output generators (CPA-facing deliverables):
 - generate_k1_worksheets: Per-shareholder K-1 detail Excel workbook
 - generate_basis_worksheets: Per-shareholder Form 7203 basis Excel workbook
 - generate_business_preparer_notes: Markdown preparer notes for CPA review
+
+Agent orchestration:
+- BusinessTaxAgent: Complete 1120-S workflow orchestrator
+- BusinessTaxResult: Dataclass with all outputs and metadata
+- business_tax_handler: TaskDispatcher handler for task_type="business_tax"
 """
 
+from src.agents.business_tax.agent import (
+    BusinessTaxAgent,
+    BusinessTaxResult,
+    business_tax_handler,
+)
 from src.agents.business_tax.calculator import (
     Page1Result,
     ScheduleM1Result,
@@ -89,6 +99,10 @@ from src.agents.business_tax.trial_balance import (
 )
 
 __all__ = [
+    # Agent orchestration
+    "BusinessTaxAgent",
+    "BusinessTaxResult",
+    "business_tax_handler",
     # Core result
     "Form1120SResult",
     # Schedules
