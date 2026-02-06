@@ -19,12 +19,26 @@ Trial balance parsing and GL-to-1120S mapping:
 - aggregate_mapped_amounts: Sum mapped amounts by form line
 - GLMapping: Single account-to-line mapping with confidence
 - DEFAULT_GL_MAPPING: Pattern-to-line mapping dictionary
+
+K-1 allocation and handoff protocol:
+- allocate_k1_item: Pro-rata allocation of single Schedule K line item
+- allocate_k1s: Full Schedule K allocation to all shareholders
+- generate_k1_for_handoff: Create validated FormK1 from allocated amounts
+- serialize_k1_artifact: Serialize FormK1 to JSON for inter-agent handoff
+- deserialize_k1_artifact: Deserialize JSON back to FormK1
 """
 
 from src.agents.business_tax.basis import (
     BasisAdjustmentInputs,
     BasisResult,
     calculate_shareholder_basis,
+)
+from src.agents.business_tax.handoff import (
+    allocate_k1_item,
+    allocate_k1s,
+    deserialize_k1_artifact,
+    generate_k1_for_handoff,
+    serialize_k1_artifact,
 )
 from src.agents.business_tax.models import (
     Form1120SResult,
@@ -67,4 +81,10 @@ __all__ = [
     "aggregate_mapped_amounts",
     "map_gl_to_1120s",
     "parse_excel_trial_balance",
+    # K-1 allocation & handoff
+    "allocate_k1_item",
+    "allocate_k1s",
+    "generate_k1_for_handoff",
+    "serialize_k1_artifact",
+    "deserialize_k1_artifact",
 ]
