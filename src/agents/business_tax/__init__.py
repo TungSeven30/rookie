@@ -7,8 +7,18 @@ This module provides Pydantic data models for the Business Tax Agent:
 - ShareholderInfo: Shareholder data for K-1 generation
 - TrialBalance / TrialBalanceEntry: General ledger account structures
 - ScheduleKLine / ScheduleLLine: Individual line items
+
+Shareholder basis tracking (Form 7203):
+- BasisAdjustmentInputs: Frozen dataclass for year's adjustment items
+- BasisResult: Computed basis result with allowed/suspended losses
+- calculate_shareholder_basis: IRS ordering rule engine
 """
 
+from src.agents.business_tax.basis import (
+    BasisAdjustmentInputs,
+    BasisResult,
+    calculate_shareholder_basis,
+)
 from src.agents.business_tax.models import (
     Form1120SResult,
     ScheduleK,
@@ -33,4 +43,8 @@ __all__ = [
     # Trial balance
     "TrialBalance",
     "TrialBalanceEntry",
+    # Basis tracking
+    "BasisAdjustmentInputs",
+    "BasisResult",
+    "calculate_shareholder_basis",
 ]
