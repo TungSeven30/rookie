@@ -10,7 +10,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 
 **Core value:** CPAs are liable for the work, not the AI. Rookie prepares, humans approve.
 
-**Current focus:** Phase 6 - Business Tax Agent (data models + TB parsing + basis tracker + K-1 handoff complete)
+**Current focus:** Phase 6 - Business Tax Agent (data models + TB parsing + basis tracker + calculator + K-1 handoff + output generators complete)
 
 ## Phase Progress
 
@@ -21,24 +21,24 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 3 - Personal Tax Simple | Complete | 7/7 | 100% |
 | 4 - Personal Tax Complex | Complete | 8/8 | 100% |
 | 5 - Review Infrastructure | In Progress | 1/4 (+05-02 partial) | 45% |
-| 6 - Business Tax | In Progress | 5/7 | 71% |
+| 6 - Business Tax | In Progress | 6/7 | 86% |
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall Progress:** [######__] 68%
+**Overall Progress:** [######__] 70%
 
 ## Current Position
 
 - **Phase:** 6 of 8 (Business Tax Agent)
-- **Plan:** 06-04 complete - 1120-S calculator shipped
-- **Status:** Phase 6 in progress (data models + TB mapping + basis tracker + calculator + K-1 handoff done; agent integration pending)
-- **Last activity:** 2026-02-06 - Completed 06-04 (Page 1/K/L/M-1/M-2 pure computation, 41 TDD tests)
+- **Plan:** 06-06 complete - Output generators shipped
+- **Status:** Phase 6 in progress (data models + TB mapping + basis tracker + calculator + K-1 handoff + output generators done; agent integration pending)
+- **Last activity:** 2026-02-06 - Completed 06-06 (Drake worksheet, K-1/basis worksheets, preparer notes, 38 tests)
 
 ## Performance Metrics
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Plans completed | 32 | - |
+| Plans completed | 33 | - |
 | Requirements delivered | 24/60 | 60 |
 | Phases complete | 4/8 | 8 |
 
@@ -115,6 +115,9 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2026-02-06 | M-1 Line 5 = tax-exempt income (subtraction side) | Matches IRS Schedule M-1: income on books not included on Sch K |
 | 2026-02-06 | M-2 income/loss separation into distinct buckets | Clearer AAA tracking; losses reduce AAA but distributions cannot make it negative |
 | 2026-02-06 | Unknown separately_stated keys silently ignored | Resilient to upstream changes in compute_schedule_k |
+| 2026-02-06 | Optional M-1/M-2 params on Drake generator | Form1120SResult lacks these fields; avoids model changes |
+| 2026-02-06 | Compensation/distribution ratio < 0.5 triggers warning | Common IRS audit trigger for S-Corp reasonable compensation |
+| 2026-02-06 | K-1 box descriptions hardcoded (not derived from model) | IRS form layout is stable; "Box N:" prefix needed for CPA readability |
 
 ### Deferred Items
 
@@ -173,6 +176,7 @@ None currently.
 - [x] Execute 06-03-PLAN.md (Shareholder Basis Tracker)
 - [x] Execute 06-04-PLAN.md (1120-S Calculator)
 - [x] Execute 06-05-PLAN.md (K-1 Allocation and Handoff Protocol)
+- [x] Execute 06-06-PLAN.md (Output Generators)
 
 ## Recent Activity
 
@@ -223,22 +227,22 @@ None currently.
 | 2026-02-06 | Completed 06-02: Trial Balance Parsing and GL Mapping (5 min) - Excel parser + 23-pattern heuristic mapping + 3-tier confidence, 44 TDD tests |
 | 2026-02-06 | Completed 06-05: K-1 Allocation and Handoff Protocol (3 min) - pro-rata allocation, residual rounding, orjson handoff, 34 TDD tests |
 | 2026-02-06 | Completed 06-04: 1120-S Calculator (6 min) - Page 1/K/L/M-1/M-2 pure Decimal computation, 41 TDD tests |
+| 2026-02-06 | Completed 06-06: Output Generators (5 min) - Drake worksheet, K-1/basis worksheets, preparer notes, 38 tests |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Completed Phase 6 Plan 04 (1120-S Calculator):
-- compute_page1: Income/deductions -> ordinary business income (Line 22)
-- compute_schedule_k: Box 1 linkage + separately stated items
-- compute_schedule_l: Balance sheet with prior year carryforward + RE update
-- compute_schedule_m1: Book-to-tax reconciliation (IRS Line 5/6 semantics)
-- compute_schedule_m2: AAA tracking (losses can go negative, not distributions)
-- 41 TDD tests all passing, no new dependencies
+Completed Phase 6 Plan 06 (Output Generators):
+- generate_1120s_drake_worksheet: 7-sheet Excel workbook for Drake Tax Software
+- generate_k1_worksheets: per-shareholder K-1 detail with allocated boxes
+- generate_basis_worksheets: per-shareholder Form 7203 structure
+- generate_business_preparer_notes: Markdown with compensation/balance checks
+- 38 tests all passing, no new dependencies
 
 ### Next Session Starting Point
 
-Continue Phase 6 with remaining plans (06-06, 06-07).
+Continue Phase 6 with remaining plan (06-07 Agent Integration).
 Phase 5 still has pending plans (05-02 closure, 05-03, 05-04).
 
 ### Context to Preserve
@@ -419,10 +423,18 @@ Phase 5 still has pending plans (05-02 closure, 05-03, 05-04).
 - `tests/agents/business_tax/test_calculator.py` - 24 tests (Page 1 + Schedule K)
 - `tests/agents/business_tax/test_schedule_l.py` - 17 tests (Schedule L + M-1 + M-2)
 
+**Output Generators (06-06):**
+- `src/agents/business_tax/output.py` - generate_1120s_drake_worksheet, generate_k1_worksheets, generate_basis_worksheets, generate_business_preparer_notes
+- Drake worksheet: Summary, Page 1 Income/Deductions, Schedule K/L, optional M-1/M-2
+- K-1 worksheets: per-shareholder with IRS box layout and summary totals
+- Basis worksheets: Form 7203 structure (Section A Stock, Section B Debt)
+- Preparer notes: 8 sections including compensation check (ratio < 0.5 warning) and balance check
+- `tests/agents/business_tax/test_output.py` - 38 tests
+
 **Critical Path:**
 Phase 1 -> 2 -> 3 -> 4 -> 5 -> 7 -> 8
 
 ---
 
 *State initialized: 2026-01-23*
-*Last updated: 2026-02-06*
+*Last updated: 2026-02-06T19:22Z*
