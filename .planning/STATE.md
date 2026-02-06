@@ -10,7 +10,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 
 **Core value:** CPAs are liable for the work, not the AI. Rookie prepares, humans approve.
 
-**Current focus:** Phase 6 - Business Tax Agent (data models + TB parsing + basis tracker complete)
+**Current focus:** Phase 6 - Business Tax Agent (data models + TB parsing + basis tracker + K-1 handoff complete)
 
 ## Phase Progress
 
@@ -21,7 +21,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 3 - Personal Tax Simple | Complete | 7/7 | 100% |
 | 4 - Personal Tax Complex | Complete | 8/8 | 100% |
 | 5 - Review Infrastructure | In Progress | 1/4 (+05-02 partial) | 45% |
-| 6 - Business Tax | In Progress | 3/7 | 43% |
+| 6 - Business Tax | In Progress | 4/7 | 57% |
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
@@ -30,15 +30,15 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 ## Current Position
 
 - **Phase:** 6 of 8 (Business Tax Agent)
-- **Plan:** 06-03 complete - shareholder basis tracker shipped
-- **Status:** Phase 6 in progress (data models + TB mapping + basis tracker done; K-1 gen + agent integration pending)
-- **Last activity:** 2026-02-06 - Completed 06-03 (IRS 4-step basis calculation, 47 TDD tests)
+- **Plan:** 06-05 complete - K-1 allocation and handoff protocol shipped
+- **Status:** Phase 6 in progress (data models + TB mapping + basis tracker + K-1 handoff done; calc engine + agent integration pending)
+- **Last activity:** 2026-02-06 - Completed 06-05 (K-1 pro-rata allocation, residual rounding, orjson handoff, 34 TDD tests)
 
 ## Performance Metrics
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Plans completed | 30 | - |
+| Plans completed | 31 | - |
 | Requirements delivered | 24/60 | 60 |
 | Phases complete | 4/8 | 8 |
 
@@ -108,6 +108,9 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2026-02-06 | 3-tier confidence: HIGH (pattern), MEDIUM (type-hinted name), LOW (ambiguous) | Clear CPA review prioritization |
 | 2026-02-06 | Pure regex heuristic GL mapping (no LLM) | Deterministic, fast, auditable in v1 |
 | 2026-02-06 | Credit-positive lines negate net_balance for income sign | Revenue credit balances become positive amounts |
+| 2026-02-06 | Last-shareholder-residual rounding for K-1 allocation | Standard accounting practice; guarantees allocations sum exactly to Schedule K totals |
+| 2026-02-06 | 15-field ScheduleK-to-FormK1 mapping dict | Single source of truth for field name translation (dividends->dividend_income, etc.) |
+| 2026-02-06 | current_year_increase from positive income allocations | BasisResult lacks intermediate step values; heuristic matches allocated income |
 
 ### Deferred Items
 
@@ -164,6 +167,7 @@ None currently.
 - [x] Execute 06-01-PLAN.md (Business Tax Data Models)
 - [x] Execute 06-02-PLAN.md (Trial Balance Parsing and GL Mapping)
 - [x] Execute 06-03-PLAN.md (Shareholder Basis Tracker)
+- [x] Execute 06-05-PLAN.md (K-1 Allocation and Handoff Protocol)
 
 ## Recent Activity
 
@@ -212,21 +216,22 @@ None currently.
 | 2026-02-06 | Completed 06-01: Business Tax Data Models (5 min) - 8 Pydantic models for Form 1120-S, 42 tests |
 | 2026-02-06 | Completed 06-03: Shareholder Basis Tracker (3 min) - IRS 4-step ordering, 47 TDD tests |
 | 2026-02-06 | Completed 06-02: Trial Balance Parsing and GL Mapping (5 min) - Excel parser + 23-pattern heuristic mapping + 3-tier confidence, 44 TDD tests |
+| 2026-02-06 | Completed 06-05: K-1 Allocation and Handoff Protocol (3 min) - pro-rata allocation, residual rounding, orjson handoff, 34 TDD tests |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Completed Phase 6 Plan 03 (Shareholder Basis Tracker):
-- BasisAdjustmentInputs (frozen dataclass) + BasisResult + calculate_shareholder_basis()
-- IRS 4-step ordering: income -> distributions -> nondeductible -> losses
-- Stock basis exhausted before debt basis; excess losses suspended
-- 47 TDD tests all passing, pure Decimal arithmetic
-- No new dependencies added
+Completed Phase 6 Plan 05 (K-1 Allocation and Handoff Protocol):
+- allocate_k1_item with last-shareholder residual rounding
+- allocate_k1s with 15-field ScheduleK-to-FormK1 mapping
+- generate_k1_for_handoff with optional BasisResult capital account
+- serialize/deserialize via orjson for inter-agent handoff
+- 34 TDD tests all passing, allocations reconcile exactly to Schedule K totals
 
 ### Next Session Starting Point
 
-Continue Phase 6 with K-1 generation (06-04), calculation engine (06-05), and agent integration.
+Continue Phase 6 with remaining plans (06-04, 06-06, 06-07).
 Phase 5 still has pending plans (05-02 closure, 05-03, 05-04).
 
 ### Context to Preserve
@@ -389,6 +394,14 @@ Phase 5 still has pending plans (05-02 closure, 05-03, 05-04).
 - Stock basis exhausted before debt basis for losses; excess suspended
 - All Decimal arithmetic, no LLM calls, no database
 - `tests/agents/business_tax/test_basis.py` - 47 TDD tests
+
+**K-1 Allocation and Handoff (06-05):**
+- `src/agents/business_tax/handoff.py` - allocate_k1_item, allocate_k1s, generate_k1_for_handoff, serialize/deserialize
+- Last-shareholder residual rounding for exact reconciliation
+- 15-field ScheduleK-to-FormK1 name mapping (dividends->dividend_income, etc.)
+- Optional BasisResult -> capital account fields on FormK1
+- orjson serialization for inter-agent handoff
+- `tests/agents/business_tax/test_handoff.py` - 34 TDD tests
 
 **Critical Path:**
 Phase 1 -> 2 -> 3 -> 4 -> 5 -> 7 -> 8
