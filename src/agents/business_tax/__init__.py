@@ -20,6 +20,14 @@ Trial balance parsing and GL-to-1120S mapping:
 - GLMapping: Single account-to-line mapping with confidence
 - DEFAULT_GL_MAPPING: Pattern-to-line mapping dictionary
 
+1120-S tax computation:
+- compute_page1: Page 1 income/deductions -> ordinary business income
+- compute_schedule_k: Shareholder pro-rata share items (Boxes 1-17)
+- compute_schedule_l: Balance sheet per books (beginning/ending)
+- compute_schedule_m1: Book-to-tax income reconciliation
+- compute_schedule_m2: AAA (Accumulated Adjustments Account) analysis
+- Page1Result / ScheduleM1Result / ScheduleM2Result: Computation result dataclasses
+
 K-1 allocation and handoff protocol:
 - allocate_k1_item: Pro-rata allocation of single Schedule K line item
 - allocate_k1s: Full Schedule K allocation to all shareholders
@@ -28,6 +36,16 @@ K-1 allocation and handoff protocol:
 - deserialize_k1_artifact: Deserialize JSON back to FormK1
 """
 
+from src.agents.business_tax.calculator import (
+    Page1Result,
+    ScheduleM1Result,
+    ScheduleM2Result,
+    compute_page1,
+    compute_schedule_k,
+    compute_schedule_l,
+    compute_schedule_m1,
+    compute_schedule_m2,
+)
 from src.agents.business_tax.basis import (
     BasisAdjustmentInputs,
     BasisResult,
@@ -81,6 +99,15 @@ __all__ = [
     "aggregate_mapped_amounts",
     "map_gl_to_1120s",
     "parse_excel_trial_balance",
+    # 1120-S calculator
+    "Page1Result",
+    "ScheduleM1Result",
+    "ScheduleM2Result",
+    "compute_page1",
+    "compute_schedule_k",
+    "compute_schedule_l",
+    "compute_schedule_m1",
+    "compute_schedule_m2",
     # K-1 allocation & handoff
     "allocate_k1_item",
     "allocate_k1s",

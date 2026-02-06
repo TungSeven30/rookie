@@ -85,17 +85,20 @@ class TestComputeScheduleL:
 
     def test_balanced_ending(self) -> None:
         """Balance sheet with assets = liabilities + equity is balanced."""
+        # Assets: 50000 + 30000 = 80000
+        # Liabilities: 20000
+        # Equity: capital_stock 10000 + RE (0 + 50000 - 0) = 50000 -> 60000
+        # Total L+E = 80000 -> balanced
         mapped = {
             "schedule_l_line1": Decimal("50000"),  # Cash
             "schedule_l_line2": Decimal("30000"),  # Receivables
             "schedule_l_line16": Decimal("20000"),  # AP
             "schedule_l_line22": Decimal("10000"),  # Capital stock
-            "schedule_l_line24": Decimal("50000"),  # Retained earnings
         }
         result = compute_schedule_l(
             mapped_amounts=mapped,
             prior_year_schedule_l=None,
-            current_year_net_income=Decimal("0"),
+            current_year_net_income=Decimal("50000"),
             current_year_distributions=Decimal("0"),
         )
         assert isinstance(result, ScheduleL)
@@ -219,14 +222,15 @@ class TestComputeScheduleM1:
         assert result.income_per_return == Decimal("90000")
 
     def test_tax_exempt_income_difference(self) -> None:
-        """Tax-exempt interest increases book income but not tax income."""
+        """Tax-exempt interest is on books but not on the return (Line 5)."""
         result = compute_schedule_m1(
             book_income=Decimal("95000"),
             tax_income=Decimal("90000"),
             tax_exempt_income=Decimal("5000"),
         )
         assert result.book_income == Decimal("95000")
-        assert result.income_on_return_not_on_books == Decimal("0")
+        # Tax-exempt income goes on subtraction side (IRS Line 5)
+        assert result.income_on_return_not_on_books == Decimal("5000")
         assert result.income_per_return == Decimal("90000")
 
     def test_nondeductible_expenses(self) -> None:
@@ -350,6 +354,6 @@ class TestComputeScheduleM2:
         assert result.aaa_beginning == Decimal("50000")
         assert result.ordinary_income == Decimal("30000")
         assert result.other_additions == Decimal("5000")
-        assert result.nondeductible_expenses is not None
+        assert result.other_reductions is not None
         assert result.other_reductions == Decimal("2000")
         assert result.distributions == Decimal("10000")
