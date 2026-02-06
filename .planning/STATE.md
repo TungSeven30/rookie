@@ -20,19 +20,19 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2 - Core Framework | Complete | 6/6 | 100% |
 | 3 - Personal Tax Simple | Complete | 7/7 | 100% |
 | 4 - Personal Tax Complex | Complete | 8/8 | 100% |
-| 5 - Review Infrastructure | In Progress | 1/4 | 25% |
+| 5 - Review Infrastructure | In Progress | 1/4 (+05-02 partial) | 40% |
 | 6 - Business Tax | Pending | 0/0 | 0% |
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall Progress:** [#####___] 62%
+**Overall Progress:** [#####___] 64%
 
 ## Current Position
 
 - **Phase:** 5 of 8 (Review Infrastructure)
-- **Plan:** 05-01 complete - backend review infrastructure APIs shipped
-- **Status:** Phase 5 execution started (backend slice complete, UI + validation pending)
-- **Last activity:** 2026-02-06 - Completed 05-01 (checker, feedback, status, TaxDome API scaffold)
+- **Plan:** 05-01 complete, 05-02 partial implementation completed
+- **Status:** Phase 5 execution active (backend complete, dashboard/review UI functional, validations pending)
+- **Last activity:** 2026-02-06 - Added operations dashboard + task/review workspace integration
 
 ## Performance Metrics
 
@@ -149,6 +149,7 @@ None currently.
 - [x] Execute 04-08-PLAN.md (Complex Return Agent Integration)
 - [x] Execute 05-01-PLAN.md (Review Infrastructure Backend APIs)
 - [ ] Execute 05-02-PLAN.md (Reviewer Dashboard UI + WCAG checks)
+  - 2026-02-06 progress: product operations UI shipped with dashboard + checker + explicit feedback; WCAG audit and formal UI tests still pending
 - [ ] Execute 05-03-PLAN.md (Checker accuracy benchmark)
 - [ ] Execute 05-04-PLAN.md (TaxDome live sync hardening + fallback)
 
@@ -193,6 +194,8 @@ None currently.
 | 2026-01-25 | Completed 04-08: Complex Return Agent Integration (8 min) |
 | 2026-01-25 | **Phase 4 Complete** - Personal Tax Complex operational |
 | 2026-02-06 | Completed 05-01: Review Infrastructure Backend APIs (checker + feedback + status + TaxDome scaffold) |
+| 2026-02-06 | Sprint 1 foundation for product workflow shipped: real clients/tasks APIs + tests; frontend App switched to Operations/Demo workspaces |
+| 2026-02-06 | Phase 5 UI partial shipped: dashboard metrics, task progress, checker run panel, explicit feedback history/submit in Operations workspace |
 
 ## Session Continuity
 

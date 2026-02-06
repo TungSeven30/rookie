@@ -78,6 +78,33 @@ Corrections are captured (implicit diff + optional explicit tags) and inform fut
 
 ---
 
+## Current Product Surface (2026-02-06)
+
+The frontend now has two working workspaces:
+
+1. **Operations Workspace (internal staff)**
+   - Create/search clients
+   - Create/list/filter tasks
+   - Transition task statuses with state-machine guardrails
+   - Live dashboard cards (queue, completed, failed, escalated)
+   - Attention flags and agent activity
+   - Task progress view (`/api/status/tasks/{task_id}`)
+   - Checker run panel (`/api/review/checker/run`)
+   - Explicit feedback submit + feedback history (`/api/review/feedback/*`)
+
+2. **Demo Workspace (upload-to-result flow)**
+   - Upload personal tax source docs
+   - Run extraction/calculation pipeline
+   - View/download worksheet + preparer notes
+
+### What this means for personal tax
+
+- **Core personal-tax preparation is implemented** (Phase 3 + Phase 4 complete).
+- **Phase 5 backend review infrastructure is implemented**.
+- **Phase 5 frontend is in progress**: operational dashboard/task/review UI is now functional, but formal accessibility validation and benchmark/release gates are still pending.
+
+---
+
 ## Demo Quickstart (Production-Ready)
 
 This demo is built for real use with simple personal tax prep (W-2, 1099-INT/DIV/NEC).
