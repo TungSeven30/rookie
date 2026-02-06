@@ -280,13 +280,13 @@ Plans:
 **Plans:** 7 plans in 5 waves
 
 Plans:
-- [ ] 06-01-PLAN.md (Wave 1) -- Business tax Pydantic models (Form1120S, ScheduleK, ScheduleL, ShareholderInfo, TrialBalance)
-- [ ] 06-02-PLAN.md (Wave 2) -- Trial balance extraction + GL-to-1120S mapping (TDD)
-- [ ] 06-03-PLAN.md (Wave 2) -- Shareholder basis tracker (TDD, highest risk)
-- [ ] 06-04-PLAN.md (Wave 3) -- 1120-S calculator: Page 1, Schedule K, Schedule L, M-1, M-2 (TDD)
-- [ ] 06-05-PLAN.md (Wave 3) -- K-1 allocation + handoff protocol (TDD)
-- [ ] 06-06-PLAN.md (Wave 4) -- Output generators (Drake 1120-S, K-1, basis worksheets, preparer notes)
-- [ ] 06-07-PLAN.md (Wave 5) -- BusinessTaxAgent orchestrator + dispatcher integration + end-to-end tests
+- [x] 06-01-PLAN.md (Wave 1) -- Business tax Pydantic models (Form1120S, ScheduleK, ScheduleL, ShareholderInfo, TrialBalance)
+- [x] 06-02-PLAN.md (Wave 2) -- Trial balance extraction + GL-to-1120S mapping (TDD)
+- [x] 06-03-PLAN.md (Wave 2) -- Shareholder basis tracker (TDD, highest risk)
+- [x] 06-04-PLAN.md (Wave 3) -- 1120-S calculator: Page 1, Schedule K, Schedule L, M-1, M-2 (TDD)
+- [x] 06-05-PLAN.md (Wave 3) -- K-1 allocation + handoff protocol (TDD)
+- [x] 06-06-PLAN.md (Wave 4) -- Output generators (Drake 1120-S, K-1, basis worksheets, preparer notes)
+- [x] 06-07-PLAN.md (Wave 5) -- BusinessTaxAgent orchestrator + dispatcher integration + end-to-end tests
 
 ---
 
@@ -348,11 +348,11 @@ Plans:
 | 3 - Personal Tax Simple | Complete | 7/7 | 100% |
 | 4 - Personal Tax Complex | Complete | 8/8 | 100% |
 | 5 - Review Infrastructure | In Progress | 1/4 | 25% |
-| 6 - Business Tax | Planned | 0/7 | 0% |
+| 6 - Business Tax | Complete | 7/7 | 100% |
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall:** 4/8 phases complete (50%)
+**Overall:** 5/8 phases complete (62.5%)
 
 ---
 
@@ -368,4 +368,4 @@ Plans:
 ---
 
 *Roadmap created: 2026-01-23*
-*Last updated: 2026-02-06 (Phase 5 backend slice complete)*
+*Last updated: 2026-02-06 (Phase 6 Business Tax Agent complete)*
