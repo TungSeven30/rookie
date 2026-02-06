@@ -20,15 +20,16 @@ This plan moves from the current state (Phase 5 backend partially complete) to a
 
 ### In Progress
 
-- Sprint 2 / Task 2.1: status dashboard UI is implemented in Operations workspace; API-level operations flow integration test is in place, frontend component harness still pending.
+- Sprint 2 / Task 2.1: status dashboard UI is implemented in Operations workspace; API-level operations flow integration test is in place.
 - Sprint 2 / Task 2.2: checker panel is implemented in task detail view.
 - Sprint 2 / Task 2.3: explicit feedback quick-tag flow is implemented; click-count validation is pending.
 - Sprint 2 / Task 2.4 (partial): implicit feedback capture from reviewer edit/correction workflow is implemented in UI.
+- Sprint 2 / Task 2.5 (partial): static WCAG guardrail checks are implemented and passing.
 
 ### Remaining
 
 - Sprint 2 / Task 2.4: connect implicit capture directly to final artifact editor once full output editing UI lands.
-- Sprint 2 / Task 2.5: complete formal WCAG 2.1 AA audit + automated accessibility checks.
+- Sprint 2 / Task 2.5: run runtime browser accessibility audit (playwright/axe) when environment allows browser binary install.
 - Sprint 3-5 items: TaxDome hardening, auth/RBAC, audit logging, retention/PII controls, benchmarks, regression/load testing, UAT.
 
 ## Assumptions

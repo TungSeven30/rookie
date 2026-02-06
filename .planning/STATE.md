@@ -20,12 +20,12 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2 - Core Framework | Complete | 6/6 | 100% |
 | 3 - Personal Tax Simple | Complete | 7/7 | 100% |
 | 4 - Personal Tax Complex | Complete | 8/8 | 100% |
-| 5 - Review Infrastructure | In Progress | 1/4 (+05-02 partial) | 45% |
+| 5 - Review Infrastructure | In Progress | 2/4 (runtime audit follow-up) | 55% |
 | 6 - Business Tax | Complete | 7/7 | 100% |
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall Progress:** [######__] 73%
+**Overall Progress:** [######__] 74%
 
 ## Current Position
 
@@ -170,8 +170,9 @@ None currently.
 - [x] Execute 04-07-PLAN.md (Form 8962 ACA Reconciliation)
 - [x] Execute 04-08-PLAN.md (Complex Return Agent Integration)
 - [x] Execute 05-01-PLAN.md (Review Infrastructure Backend APIs)
-- [ ] Execute 05-02-PLAN.md (Reviewer Dashboard UI + WCAG checks)
-  - 2026-02-06 progress: product operations UI shipped with dashboard + checker + explicit feedback + implicit correction capture; API-level operations flow test added; formal WCAG audit + frontend component test harness still pending
+- [x] Execute 05-02-PLAN.md (Reviewer Dashboard UI + WCAG checks)
+  - 2026-02-06 delivered: operations UI + explicit/implicit feedback + API flow test + static WCAG guardrail test suite
+  - follow-up: runtime browser audit (playwright/axe) pending environment support for browser binary install
 - [ ] Execute 05-03-PLAN.md (Checker accuracy benchmark)
 - [ ] Execute 05-04-PLAN.md (TaxDome live sync hardening + fallback)
 - [x] Execute 06-01-PLAN.md (Business Tax Data Models)
@@ -218,6 +219,7 @@ None currently.
 | 2026-01-25 | Completed 04-03: Schedule C Calculator (7 min) |
 | 2026-01-25 | Completed 04-04: Schedule E Calculator (7 min) |
 | 2026-01-25 | Completed 04-05: Schedule D Calculator (7 min) |
+| 2026-02-06 | Completed 05-02: Reviewer dashboard UI + WCAG static guardrails + accessibility audit report |
 | 2026-01-25 | Completed 04-06: QBI Deduction (6 min) |
 | 2026-01-25 | Completed 04-07: Form 8962 ACA Reconciliation (6 min) |
 | 2026-01-25 | Completed 04-08: Complex Return Agent Integration (8 min) |

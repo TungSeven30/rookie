@@ -101,7 +101,8 @@ The frontend now has two working workspaces:
 
 - **Core personal-tax preparation is implemented** (Phase 3 + Phase 4 complete).
 - **Phase 5 backend review infrastructure is implemented**.
-- **Phase 5 frontend is in progress**: operational dashboard/task/review UI is functional, including explicit feedback and implicit correction capture, but formal WCAG validation and benchmark/release gates are still pending.
+- **Phase 5 frontend is in progress**: operational dashboard/task/review UI is functional, including explicit feedback and implicit correction capture.
+- **Accessibility status**: static WCAG guardrail checks are in place (`tests/ui/test_accessibility_static.py`), with runtime browser audit queued when Playwright browsers are available in this environment.
 
 ---
 
