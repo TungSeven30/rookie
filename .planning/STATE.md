@@ -10,7 +10,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 
 **Core value:** CPAs are liable for the work, not the AI. Rookie prepares, humans approve.
 
-**Current focus:** Phase 6 - Business Tax Agent (data models complete)
+**Current focus:** Phase 6 - Business Tax Agent (data models + basis tracker complete)
 
 ## Phase Progress
 
@@ -21,7 +21,7 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 3 - Personal Tax Simple | Complete | 7/7 | 100% |
 | 4 - Personal Tax Complex | Complete | 8/8 | 100% |
 | 5 - Review Infrastructure | In Progress | 1/4 (+05-02 partial) | 45% |
-| 6 - Business Tax | In Progress | 1/? | 10% |
+| 6 - Business Tax | In Progress | 3/7 | 43% |
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
@@ -30,15 +30,15 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 ## Current Position
 
 - **Phase:** 6 of 8 (Business Tax Agent)
-- **Plan:** 06-01 complete - business tax data models shipped
-- **Status:** Phase 6 execution started (data models complete, calculation engine + K-1 gen + agent integration pending)
-- **Last activity:** 2026-02-06 - Completed 06-01 (8 Pydantic models for Form 1120-S, 42 tests)
+- **Plan:** 06-03 complete - shareholder basis tracker shipped
+- **Status:** Phase 6 in progress (data models + TB mapping + basis tracker done; K-1 gen + agent integration pending)
+- **Last activity:** 2026-02-06 - Completed 06-03 (IRS 4-step basis calculation, 47 TDD tests)
 
 ## Performance Metrics
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Plans completed | 28 | - |
+| Plans completed | 30 | - |
 | Requirements delivered | 24/60 | 60 |
 | Phases complete | 4/8 | 8 |
 
@@ -102,6 +102,9 @@ See: .planning/PROJECT.md (updated 2026-01-23)
 | 2026-02-06 | Literal types for TB account_type/source_format | Simpler than Enum, validated at construction |
 | 2026-02-06 | Private helper properties for ScheduleL totals | DRY computation of asset/liability/equity sums |
 | 2026-02-06 | ShareholderInfo TIN defaults to SSN format | Shareholders are typically individuals |
+| 2026-02-06 | Frozen dataclass for BasisAdjustmentInputs | Tax inputs must be immutable during multi-step calculation |
+| 2026-02-06 | ValueError on negative beginning basis | Fail fast on upstream data errors |
+| 2026-02-06 | losses_limited_by_basis == suspended_losses | Same quantity from different perspectives |
 
 ### Deferred Items
 
@@ -202,20 +205,22 @@ None currently.
 | 2026-02-06 | Phase 5 UI partial shipped: dashboard metrics, task progress, checker run panel, explicit feedback history/submit in Operations workspace |
 | 2026-02-06 | Phase 5 UI hardening pass: implicit reviewer-edit capture flow, keyboard/focus accessibility improvements, and end-to-end operations API flow test |
 | 2026-02-06 | Completed 06-01: Business Tax Data Models (5 min) - 8 Pydantic models for Form 1120-S, 42 tests |
+| 2026-02-06 | Completed 06-03: Shareholder Basis Tracker (3 min) - IRS 4-step ordering, 47 TDD tests |
 
 ## Session Continuity
 
 ### Last Session Summary
 
-Completed Phase 6 Plan 01 (Business Tax Data Models):
-- Created 8 Pydantic models for Form 1120-S S-Corp processing
-- ShareholderInfo, TrialBalance, ScheduleK, ScheduleL, Form1120SResult
-- 42 comprehensive tests all passing
+Completed Phase 6 Plan 03 (Shareholder Basis Tracker):
+- BasisAdjustmentInputs (frozen dataclass) + BasisResult + calculate_shareholder_basis()
+- IRS 4-step ordering: income -> distributions -> nondeductible -> losses
+- Stock basis exhausted before debt basis; excess losses suspended
+- 47 TDD tests all passing, pure Decimal arithmetic
 - No new dependencies added
 
 ### Next Session Starting Point
 
-Continue Phase 6 with calculation engine, K-1 generation, and agent integration plans.
+Continue Phase 6 with K-1 generation (06-04), calculation engine (06-05), and agent integration.
 Phase 5 still has pending plans (05-02 closure, 05-03, 05-04).
 
 ### Context to Preserve
@@ -364,6 +369,13 @@ Phase 5 still has pending plans (05-02 closure, 05-03, 05-04).
 - All monetary fields use Decimal, all TIN/EIN fields validated
 - ScheduleL has balance sheet integrity checks (is_balanced_beginning/ending)
 - `tests/agents/business_tax/test_models.py` - 42 tests
+
+**Shareholder Basis Tracker (06-03):**
+- `src/agents/business_tax/basis.py` - BasisAdjustmentInputs (frozen), BasisResult, calculate_shareholder_basis()
+- IRS 4-step ordering: income -> distributions -> nondeductible -> losses
+- Stock basis exhausted before debt basis for losses; excess suspended
+- All Decimal arithmetic, no LLM calls, no database
+- `tests/agents/business_tax/test_basis.py` - 47 TDD tests
 
 **Critical Path:**
 Phase 1 -> 2 -> 3 -> 4 -> 5 -> 7 -> 8
