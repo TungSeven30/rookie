@@ -15,7 +15,6 @@ from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, NamedStyle, PatternFill, Side
-from openpyxl.utils import get_column_letter
 
 from src.agents.personal_tax.calculator import (
     DeductionResult,

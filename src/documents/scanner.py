@@ -64,7 +64,8 @@ def scan_client_folder(
     folder_path = f"{client_id}/{tax_year}"
 
     try:
-        fs = get_filesystem(storage_url)
+        # Validate storage URL by attempting to get filesystem
+        get_filesystem(storage_url)
     except Exception as e:
         logger.warning("Failed to get filesystem for %s: %s", storage_url, e)
         return []

@@ -18,8 +18,8 @@ Example:
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
@@ -570,17 +570,8 @@ class PersonalTaxAgent:
             w2_forms = [data]
 
         if w2_forms is not None:
-            # Only escalate if multiple DISTINCT forms were detected but not all extracted
-            # If len(w2_forms) > 1, multiple forms were successfully extracted - no escalation needed
-            # If len(w2_forms) == 1 and flag is set, it likely means multiple copies of same form
-            # were handled correctly (keeping only one), so no escalation needed
-            # We only escalate if we have strong evidence of missing distinct forms
-            flagged_multiple = any(
-                "multiple_forms_detected" in form.uncertain_fields for form in w2_forms
-            )
-            # Don't escalate - the flag is informational and extraction succeeded
+            # Multiple forms flag is informational only - extraction succeeded
             # The flag will still be included in the extraction metadata for review
-
             extractions: list[dict[str, Any]] = []
             for form_index, form in enumerate(w2_forms, start=1):
                 form_filename = (
@@ -1518,7 +1509,7 @@ async def personal_tax_handler(task: "Task", session: "AsyncSession") -> None:
 
         # Task completed
         task.status = TaskStatus.COMPLETED
-        task.completed_at = datetime.utcnow()
+        task.completed_at = datetime.now(UTC)
 
         logger.info(
             "personal_tax_task_completed",
@@ -1531,7 +1522,7 @@ async def personal_tax_handler(task: "Task", session: "AsyncSession") -> None:
         escalation = Escalation(
             task_id=task.id,
             reason="; ".join(e.reasons),
-            escalated_at=datetime.utcnow(),
+            escalated_at=datetime.now(UTC),
         )
         session.add(escalation)
         task.status = TaskStatus.ESCALATED

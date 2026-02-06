@@ -1,6 +1,6 @@
 """Tests for client profile service."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -182,14 +182,14 @@ class TestAppendProfileEntry:
         session = AsyncMock()
         session.add = MagicMock()
 
-        before = datetime.utcnow()
+        before = datetime.now(UTC)
         result = await append_profile_entry(
             session,
             client_id=1,
             entry_type="test",
             data={},
         )
-        after = datetime.utcnow()
+        after = datetime.now(UTC)
 
         assert before <= result.created_at <= after
 

@@ -21,12 +21,10 @@ from __future__ import annotations
 import base64
 from typing import TYPE_CHECKING, Union
 
-from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
 from src.documents.models import (
-    ConfidenceLevel,
     DocumentType,
     Form1095A,
     Form1098,
@@ -58,7 +56,6 @@ from src.documents.prompts import (
     FORM_1099_S_PROMPT,
     FORM_5498_PROMPT,
     FORM_K1_PROMPT,
-    W2_EXTRACTION_PROMPT,
     W2_MULTI_EXTRACTION_PROMPT,
 )
 
