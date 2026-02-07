@@ -414,6 +414,25 @@ class TestGenerate1120sDrakeWorksheet:
         generate_1120s_drake_worksheet(form_1120s_result, output)
         assert output.exists()
 
+    def test_page1_sheets_include_full_line_scaffolding(
+        self, form_1120s_result: Form1120SResult, tmp_path: Path
+    ) -> None:
+        """Income/deduction sheets include full Page 1 line labels for manual completion."""
+        output = tmp_path / "drake_full_lines.xlsx"
+        generate_1120s_drake_worksheet(form_1120s_result, output)
+        wb = load_workbook(output)
+
+        income_ws = wb["Page 1 - Income"]
+        income_labels = [income_ws.cell(row=r, column=1).value for r in range(1, 20)]
+        assert "Line 1b: Returns and allowances" in income_labels
+        assert "Line 5: Other income (loss)" in income_labels
+
+        ded_ws = wb["Page 1 - Deductions"]
+        ded_labels = [ded_ws.cell(row=r, column=1).value for r in range(1, 30)]
+        assert "Line 8: Salaries and wages" in ded_labels
+        assert "Line 20: Other deductions" in ded_labels
+        assert "Line 22: Ordinary business income (loss)" in ded_labels
+
 
 # =============================================================================
 # K-1 Worksheet Tests
@@ -539,6 +558,26 @@ class TestGenerateK1Worksheets:
         for name in wb.sheetnames:
             assert len(name) <= 31
 
+    def test_mismatched_lengths_raise(
+        self,
+        shareholders: list[ShareholderInfo],
+        allocated_k1s: list[dict[str, Decimal]],
+        basis_results: list[BasisResult],
+        tmp_path: Path,
+    ) -> None:
+        """Length mismatches should raise instead of silently dropping rows."""
+        output = tmp_path / "k1_mismatch.xlsx"
+        with pytest.raises(ValueError, match="equal length"):
+            generate_k1_worksheets(
+                "Acme Corp",
+                "12-3456789",
+                2024,
+                shareholders[:1],
+                allocated_k1s,
+                basis_results,
+                output,
+            )
+
 
 # =============================================================================
 # Basis Worksheet Tests
@@ -647,6 +686,23 @@ class TestGenerateBasisWorksheets:
         ws = wb["Basis Alice Johnson"]
         values = [ws.cell(row=r, column=2).value for r in range(1, 30)]
         assert 10000.0 in values  # beginning debt basis
+
+    def test_mismatched_lengths_raise(
+        self,
+        shareholders: list[ShareholderInfo],
+        basis_results: list[BasisResult],
+        tmp_path: Path,
+    ) -> None:
+        """Length mismatches should raise instead of silently dropping rows."""
+        output = tmp_path / "basis_mismatch.xlsx"
+        with pytest.raises(ValueError, match="equal length"):
+            generate_basis_worksheets(
+                "Acme Corp",
+                2024,
+                shareholders[:1],
+                basis_results,
+                output,
+            )
 
 
 # =============================================================================
@@ -927,3 +983,19 @@ class TestGenerateBusinessPreparerNotes:
         content = output.read_text()
         assert "Income Summary" in content
         assert "$500,000.00" in content  # gross receipts
+
+    def test_mismatched_shareholder_basis_lengths_raise(
+        self,
+        form_1120s_result: Form1120SResult,
+        basis_results: list[BasisResult],
+        tmp_path: Path,
+    ) -> None:
+        """Mismatched shareholder/basis lengths should raise early."""
+        output = tmp_path / "notes_mismatch.md"
+        with pytest.raises(ValueError, match="equal length"):
+            generate_business_preparer_notes(
+                form_1120s_result,
+                basis_results[:1],
+                form_1120s_result.escalations,
+                output,
+            )

@@ -104,6 +104,7 @@ def _write_line_item(
     amount: Decimal | None,
     *,
     bold: bool = False,
+    note: str = "",
 ) -> None:
     """Write a label + currency amount row.
 
@@ -113,10 +114,14 @@ def _write_line_item(
         label: Label in column A.
         amount: Decimal amount in column B.
         bold: Whether to bold both cells.
+        note: Optional note in column C.
     """
     worksheet[f"A{row}"] = label
     worksheet[f"B{row}"] = _format_decimal(amount)
-    worksheet[f"B{row}"].number_format = _CURRENCY_FORMAT
+    if amount is not None:
+        worksheet[f"B{row}"].number_format = _CURRENCY_FORMAT
+    if note:
+        worksheet[f"C{row}"] = note
     if bold:
         worksheet[f"A{row}"].font = Font(bold=True)
         worksheet[f"B{row}"].font = Font(bold=True)
@@ -206,18 +211,42 @@ def _add_page1_income_sheet(
     ws["A1"].font = Font(bold=True, size=12)
 
     items = [
-        ("Line 1a: Gross receipts or sales", result.gross_receipts),
-        ("Line 2: Cost of goods sold", result.cost_of_goods_sold),
-        ("Line 3: Gross profit", result.gross_profit),
-        ("Line 6: Total income (loss)", result.total_income),
+        ("Line 1a: Gross receipts or sales", result.gross_receipts, ""),
+        (
+            "Line 1b: Returns and allowances",
+            None,
+            "Manual entry required (not stored in Form1120SResult).",
+        ),
+        (
+            "Line 1c: Balance",
+            result.gross_receipts,
+            "Computed from available data; confirm Line 1b adjustment.",
+        ),
+        ("Line 2: Cost of goods sold", result.cost_of_goods_sold, ""),
+        ("Line 3: Gross profit", result.gross_profit, ""),
+        (
+            "Line 4: Net gain (loss) from Form 4797",
+            None,
+            "Manual entry required if applicable.",
+        ),
+        ("Line 5: Other income (loss)", None, "Manual entry required if applicable."),
+        ("Line 6: Total income (loss)", result.total_income, ""),
     ]
 
     row = 3
-    for label, amount in items:
-        _write_line_item(ws, row, label, amount)
+    for label, amount, note in items:
+        _write_line_item(
+            ws,
+            row,
+            label,
+            amount,
+            bold="Line 6" in label,
+            note=note,
+        )
         row += 1
 
-    _write_line_item(ws, row, "Line 6: Total income (loss)", result.total_income, bold=True)
+    ws[f"A{row + 1}"] = "Review note: Complete all manual-entry lines before filing."
+    ws[f"A{row + 1}"].font = Font(italic=True)
     _auto_fit_columns(ws)
 
 
@@ -241,16 +270,32 @@ def _add_page1_deductions_sheet(
     )
 
     items = [
-        ("Line 7: Compensation of officers", officer_comp),
-        ("Line 20: Total deductions", result.total_deductions),
-        ("Line 21: Ordinary business income (loss)", result.ordinary_business_income),
+        ("Line 7: Compensation of officers", officer_comp, ""),
+        ("Line 8: Salaries and wages", None, "Manual entry required."),
+        ("Line 9: Repairs and maintenance", None, "Manual entry required."),
+        ("Line 10: Bad debts", None, "Manual entry required."),
+        ("Line 11: Placeholder line", None, "Manual entry required if applicable."),
+        ("Line 12: Taxes and licenses", None, "Manual entry required."),
+        ("Line 13: Rents", None, "Manual entry required."),
+        ("Line 14: Interest", None, "Manual entry required."),
+        ("Line 15: Depreciation", None, "Manual entry required."),
+        ("Line 16: Placeholder line", None, "Manual entry required if applicable."),
+        ("Line 17: Advertising", None, "Manual entry required."),
+        ("Line 18: Pension, profit-sharing, etc.", None, "Manual entry required."),
+        ("Line 19: Employee benefit programs", None, "Manual entry required."),
+        ("Line 20: Other deductions", None, "Manual entry required."),
+        ("Line 21: Total deductions", result.total_deductions, ""),
+        ("Line 22: Ordinary business income (loss)", result.ordinary_business_income, ""),
     ]
 
     row = 3
-    for label, amount in items:
+    for label, amount, note in items:
         bold = "Total" in label or "Ordinary" in label
-        _write_line_item(ws, row, label, amount, bold=bold)
+        _write_line_item(ws, row, label, amount, bold=bold, note=note)
         row += 1
+
+    ws[f"A{row + 1}"] = "Review note: Lines 8-19 must be completed from supporting workpapers."
+    ws[f"A{row + 1}"].font = Font(italic=True)
 
     _auto_fit_columns(ws)
 
@@ -577,13 +622,22 @@ def generate_k1_worksheets(
     Returns:
         Path to generated file.
     """
+    if len(shareholders) != len(allocated_k1s):
+        raise ValueError(
+            "shareholders and allocated_k1s must have equal length "
+            f"(got {len(shareholders)} and {len(allocated_k1s)})"
+        )
+    if len(shareholders) != len(basis_results):
+        raise ValueError(
+            "shareholders and basis_results must have equal length "
+            f"(got {len(shareholders)} and {len(basis_results)})"
+        )
+
     workbook = Workbook()
     # Remove default sheet
     workbook.remove(workbook.active)
 
-    for i, (sh, alloc, basis) in enumerate(
-        zip(shareholders, allocated_k1s, basis_results)
-    ):
+    for sh, alloc in zip(shareholders, allocated_k1s):
         sheet_name = _truncate_sheet_name("K-1 ", sh.name)
         ws = workbook.create_sheet(title=sheet_name)
 
@@ -682,6 +736,12 @@ def generate_basis_worksheets(
     Returns:
         Path to generated file.
     """
+    if len(shareholders) != len(basis_results):
+        raise ValueError(
+            "shareholders and basis_results must have equal length "
+            f"(got {len(shareholders)} and {len(basis_results)})"
+        )
+
     workbook = Workbook()
     workbook.remove(workbook.active)
 
@@ -804,6 +864,12 @@ def generate_business_preparer_notes(
     Returns:
         Path to generated file.
     """
+    if len(result.shareholders) != len(basis_results):
+        raise ValueError(
+            "result.shareholders and basis_results must have equal length "
+            f"(got {len(result.shareholders)} and {len(basis_results)})"
+        )
+
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
     lines: list[str] = []
 

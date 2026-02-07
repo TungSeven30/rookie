@@ -202,6 +202,23 @@ class TestComputeScheduleL:
         # Total assets = 50000 + 100000 + (-30000) = 120000
         assert result.total_assets_ending == Decimal("120000")
 
+    def test_liability_and_equity_normalized_to_positive(self) -> None:
+        """Credit-sign inputs for liability/equity are normalized to positive values."""
+        mapped = {
+            "schedule_l_line1": Decimal("100000"),
+            "schedule_l_line16": Decimal("-40000"),  # AP from credit-normal TB sign
+            "schedule_l_line22": Decimal("-60000"),  # Capital stock from credit sign
+        }
+        result = compute_schedule_l(
+            mapped_amounts=mapped,
+            prior_year_schedule_l=None,
+            current_year_net_income=Decimal("0"),
+            current_year_distributions=Decimal("0"),
+        )
+        assert result.accounts_payable.ending_amount == Decimal("40000")
+        assert result.capital_stock.ending_amount == Decimal("60000")
+        assert result.is_balanced_ending
+
 
 # =============================================================================
 # Schedule M-1: Book-to-tax reconciliation
@@ -357,3 +374,15 @@ class TestComputeScheduleM2:
         assert result.other_reductions is not None
         assert result.other_reductions == Decimal("2000")
         assert result.distributions == Decimal("10000")
+
+    def test_distributions_do_not_drive_aaa_below_zero(self) -> None:
+        """Distributions are limited so they do not create negative AAA by themselves."""
+        result = compute_schedule_m2(
+            aaa_beginning=Decimal("100"),
+            ordinary_income=Decimal("0"),
+            separately_stated_net=Decimal("0"),
+            nondeductible_expenses=Decimal("0"),
+            distributions=Decimal("300"),
+        )
+        assert result.distributions == Decimal("100")
+        assert result.aaa_ending == Decimal("0")

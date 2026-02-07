@@ -322,6 +322,20 @@ _SCHEDULE_L_LINE_MAP: list[tuple[str, str, int, str]] = [
     ("less_cost_treasury_stock", "schedule_l_line26", 26, "Less cost of treasury stock"),
 ]
 
+_SCHEDULE_L_LIAB_EQUITY_KEYS: set[str] = {
+    "schedule_l_line16",
+    "schedule_l_line17",
+    "schedule_l_line18",
+    "schedule_l_line19",
+    "schedule_l_line20",
+    "schedule_l_line21",
+    "schedule_l_line22",
+    "schedule_l_line23",
+    "schedule_l_line24",
+    "schedule_l_line25",
+    "schedule_l_line26",
+}
+
 
 def compute_schedule_l(
     mapped_amounts: dict[str, Decimal],
@@ -358,6 +372,13 @@ def compute_schedule_l(
 
         # Ending amount from mapped amounts (or zero)
         ending = mapped_amounts.get(line_key, _ZERO)
+
+        # Normalize liability and equity values to positive presentation values.
+        # Trial balance credits often arrive as negatives from aggregation
+        # (debit - credit convention), but Schedule L should present these
+        # balances as positive line amounts.
+        if line_key in _SCHEDULE_L_LIAB_EQUITY_KEYS:
+            ending = abs(ending)
 
         # Override retained earnings with computed value
         if field_name == "retained_earnings":
@@ -517,14 +538,18 @@ def compute_schedule_m2(
 
     total_losses_deductions = income_loss + other_losses
 
-    aaa_ending = (
+    pre_distribution_aaa = (
         aaa_beginning
         + income_addition
         + other_additions
         - total_losses_deductions
         - nondeductible_expenses
-        - distributions
     )
+
+    # Per policy, distributions cannot drive AAA below zero.
+    distributable_aaa = max(pre_distribution_aaa, _ZERO)
+    distributions_applied = min(distributions, distributable_aaa)
+    aaa_ending = pre_distribution_aaa - distributions_applied
 
     return ScheduleM2Result(
         aaa_beginning=aaa_beginning,
@@ -532,6 +557,6 @@ def compute_schedule_m2(
         other_additions=other_additions,
         losses_deductions=total_losses_deductions,
         other_reductions=nondeductible_expenses,
-        distributions=distributions,
+        distributions=distributions_applied,
         aaa_ending=aaa_ending,
     )

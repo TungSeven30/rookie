@@ -427,6 +427,7 @@ async def test_zero_officer_comp(tmp_path: Path) -> None:
     )
 
     assert any("zero compensation" in e for e in result.escalations)
+    assert any("zero compensation" in e for e in result.form_result.escalations)
 
 
 # =============================================================================

@@ -350,8 +350,22 @@ class BusinessTaxAgent:
             distributions=schedule_k.distributions,
         )
 
-        # Step 11: Build Form1120SResult
-        logger.info("step_11_build_form_result")
+        # Step 11: Check reasonable compensation
+        logger.info("step_11_check_reasonable_compensation")
+        for sh in shareholders:
+            if (
+                sh.is_officer
+                and sh.officer_compensation == ZERO
+                and schedule_k.distributions > ZERO
+            ):
+                self.escalations.append(
+                    f"Officer '{sh.name}' has zero compensation but entity "
+                    f"has distributions of ${schedule_k.distributions}. "
+                    "Review reasonable compensation requirement."
+                )
+
+        # Step 12: Build Form1120SResult
+        logger.info("step_12_build_form_result")
         form_result = Form1120SResult(
             entity_name=entity_name,
             entity_ein=entity_ein,
@@ -368,20 +382,6 @@ class BusinessTaxAgent:
             escalations=list(self.escalations),
             confidence=self._determine_confidence(mappings),
         )
-
-        # Step 12: Check reasonable compensation
-        logger.info("step_12_check_reasonable_compensation")
-        for sh in shareholders:
-            if (
-                sh.is_officer
-                and sh.officer_compensation == ZERO
-                and schedule_k.distributions > ZERO
-            ):
-                self.escalations.append(
-                    f"Officer '{sh.name}' has zero compensation but entity "
-                    f"has distributions of ${schedule_k.distributions}. "
-                    "Review reasonable compensation requirement."
-                )
 
         # Step 13: Generate outputs
         logger.info("step_13_generate_outputs")
