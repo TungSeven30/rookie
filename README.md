@@ -126,12 +126,20 @@ Create a `.env` file from `.env.example` and set the required values:
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/rookie
 REDIS_URL=redis://localhost:6379/0
 DEMO_API_KEY=your-demo-key
+ANTHROPIC_MODEL=opus-4.6
+OPENAI_API_KEY=your-openai-key
 DEFAULT_STORAGE_URL=/tmp/rookie-demo
 OUTPUT_DIR=/tmp/rookie-output
 MAX_UPLOAD_BYTES=52428800
 ALLOWED_UPLOAD_TYPES=application/pdf,image/jpeg,image/png,image/jpg
 DEMO_RETENTION_DAYS=7
 ```
+
+`ANTHROPIC_MODEL` is routed through provider resolution, so:
+- `opus-4.6` maps to Anthropic.
+- `gpt-5.3` maps to OpenAI.
+
+If you use an OpenAI model, set `OPENAI_API_KEY` as well.
 
 If you want S3 storage:
 ```
@@ -302,36 +310,37 @@ Tax law changes? Update the skill file with a new effective date. The agent know
 
 ## Roadmap
 
-- [x] Architecture design
-- [x] Client profile schema
-- [x] Skill file structure
-- [ ] **Phase 0**: Golden Path MVP (single known-good 1040)
-- [x] **Phase 1**: Foundation + observability
-  - [x] FastAPI with health endpoint
-  - [x] PostgreSQL + Redis connections
-  - [x] Structured JSON logging with correlation IDs
-  - [x] Request context middleware
-  - [x] Unit tests with mocked dependencies
-- [x] **Phase 2**: Core framework
-  - [x] Task Dispatcher with agent routing
-  - [x] State Machine (pending → assigned → in_progress → completed/failed/escalated)
-  - [x] Circuit Breaker (5-fail threshold, 30s recovery)
-  - [x] Skill Engine (YAML parsing, version selection)
-  - [x] Client Profile Manager (append-only log)
-  - [x] Context Builder for agent execution
-  - [x] Hybrid Search (pgvector + BM25 with RRF fusion)
-- [x] **Phase 3**: Personal Tax Agent (simple returns)
-- [x] **Phase 4**: Personal Tax Agent (complex returns)
-- [ ] **Phase 5**: Review infrastructure (in progress)
-  - [x] Checker Agent core logic + review API endpoints
-  - [x] Feedback capture APIs (implicit diff + explicit tags)
-  - [x] Status/dashboard APIs (task progress, agent activity, queue + flags)
-  - [x] TaxDome integration API scaffold (assignment webhook + status sync)
-  - [ ] Frontend dashboard and WCAG 2.1 AA validation
-  - [ ] End-to-end TaxDome integration validation in non-mock environment
-- [ ] **Phase 6**: Business Tax Agent
-- [ ] **Phase 7**: Bookkeeping Agent
-- [ ] **Phase 8**: Production hardening
+### Delivery Snapshot (2026-02-14)
+
+| Phase | Status | Progress | Notes |
+|-------|--------|----------|-------|
+| 1 — Foundation | ✅ Complete | `██████████ 100%` | Core app infra + observability |
+| 2 — Core Framework | ✅ Complete | `██████████ 100%` | Orchestration, state machine, skill engine, search |
+| 3 — Personal Tax (Simple) | ✅ Complete | `██████████ 100%` | W-2/1099 handling + worksheet + notes |
+| 4 — Personal Tax (Complex) | ✅ Complete | `██████████ 100%` | Schedules C/E/D + ACA + QBI |
+| 5 — Review Infrastructure | 🟡 In Progress | `██████░░░░ 50%` | 2/4 core items complete |
+| 6 — Business Tax | ✅ Complete | `██████████ 100%` | 1120-S + K-1 + basis + handoff path |
+| 7 — Bookkeeping | ⬜ Pending | `░░░░░░░░░░ 0%` | QBO + transaction workflow |
+| 8 — Production Hardening | ⬜ Pending | `░░░░░░░░░░ 0%` | Scale, security, reliability for pilot |
+
+### Phase 5 Feature Status
+
+| Feature | Owner | Status |
+|---------|-------|--------|
+| Review API + checker core pipeline | Backend | ✅ Implemented |
+| Feedback capture (implicit + explicit) | Backend | ✅ Implemented |
+| Status/dashboard endpoints (`/api/status/*`) | Backend | ✅ Implemented |
+| Dashboard UI + WCAG 2.1 hardening | Frontend | 🟡 In progress |
+| TaxDome non-mock end-to-end validation | Integration | ⬜ Pending |
+
+### Quick Feature Matrix
+
+| Area | What Works | What’s Missing |
+|------|------------|----------------|
+| **Personal Tax Product** | W-2/1099 extraction, schedule logic, worksheet + notes output | Automated edge-case handling beyond implemented scenarios, external tax import paths |
+| **Operations Workspace** | Client/task/review workflow, checker run, explicit feedback, status APIs | Full production TaxDome sync, polished QA parity checks |
+| **Demo Workspace** | Upload-to-result pipeline with polling, artifact download | Public naming/branding refresh if needed, broader source document coverage |
+| **Search & Profiles** | Hybrid search + client profile logging | Fine-tuned retrieval ranking and firm-specific search tuning |
 
 ---
 

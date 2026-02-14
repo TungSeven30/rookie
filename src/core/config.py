@@ -31,8 +31,16 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     """Anthropic API key for document extraction."""
 
+    openai_api_key: str | None = None
+    """OpenAI API key for document extraction when using OpenAI vision."""
+
     anthropic_model: str = "claude-3-5-sonnet-20241022"
-    """Anthropic model name for vision tasks."""
+    """Model used by the document vision pipeline.
+
+    Aliases are supported via `resolve_vision_model` and map to provider/model:
+    - `opus-4.6` (or `opus`) -> Anthropic
+    - `gpt-5.3` (or `gpt`) -> OpenAI
+    """
 
     document_processing_concurrency: int = 2
     """Max concurrent document pages to classify/extract."""

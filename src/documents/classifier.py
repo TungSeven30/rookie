@@ -14,14 +14,16 @@ from __future__ import annotations
 
 import base64
 from io import BytesIO
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
+from src.documents.model_resolver import resolve_vision_model
 from pydantic import BaseModel, Field
 
 from src.documents.models import DocumentType
 
 if TYPE_CHECKING:
     from anthropic import AsyncAnthropic
+    from openai import AsyncOpenAI
 
 
 class ClassificationResult(BaseModel):
@@ -140,7 +142,7 @@ SUPPORTED_MEDIA_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 async def classify_document(
     image_bytes: bytes,
     media_type: str = "image/jpeg",
-    client: "AsyncAnthropic | None" = None,
+    client: "AsyncAnthropic | AsyncOpenAI | Any | None" = None,
 ) -> ClassificationResult:
     """Classify tax document type from image using Claude Vision.
 
@@ -179,7 +181,7 @@ async def classify_document(
 async def _classify_image(
     image_bytes: bytes,
     media_type: str,
-    client: "AsyncAnthropic | None" = None,
+    client: "AsyncAnthropic | AsyncOpenAI | Any | None" = None,
 ) -> ClassificationResult:
     """Classify an image using Claude Vision."""
     # Validate media type
@@ -188,54 +190,89 @@ async def _classify_image(
             f"Unsupported media type: {media_type}. Supported: {SUPPORTED_MEDIA_TYPES}"
         )
 
-    # Import instructor and anthropic here to avoid circular imports
+    # Import instructors and providers here to avoid circular imports.
     import instructor
     from anthropic import AsyncAnthropic as AnthropicClient
+    try:
+        from openai import AsyncOpenAI as OpenAIClient
+    except ModuleNotFoundError as exc:
+        OpenAIClient = None
+        openai_import_error = exc
+    else:
+        openai_import_error = None
 
     from src.core.config import settings
 
+    resolved_model = resolve_vision_model(settings.anthropic_model)
+
     # Use provided client or create new one
     if client is None:
-        if settings.anthropic_api_key:
+        if resolved_model.provider == "openai":
+            if OpenAIClient is None:
+                raise ModuleNotFoundError(
+                    "openai package is required for gpt-5.3/OpenAI vision flow"
+                ) from openai_import_error
+            if settings.openai_api_key is None:
+                raise ValueError("OPENAI_API_KEY is required for gpt-5.3 model usage")
+            client = OpenAIClient(api_key=settings.openai_api_key)
+        elif settings.anthropic_api_key:
             client = AnthropicClient(api_key=settings.anthropic_api_key)
         else:
             client = AnthropicClient()
 
     # Wrap with instructor for structured output
-    instructor_client = instructor.from_anthropic(client)
+    if resolved_model.provider == "openai":
+        instructor_client = instructor.from_openai(client)
+    else:
+        instructor_client = instructor.from_anthropic(client)
 
     # Encode image to base64
     image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
-    # Call Claude Vision API
-    model_name = settings.anthropic_model or "claude-3-5-sonnet-20241022"
-
-    result = await instructor_client.messages.create(
-        model=model_name,
-        max_tokens=512,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": image_base64,
+    # Call vision API
+    if resolved_model.provider == "openai":
+        message_content = [
+            {"type": "text", "text": CLASSIFICATION_PROMPT},
+            {"type": "image_url", "image_url": {"url": _build_openai_image_url(media_type, image_base64)}},
+        ]
+        result = await instructor_client.chat.completions.create(
+            model=resolved_model.model,
+            messages=[{"role": "user", "content": message_content}],
+            max_tokens=512,
+            response_model=ClassificationResult,
+        )
+    else:
+        result = await instructor_client.messages.create(
+            model=resolved_model.model,
+            max_tokens=512,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": image_base64,
+                            },
                         },
-                    },
-                    {
-                        "type": "text",
-                        "text": CLASSIFICATION_PROMPT,
-                    },
-                ],
-            }
-        ],
-        response_model=ClassificationResult,
-    )
+                        {
+                            "type": "text",
+                            "text": CLASSIFICATION_PROMPT,
+                        },
+                    ],
+                }
+            ],
+            response_model=ClassificationResult,
+        )
 
     return result
+
+
+def _build_openai_image_url(media_type: str, image_base64: str) -> str:
+    """Build an OpenAI-compatible inline image URL."""
+    return f"data:{media_type};base64,{image_base64}"
 
 
 def _convert_pdf_to_image_bytes(pdf_bytes: bytes) -> bytes:
@@ -255,5 +292,3 @@ def _convert_pdf_to_image_bytes(pdf_bytes: bytes) -> bytes:
     buffer = BytesIO()
     images[0].save(buffer, format="PNG")
     return buffer.getvalue()
-
-

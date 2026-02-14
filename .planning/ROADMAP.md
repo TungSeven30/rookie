@@ -2,6 +2,7 @@
 
 **Created:** 2026-01-23
 **Phases:** 8
+**Last updated:** 2026-02-14
 **Core Value:** CPAs are liable for the work, not the AI. Rookie prepares, humans approve.
 
 ## Overview
@@ -352,7 +353,7 @@ Plans:
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
 
-**Overall:** 5/8 phases complete (62.5%)
+**Overall:** 5/8 phases complete (62.5%) and 1 phase in progress
 
 ---
 
@@ -368,4 +369,4 @@ Plans:
 ---
 
 *Roadmap created: 2026-01-23*
-*Last updated: 2026-02-06 (Phase 6 Business Tax Agent complete)*
+*Last updated: 2026-02-14 (Phase 5 dashboard snapshot updated)*

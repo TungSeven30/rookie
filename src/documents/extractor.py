@@ -22,6 +22,7 @@ import base64
 from typing import TYPE_CHECKING, Union
 
 
+from src.documents.model_resolver import resolve_vision_model
 from pydantic import BaseModel, Field
 
 from src.documents.models import (
@@ -567,7 +568,7 @@ async def _extract_with_vision(
     media_type: str,
     prompt: str,
     response_model: type,
-    client: "AsyncAnthropic | None" = None,
+    client: "object | None" = None,
 ) -> ExtractionResult:
     """Internal function to extract document data using Claude Vision API.
 
@@ -588,53 +589,89 @@ async def _extract_with_vision(
     if media_type not in SUPPORTED_MEDIA_TYPES:
         raise ValueError(f"Unsupported media type: {media_type}. Supported: {SUPPORTED_MEDIA_TYPES}")
 
-    # Import instructor and anthropic here to avoid circular imports
+    # Import instructors and providers here to avoid circular imports.
     import instructor
     from anthropic import AsyncAnthropic as AnthropicClient
+    try:
+        from openai import AsyncOpenAI
+    except ModuleNotFoundError as exc:
+        AsyncOpenAI = None
+        openai_import_error = exc
+    else:
+        openai_import_error = None
 
     from src.core.config import settings
 
     # Use provided client or create new one
+    resolved_model = resolve_vision_model(settings.anthropic_model)
     if client is None:
-        if settings.anthropic_api_key:
+        if resolved_model.provider == "openai":
+            if AsyncOpenAI is None:
+                raise ModuleNotFoundError(
+                    "openai package is required for gpt-5.3/OpenAI vision flow"
+                ) from openai_import_error
+            if settings.openai_api_key is None:
+                raise ValueError("OPENAI_API_KEY is required for gpt-5.3 model usage")
+            client = AsyncOpenAI(api_key=settings.openai_api_key)
+            # Type checkers can't infer union with `Any` here.
+        elif settings.anthropic_api_key:
             client = AnthropicClient(api_key=settings.anthropic_api_key)
         else:
             client = AnthropicClient()
 
-    model_name = settings.anthropic_model or "claude-3-5-sonnet-20241022"
-
     # Wrap with instructor for structured output
-    instructor_client = instructor.from_anthropic(client)
+    if resolved_model.provider == "openai":
+        instructor_client = instructor.from_openai(client)
+    else:
+        instructor_client = instructor.from_anthropic(client)
 
     # Encode image to base64
     image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
     # Call Claude Vision API
-    result = await instructor_client.messages.create(
-        model=model_name,
-        max_tokens=2048,
-        messages=[
+    if resolved_model.provider == "openai":
+        message_content = [
+            {"type": "text", "text": prompt},
             {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": image_base64,
+                "type": "image_url",
+                "image_url": {"url": _build_openai_image_url(media_type, image_base64)},
+            },
+        ]
+        result = await instructor_client.chat.completions.create(
+            model=resolved_model.model,
+            messages=[{"role": "user", "content": message_content}],
+            max_tokens=2048,
+            response_model=response_model,
+        )
+    else:
+        result = await instructor_client.messages.create(
+            model=resolved_model.model,
+            max_tokens=2048,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": image_base64,
+                            },
                         },
-                    },
-                    {
-                        "type": "text",
-                        "text": prompt,
-                    },
-                ],
-            }
-        ],
-        response_model=response_model,
-    )
+                        {
+                            "type": "text",
+                            "text": prompt,
+                        },
+                    ],
+                }
+            ],
+            response_model=response_model,
+        )
 
     return result
 
 
+def _build_openai_image_url(media_type: str, image_base64: str) -> str:
+    """Build an OpenAI-compatible inline image URL."""
+    return f"data:{media_type};base64,{image_base64}"
