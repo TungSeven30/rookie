@@ -1129,6 +1129,7 @@ class PersonalTaxAgent:
             schedule_e_data=schedule_e_data,
             schedule_d_data=schedule_d_data,
             filing_status=filing_status_enum,
+            tax_year=tax_year,
         )
 
         # Calculate itemized deductions and select best option
@@ -1181,7 +1182,9 @@ class PersonalTaxAgent:
         net_capital_gains = Decimal("0")
         if schedule_d_data:
             schedule_d_result = calculate_schedule_d(
-                schedule_d_data, filing_status_enum
+                schedule_d_data,
+                filing_status_enum,
+                tax_year,
             )
             net_capital_gains = max(
                 Decimal("0"), schedule_d_result.net_capital_gain_loss
@@ -1194,6 +1197,7 @@ class PersonalTaxAgent:
                 taxable_income,
                 net_capital_gains,
                 filing_status_enum,
+                tax_year,
             )
             qbi_deduction = qbi_result.final_qbi_deduction
 
@@ -1242,6 +1246,7 @@ class PersonalTaxAgent:
                     1,
                     form,
                     filing_status_enum,
+                    tax_year,
                 )
                 additional_credit_total += ptc_result.additional_credit
                 repayment_total += ptc_result.repayment_amount

@@ -27,7 +27,15 @@ export interface JobStatusResponse {
 
 // Progress Event (from SSE)
 export interface ProgressEvent {
-  stage: 'uploading' | 'scanning' | 'classifying' | 'extracting' | 'calculating' | 'generating' | 'complete'
+  stage:
+    | 'uploading'
+    | 'scanning'
+    | 'classifying'
+    | 'extracting'
+    | 'review'
+    | 'calculating'
+    | 'generating'
+    | 'complete'
   progress: number
   message: string
   document?: string
@@ -82,6 +90,14 @@ export interface ExtractionItem {
   classification_original_confidence?: number | null
   classification_original_reasoning?: string | null
   key_fields: Record<string, string>
+}
+
+export interface ExtractionPreviewResponse {
+  job_id: string
+  status: string
+  message: string
+  extractions: ExtractionItem[]
+  escalations: string[]
 }
 
 // Full results

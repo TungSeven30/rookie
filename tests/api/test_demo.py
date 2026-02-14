@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 import tempfile
+from typing import Any
 
 import orjson
 import pytest
@@ -18,8 +20,10 @@ from src.agents.personal_tax.agent import PersonalTaxResult
 from src.agents.personal_tax.calculator import IncomeSummary, TaxResult
 from src.documents.models import W2Data
 from src.api.demo import (
+    DEMO_ARTIFACT_EXTRACTION_PREVIEW,
     DEMO_ARTIFACT_METADATA,
     DEMO_ARTIFACT_RESULTS,
+    DEMO_ARTIFACT_PROGRESS,
     DEMO_TASK_TYPE,
     _build_results_payload,
 )
@@ -145,6 +149,157 @@ async def test_job_status_not_found(
 
     assert response.status_code == 404
     assert "Job not found" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_preview_returns_extracted_data(
+    api_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    demo_headers: dict[str, str],
+) -> None:
+    """Preview endpoint returns extraction payload for verification."""
+    async with session_factory() as session:
+        client = Client(name="Preview Client")
+        session.add(client)
+        await session.flush()
+
+        task = Task(
+            client_id=client.id,
+            task_type=DEMO_TASK_TYPE,
+            status=TaskStatus.IN_PROGRESS,
+        )
+        session.add(task)
+        await session.flush()
+
+        session.add(
+            TaskArtifact(
+                task_id=task.id,
+                artifact_type=DEMO_ARTIFACT_EXTRACTION_PREVIEW,
+                content=orjson.dumps(
+                    {
+                        "message": "Please verify extracted data before tax calculation.",
+                        "extractions": [
+                            {
+                                "filename": "sample_w2.pdf",
+                                "document_type": "W2",
+                                "confidence": "HIGH",
+                                "key_fields": {
+                                    "wages": "$75,000.00",
+                                    "federal_withholding": "$9,200.00",
+                                },
+                            }
+                        ],
+                        "escalations": [],
+                    }
+                ).decode("utf-8"),
+            )
+        )
+        await session.commit()
+
+    response = await api_client.get(f"/api/demo/preview/{task.id}", headers=demo_headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["job_id"] == str(task.id)
+    assert payload["extractions"][0]["document_type"] == "W2"
+    assert payload["extractions"][0]["key_fields"]["wages"] == "$75,000.00"
+
+
+@pytest.mark.asyncio
+async def test_verify_requires_review_stage(
+    api_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    demo_headers: dict[str, str],
+) -> None:
+    """Verify endpoint rejects jobs that are not at review stage."""
+    async with session_factory() as session:
+        client = Client(name="Verify Client")
+        session.add(client)
+        await session.flush()
+
+        task = Task(
+            client_id=client.id,
+            task_type=DEMO_TASK_TYPE,
+            status=TaskStatus.IN_PROGRESS,
+        )
+        session.add(task)
+        await session.flush()
+
+        session.add(
+            TaskArtifact(
+                task_id=task.id,
+                artifact_type=DEMO_ARTIFACT_PROGRESS,
+                content=orjson.dumps(
+                    {
+                        "stage": "extracting",
+                        "progress": 40,
+                        "message": "Extracting document data",
+                    }
+                ).decode("utf-8"),
+            )
+        )
+        await session.commit()
+
+    response = await api_client.post(f"/api/demo/verify/{task.id}", headers=demo_headers)
+
+    assert response.status_code == 409
+    assert "not waiting for extraction verification" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_verify_starts_post_review_processing(
+    api_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    demo_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify endpoint queues calculation flow when review is complete."""
+    async with session_factory() as session:
+        client = Client(name="Verify Ready Client")
+        session.add(client)
+        await session.flush()
+
+        task = Task(
+            client_id=client.id,
+            task_type=DEMO_TASK_TYPE,
+            status=TaskStatus.IN_PROGRESS,
+        )
+        session.add(task)
+        await session.flush()
+
+        session.add(
+            TaskArtifact(
+                task_id=task.id,
+                artifact_type=DEMO_ARTIFACT_PROGRESS,
+                content=orjson.dumps(
+                    {
+                        "stage": "review",
+                        "progress": 60,
+                        "message": "Review extracted data and confirm to continue",
+                    }
+                ).decode("utf-8"),
+            )
+        )
+        await session.commit()
+
+    captured: dict[str, str] = {}
+    original_create_task = asyncio.create_task
+
+    def _capture_task(coro: Any) -> Any:
+        coro_name = getattr(getattr(coro, "cr_code", None), "co_name", "")
+        if coro_name == "_process_job":
+            captured["coro_name"] = coro_name
+            coro.close()
+            return original_create_task(asyncio.sleep(0))
+        return original_create_task(coro)
+
+    monkeypatch.setattr("src.api.demo.asyncio.create_task", _capture_task)
+
+    response = await api_client.post(f"/api/demo/verify/{task.id}", headers=demo_headers)
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "Verification received. Continuing processing."
+    assert captured["coro_name"] == "_process_job"
 
 
 @pytest.mark.asyncio

@@ -87,8 +87,8 @@ export function DemoWorkspace() {
               Tax Return
             </h2>
             <p className="text-surface-500 mt-2 text-pretty max-w-lg mx-auto">
-              Upload W-2s and 1099s. Rookie will extract the data, calculate taxes,
-              and generate worksheets for your review.
+              Upload W-2s and 1099s. Rookie will extract the data, ask you to verify it,
+              then calculate taxes and generate worksheets for final review.
             </p>
           </div>
           <UploadZone onSubmit={handleSubmit} isLoading={isUploading} />

@@ -186,6 +186,25 @@ class TestW2Validation:
         assert result.is_valid is True  # Warning, not error
         assert any("doesn't match expected" in w for w in result.warnings)
 
+    def test_w2_2025_uses_2025_ss_wage_cap(self, validator: DocumentValidator) -> None:
+        """2025 validation should use the 2025 SSA wage base."""
+        w2 = W2Data(
+            employee_ssn="123-45-6789",
+            employer_ein="12-3456789",
+            employer_name="Acme",
+            employee_name="John",
+            wages_tips_compensation=Decimal("170000.00"),
+            federal_tax_withheld=Decimal("25000.00"),
+            social_security_wages=Decimal("170000.00"),  # Above 2024 cap, below 2025 cap
+            social_security_tax=Decimal("10540.00"),
+            medicare_wages=Decimal("170000.00"),
+            medicare_tax=Decimal("2465.00"),
+            confidence=ConfidenceLevel.HIGH,
+        )
+        result = validator.validate_w2(w2, tax_year=2025)
+        assert result.is_valid is True
+        assert not any("cap" in warning.lower() for warning in result.warnings)
+
 
 # =============================================================================
 # K-1 Validation Tests

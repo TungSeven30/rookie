@@ -23,13 +23,11 @@ from src.agents.personal_tax.calculator import (
     ItemizedDeductionBreakdown,
     PremiumTaxCredit,
     QBIComponent,
-    QBIDeduction,
     RentalExpenses,
     RentalProperty,
     ScheduleCData,
     ScheduleCExpenses,
     ScheduleDData,
-    ScheduleDResult,
     ScheduleEData,
     TaxResult,
     TaxSituation,
@@ -362,9 +360,9 @@ class TestStandardDeduction:
         assert result == Decimal("14600")
 
     def test_standard_deduction_single_2025(self) -> None:
-        """Single filer 2025 standard deduction is $15,000."""
+        """Single filer 2025 standard deduction is $15,750."""
         result = get_standard_deduction("single", 2025)
-        assert result == Decimal("15000")
+        assert result == Decimal("15750")
 
     def test_standard_deduction_mfj_2024(self) -> None:
         """MFJ 2024 standard deduction is $29,200."""
@@ -539,6 +537,21 @@ class TestChildTaxCredit:
         assert ctc.amount == Decimal("4000")
         assert ctc.refundable is False
         assert ctc.form == "Schedule 8812"
+
+    def test_child_tax_credit_2025_amount_update(self) -> None:
+        """2025 CTC base amount is $2,200 per child."""
+        situation = TaxSituation(
+            agi=Decimal("100000"),
+            filing_status="single",
+            tax_year=2025,
+            num_qualifying_children=1,
+        )
+
+        result = evaluate_credits(situation)
+
+        ctc = next((c for c in result.credits if c.name == "Child Tax Credit"), None)
+        assert ctc is not None
+        assert ctc.amount == Decimal("2200")
 
     def test_child_tax_credit_single_child(self) -> None:
         """CTC for single child is $2,000."""
@@ -804,6 +817,23 @@ class TestEITC:
         )
         assert eitc is None
 
+    def test_eitc_mfj_2024_limit_allows_mid_income_case(self) -> None:
+        """MFJ uses higher no-child income limit than single."""
+        situation = TaxSituation(
+            agi=Decimal("20000"),
+            filing_status="mfj",
+            tax_year=2024,
+            earned_income=Decimal("12000"),
+            num_qualifying_children=0,
+        )
+
+        result = evaluate_credits(situation)
+        eitc = next(
+            (c for c in result.credits if c.name == "Earned Income Credit"), None
+        )
+        assert eitc is not None
+        assert eitc.amount > Decimal("0")
+
     def test_eitc_above_income_limit(self) -> None:
         """No EITC above income limit."""
         situation = TaxSituation(
@@ -926,7 +956,7 @@ class TestCalculateTax:
         assert len(result.bracket_breakdown) == 3
 
     def test_tax_10_percent_bracket_only_2025(self) -> None:
-        """Income under $11,750 is taxed at 10% for 2025 singles."""
+        """Income under $11,925 is taxed at 10% for 2025 singles."""
         result = calculate_tax(Decimal("10000"), "single", 2025)
 
         assert result.gross_tax == Decimal("1000")
@@ -937,7 +967,7 @@ class TestCalculateTax:
         """MFJ 2025 brackets should include both 10% and 12% for 50,000 income."""
         result = calculate_tax(Decimal("50000"), "mfj", 2025)
 
-        expected = Decimal("2350") + Decimal("3180")
+        expected = Decimal("2385") + Decimal("3138")
         assert result.gross_tax == expected
 
     def test_tax_100000_single(self) -> None:
@@ -2709,6 +2739,15 @@ class TestGetCapitalGainsRate:
         )
         assert rate == Decimal("0.15")  # Above MFS 0% threshold
 
+    def test_capital_gains_rate_2025_hoh_uses_2025_thresholds(self) -> None:
+        """HOH 2025 thresholds should be used instead of hardcoded 2024 values."""
+        rate = get_capital_gains_rate(
+            Decimal("64000"),
+            FilingStatus.HEAD_OF_HOUSEHOLD,
+            tax_year=2025,
+        )
+        assert rate == Decimal("0")
+
 
 class TestCalculateScheduleD:
     """Tests for calculate_schedule_d() function."""
@@ -3333,6 +3372,24 @@ class TestQBIDeduction:
         assert result.final_qbi_deduction == Decimal("6000.00")
         assert result.taxable_income_limit_applied
 
+    def test_qbi_2025_threshold_is_higher_than_2024(self) -> None:
+        """2025 single threshold should avoid phaseout at $195,000 TI."""
+        components = [
+            QBIComponent(
+                business_name="Service Business",
+                qualified_business_income=Decimal("100000"),
+            ),
+        ]
+        result = calculate_qbi_deduction(
+            components,
+            taxable_income=Decimal("195000"),
+            net_capital_gains=Decimal("0"),
+            filing_status=FilingStatus.SINGLE,
+            tax_year=2025,
+        )
+        assert result.final_qbi_deduction == Decimal("20000.00")
+        assert not result.is_above_threshold
+
 
 class TestQBIHelpers:
     """Tests for QBI helper functions."""
@@ -3448,6 +3505,11 @@ class TestGetFPL:
         fpl = get_fpl(10)
         expected = Decimal("50560") + Decimal("5140") * 2
         assert fpl == expected
+
+    def test_fpl_2025_single_person(self) -> None:
+        """2025 FPL baseline reflects updated 2025 guideline."""
+        fpl = get_fpl(1, tax_year=2025)
+        assert fpl == Decimal("15650")
 
 
 class TestGetApplicablePercentage:

@@ -7,6 +7,7 @@ import type {
   ProcessResponse,
   JobStatusResponse,
   ResultsResponse,
+  ExtractionPreviewResponse,
   ProgressEvent,
   FilingStatus,
   DocumentTypeOption,
@@ -116,6 +117,39 @@ export async function getResults(jobId: string): Promise<ResultsResponse> {
     throw new Error(error.detail || 'Failed to get results')
   }
   
+  return response.json()
+}
+
+/**
+ * Get extraction preview for user verification.
+ */
+export async function getExtractionPreview(jobId: string): Promise<ExtractionPreviewResponse> {
+  const response = await fetch(`${API_BASE}/preview/${jobId}`, {
+    headers: buildHeaders(),
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to load extraction preview' }))
+    throw new Error(error.detail || 'Failed to load extraction preview')
+  }
+
+  return response.json()
+}
+
+/**
+ * Confirm extraction preview and continue processing.
+ */
+export async function verifyExtractionPreview(jobId: string): Promise<ProcessResponse> {
+  const response = await fetch(`${API_BASE}/verify/${jobId}`, {
+    method: 'POST',
+    headers: buildHeaders(),
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to continue processing' }))
+    throw new Error(error.detail || 'Failed to continue processing')
+  }
+
   return response.json()
 }
 

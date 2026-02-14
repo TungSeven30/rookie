@@ -52,6 +52,7 @@ DEMO_TASK_TYPE = "demo_personal_tax"
 DEMO_ARTIFACT_METADATA = "demo_metadata"
 DEMO_ARTIFACT_RESULTS = "results"
 DEMO_ARTIFACT_PROGRESS = "progress"
+DEMO_ARTIFACT_EXTRACTION_PREVIEW = "extraction_preview"
 DEMO_ARTIFACT_UPLOADED = "uploaded_document"
 DEMO_ARTIFACT_WORKSHEET = "drake_worksheet"
 DEMO_ARTIFACT_NOTES = "preparer_notes"
@@ -66,6 +67,7 @@ class ProcessingStage(str, Enum):
     UPLOADING = "uploading"
     SCANNING = "scanning"
     EXTRACTING = "extracting"
+    REVIEW = "review"
     CALCULATING = "calculating"
     GENERATING = "generating"
     COMPLETE = "complete"
@@ -160,6 +162,16 @@ class ExtractionItem(BaseModel):
     classification_original_confidence: float | None = None
     classification_original_reasoning: str | None = None
     key_fields: dict[str, str]
+
+
+class ExtractionPreviewResponse(BaseModel):
+    """Extraction preview payload for user verification."""
+
+    job_id: str
+    status: str
+    message: str
+    extractions: list[ExtractionItem]
+    escalations: list[str]
 
 
 class ResultsResponse(BaseModel):
@@ -428,6 +440,41 @@ def _build_key_fields(extraction: dict[str, Any]) -> dict[str, str]:
     return key_fields
 
 
+def _build_extraction_preview_payload(
+    task_id: int,
+    extractions: list[dict[str, Any]],
+    escalations: list[str],
+) -> dict[str, Any]:
+    """Build extraction preview payload for user verification."""
+    return {
+        "task_id": task_id,
+        "message": "Please verify extracted data before tax calculation.",
+        "extractions": [
+            {
+                "filename": ext.get("filename", "unknown"),
+                "document_type": ext.get("document_type", "unknown"),
+                "confidence": str(ext.get("confidence", "HIGH")),
+                "classification_confidence": ext.get("classification_confidence"),
+                "classification_reasoning": ext.get("classification_reasoning"),
+                "classification_overridden": ext.get("classification_overridden", False),
+                "classification_override_source": ext.get(
+                    "classification_override_source"
+                ),
+                "classification_original_type": ext.get("classification_original_type"),
+                "classification_original_confidence": ext.get(
+                    "classification_original_confidence"
+                ),
+                "classification_original_reasoning": ext.get(
+                    "classification_original_reasoning"
+                ),
+                "key_fields": _build_key_fields(ext),
+            }
+            for ext in extractions
+        ],
+        "escalations": escalations,
+    }
+
+
 async def _build_results_payload(
     task_id: int,
     client_name: str,
@@ -566,6 +613,20 @@ async def _save_results(
     )
 
 
+async def _save_extraction_preview(
+    session: AsyncSession,
+    task_id: int,
+    payload: dict[str, Any],
+) -> None:
+    """Persist extraction preview payload in TaskArtifact."""
+    await _create_artifact(
+        session=session,
+        task_id=task_id,
+        artifact_type=DEMO_ARTIFACT_EXTRACTION_PREVIEW,
+        content=payload,
+    )
+
+
 async def _upload_output(
     storage_url: str,
     output_prefix: str,
@@ -578,8 +639,8 @@ async def _upload_output(
     return storage_path
 
 
-async def _process_job(task_id: int, session_factory: Any) -> None:
-    """Process uploaded documents through PersonalTaxAgent."""
+async def _prepare_job_for_review(task_id: int, session_factory: Any) -> None:
+    """Run extraction-only phase and pause for user verification."""
     async with session_factory() as session:
         task = await _get_task(session, task_id)
         if not task:
@@ -614,9 +675,14 @@ async def _process_job(task_id: int, session_factory: Any) -> None:
                 output_dir=output_dir,
                 document_model=metadata.get("document_model"),
             )
-
-            # Build user form type overrides from uploaded document artifacts
             user_form_type_overrides = await _get_user_form_type_overrides(session, task_id)
+            agent._user_form_type_overrides = user_form_type_overrides
+            agent.document_model = metadata.get("document_model")
+
+            documents = agent._scan_documents(
+                client_id=str(client_id),
+                tax_year=tax_year,
+            )
 
             await _emit_progress(
                 session,
@@ -628,6 +694,130 @@ async def _process_job(task_id: int, session_factory: Any) -> None:
                 ),
             )
             await session.commit()
+
+            extractions = await agent._extract_documents(documents)
+            preview_payload = _build_extraction_preview_payload(
+                task_id=task_id,
+                extractions=extractions,
+                escalations=agent.escalations,
+            )
+            await _save_extraction_preview(session, task_id, preview_payload)
+
+            await _emit_progress(
+                session,
+                task_id,
+                ProgressEvent(
+                    stage=ProcessingStage.REVIEW,
+                    progress=60,
+                    message="Review extracted data and confirm to continue",
+                ),
+            )
+            await session.commit()
+
+        except EscalationRequired as exc:
+            task.status = TaskStatus.ESCALATED
+            session.add(
+                Escalation(
+                    task_id=task_id,
+                    reason="; ".join(exc.reasons),
+                    escalated_at=datetime.now(UTC),
+                )
+            )
+
+            payload = await _build_results_payload(
+                task_id=task_id,
+                client_name=client_name,
+                tax_year=tax_year,
+                filing_status=filing_status,
+                result=exc.result,
+                escalations=exc.reasons,
+            )
+            await _save_results(session, task_id, payload)
+
+            await _emit_progress(
+                session,
+                task_id,
+                ProgressEvent(
+                    stage=ProcessingStage.COMPLETE,
+                    progress=100,
+                    message="Escalation required",
+                    status=task.status.value,
+                ),
+            )
+            await session.commit()
+
+        except Exception as exc:
+            logger.exception("demo_prepare_failed", task_id=task_id, error=str(exc))
+            task.status = TaskStatus.FAILED
+            await _emit_progress(
+                session,
+                task_id,
+                ProgressEvent(
+                    stage=ProcessingStage.COMPLETE,
+                    progress=100,
+                    message="Processing failed",
+                    status=task.status.value,
+                ),
+            )
+            await session.commit()
+
+
+async def _process_job(
+    task_id: int,
+    session_factory: Any,
+    *,
+    from_review: bool = False,
+) -> None:
+    """Run full tax workflow after verification."""
+    async with session_factory() as session:
+        task = await _get_task(session, task_id)
+        if not task:
+            logger.error("demo_task_missing", task_id=task_id)
+            return
+
+        metadata = await _get_metadata(session, task_id)
+        storage_url = metadata.get("storage_url", settings.default_storage_url)
+        client_id = int(metadata.get("client_id", 0))
+        client_name = metadata.get("client_name", f"Client {client_id}")
+        tax_year = int(metadata.get("tax_year", datetime.now(UTC).year))
+        filing_status = metadata.get("filing_status", "single")
+
+        output_dir = Path(settings.output_dir) / "demo" / str(task_id)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            task.status = TaskStatus.IN_PROGRESS
+            if not from_review:
+                await _emit_progress(
+                    session,
+                    task_id,
+                    ProgressEvent(
+                        stage=ProcessingStage.SCANNING,
+                        progress=10,
+                        message="Scanning documents",
+                    ),
+                )
+            await session.commit()
+
+            agent = PersonalTaxAgent(
+                storage_url=storage_url,
+                output_dir=output_dir,
+                document_model=metadata.get("document_model"),
+            )
+
+            user_form_type_overrides = await _get_user_form_type_overrides(session, task_id)
+
+            if not from_review:
+                await _emit_progress(
+                    session,
+                    task_id,
+                    ProgressEvent(
+                        stage=ProcessingStage.EXTRACTING,
+                        progress=40,
+                        message="Extracting document data",
+                    ),
+                )
+                await session.commit()
 
             result = await agent.process(
                 client_id=str(client_id),
@@ -643,7 +833,7 @@ async def _process_job(task_id: int, session_factory: Any) -> None:
                 task_id,
                 ProgressEvent(
                     stage=ProcessingStage.GENERATING,
-                    progress=80,
+                    progress=90 if from_review else 80,
                     message="Generating outputs",
                 ),
             )
@@ -1100,7 +1290,12 @@ async def start_processing(
         raise HTTPException(status_code=404, detail="Job not found")
 
     # Allow reprocessing if job is completed, escalated, or failed (for adding new documents)
-    if task.status not in {TaskStatus.PENDING, TaskStatus.FAILED, TaskStatus.COMPLETED, TaskStatus.ESCALATED}:
+    if task.status not in {
+        TaskStatus.PENDING,
+        TaskStatus.FAILED,
+        TaskStatus.COMPLETED,
+        TaskStatus.ESCALATED,
+    }:
         raise HTTPException(
             status_code=400,
             detail=f"Job cannot be started. Current status: {task.status.value}",
@@ -1110,12 +1305,111 @@ async def start_processing(
     await db.commit()
 
     session_factory = request.app.state.async_session
-    asyncio.create_task(_process_job(job_id, session_factory))
+    asyncio.create_task(_prepare_job_for_review(job_id, session_factory))
 
     return ProcessResponse(
         job_id=str(job_id),
         status="processing",
-        message="Processing started",
+        message="Extraction started",
+    )
+
+
+@router.get("/preview/{job_id}", response_model=ExtractionPreviewResponse)
+async def get_extraction_preview(
+    job_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> ExtractionPreviewResponse:
+    """Get extracted fields for user verification before calculation."""
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not available")
+
+    task = await _get_task(db, job_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    preview_artifact = await _get_latest_artifact(
+        db, job_id, DEMO_ARTIFACT_EXTRACTION_PREVIEW
+    )
+    if not preview_artifact:
+        raise HTTPException(status_code=404, detail="Extraction preview not ready")
+
+    preview = _json_loads(preview_artifact.content)
+    return ExtractionPreviewResponse(
+        job_id=str(job_id),
+        status=task.status.value,
+        message=preview.get(
+            "message", "Please verify extracted data before tax calculation."
+        ),
+        extractions=[
+            ExtractionItem(
+                filename=item.get("filename", "unknown"),
+                document_type=item.get("document_type", "unknown"),
+                confidence=item.get("confidence", "HIGH"),
+                classification_confidence=item.get("classification_confidence"),
+                classification_reasoning=item.get("classification_reasoning"),
+                classification_overridden=item.get("classification_overridden", False),
+                classification_override_source=item.get("classification_override_source"),
+                classification_original_type=item.get("classification_original_type"),
+                classification_original_confidence=item.get(
+                    "classification_original_confidence"
+                ),
+                classification_original_reasoning=item.get(
+                    "classification_original_reasoning"
+                ),
+                key_fields=item.get("key_fields", {}),
+            )
+            for item in preview.get("extractions", [])
+        ],
+        escalations=preview.get("escalations", []),
+    )
+
+
+@router.post("/verify/{job_id}", response_model=ProcessResponse)
+async def verify_extraction_preview(
+    job_id: int,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> ProcessResponse:
+    """Continue full processing after user verifies extraction preview."""
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not available")
+
+    task = await _get_task(db, job_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    progress_artifact = await _get_latest_artifact(db, job_id, DEMO_ARTIFACT_PROGRESS)
+    progress_data = _json_loads(progress_artifact.content if progress_artifact else None)
+    if progress_data.get("stage") != ProcessingStage.REVIEW.value:
+        raise HTTPException(
+            status_code=409,
+            detail="Job is not waiting for extraction verification",
+        )
+
+    if task.status not in {TaskStatus.IN_PROGRESS, TaskStatus.ASSIGNED}:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job cannot be verified from status: {task.status.value}",
+        )
+
+    await _emit_progress(
+        db,
+        job_id,
+        ProgressEvent(
+            stage=ProcessingStage.CALCULATING,
+            progress=70,
+            message="Verification received. Running tax calculation",
+        ),
+    )
+    await db.commit()
+
+    session_factory = request.app.state.async_session
+    asyncio.create_task(_process_job(job_id, session_factory, from_review=True))
+
+    return ProcessResponse(
+        job_id=str(job_id),
+        status="processing",
+        message="Verification received. Continuing processing.",
     )
 
 

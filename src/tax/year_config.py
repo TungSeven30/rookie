@@ -67,8 +67,12 @@ class TaxYearConfig:
     # Capital gains brackets
     ltcg_0_threshold_single: Decimal = Decimal("0")
     ltcg_0_threshold_mfj: Decimal = Decimal("0")
+    ltcg_0_threshold_mfs: Decimal = Decimal("0")
+    ltcg_0_threshold_hoh: Decimal = Decimal("0")
     ltcg_15_threshold_single: Decimal = Decimal("0")
     ltcg_15_threshold_mfj: Decimal = Decimal("0")
+    ltcg_15_threshold_mfs: Decimal = Decimal("0")
+    ltcg_15_threshold_hoh: Decimal = Decimal("0")
 
     # Capital loss limit
     capital_loss_limit: Decimal = Decimal("3000")
@@ -107,36 +111,44 @@ TAX_YEAR_2024 = TaxYearConfig(
     # Capital gains (0%/15%/20% brackets)
     ltcg_0_threshold_single=Decimal("47025"),
     ltcg_0_threshold_mfj=Decimal("94050"),
+    ltcg_0_threshold_mfs=Decimal("47025"),
+    ltcg_0_threshold_hoh=Decimal("63000"),
     ltcg_15_threshold_single=Decimal("518900"),
     ltcg_15_threshold_mfj=Decimal("583750"),
+    ltcg_15_threshold_mfs=Decimal("291850"),
+    ltcg_15_threshold_hoh=Decimal("551350"),
     # ACA Federal Poverty Level (2024 guidelines)
     fpl_1_person=Decimal("14580"),
     fpl_per_additional=Decimal("5140"),
 )
 
-# 2025 Configuration - projected values (update when IRS releases official numbers)
+# 2025 Configuration - official values (including post-2024 law updates)
 TAX_YEAR_2025 = TaxYearConfig(
     tax_year=2025,
     ss_wage_base=Decimal("176100"),
-    # Standard deductions (estimated)
-    standard_deduction_single=Decimal("15000"),
-    standard_deduction_mfj=Decimal("30000"),
-    standard_deduction_mfs=Decimal("15000"),
-    standard_deduction_hoh=Decimal("22500"),
-    standard_deduction_qw=Decimal("30000"),
+    # Standard deductions (OBBBA-adjusted)
+    standard_deduction_single=Decimal("15750"),
+    standard_deduction_mfj=Decimal("31500"),
+    standard_deduction_mfs=Decimal("15750"),
+    standard_deduction_hoh=Decimal("23625"),
+    standard_deduction_qw=Decimal("31500"),
     additional_deduction_65_blind=Decimal("1600"),
-    # QBI thresholds (estimated)
+    # QBI thresholds
     qbi_threshold_single=Decimal("197300"),
     qbi_threshold_mfj=Decimal("394600"),
     qbi_phaseout=Decimal("50000"),
-    # Capital gains (estimated)
+    # Capital gains (0%/15%/20% brackets)
     ltcg_0_threshold_single=Decimal("48350"),
     ltcg_0_threshold_mfj=Decimal("96700"),
+    ltcg_0_threshold_mfs=Decimal("48350"),
+    ltcg_0_threshold_hoh=Decimal("64750"),
     ltcg_15_threshold_single=Decimal("533400"),
     ltcg_15_threshold_mfj=Decimal("600050"),
-    # ACA Federal Poverty Level (estimated)
-    fpl_1_person=Decimal("15060"),
-    fpl_per_additional=Decimal("5380"),
+    ltcg_15_threshold_mfs=Decimal("300000"),
+    ltcg_15_threshold_hoh=Decimal("566700"),
+    # ACA Federal Poverty Level (2025 guidelines, 48 contiguous states + DC)
+    fpl_1_person=Decimal("15650"),
+    fpl_per_additional=Decimal("5500"),
 )
 
 # Registry of available tax year configurations

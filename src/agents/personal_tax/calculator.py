@@ -969,11 +969,11 @@ STANDARD_DEDUCTIONS: dict[tuple[int, str], Decimal] = {
     (2024, "mfj"): Decimal("29200"),
     (2024, "mfs"): Decimal("14600"),
     (2024, "hoh"): Decimal("21900"),
-    # 2025 values (provisional; aligned with year_config and current deployment defaults)
-    (2025, "single"): Decimal("15000"),
-    (2025, "mfj"): Decimal("30000"),
-    (2025, "mfs"): Decimal("15000"),
-    (2025, "hoh"): Decimal("22500"),
+    # 2025 values (official, includes post-2024 law updates)
+    (2025, "single"): Decimal("15750"),
+    (2025, "mfj"): Decimal("31500"),
+    (2025, "mfs"): Decimal("15750"),
+    (2025, "hoh"): Decimal("23625"),
     # 2023 values
     (2023, "single"): Decimal("13850"),
     (2023, "mfj"): Decimal("27700"),
@@ -1028,41 +1028,41 @@ TAX_BRACKETS: dict[tuple[int, str], list[tuple[Decimal | None, Decimal]]] = {
         (Decimal("609350"), Decimal("0.35")),
         (None, Decimal("0.37")),
     ],
-    # 2025 values (provisional, matching deployment defaults until final IRS table is added)
+    # 2025 values
     (2025, "single"): [
-        (Decimal("11750"), Decimal("0.10")),
-        (Decimal("47850"), Decimal("0.12")),
-        (Decimal("102100"), Decimal("0.22")),
-        (Decimal("195550"), Decimal("0.24")),
-        (Decimal("246625"), Decimal("0.32")),
-        (Decimal("620350"), Decimal("0.35")),
+        (Decimal("11925"), Decimal("0.10")),
+        (Decimal("48475"), Decimal("0.12")),
+        (Decimal("103350"), Decimal("0.22")),
+        (Decimal("197300"), Decimal("0.24")),
+        (Decimal("250525"), Decimal("0.32")),
+        (Decimal("626350"), Decimal("0.35")),
         (None, Decimal("0.37")),
     ],
     (2025, "mfj"): [
-        (Decimal("23500"), Decimal("0.10")),
-        (Decimal("95250"), Decimal("0.12")),
-        (Decimal("202200"), Decimal("0.22")),
-        (Decimal("388100"), Decimal("0.24")),
-        (Decimal("492500"), Decimal("0.32")),
-        (Decimal("738700"), Decimal("0.35")),
+        (Decimal("23850"), Decimal("0.10")),
+        (Decimal("96950"), Decimal("0.12")),
+        (Decimal("206700"), Decimal("0.22")),
+        (Decimal("394600"), Decimal("0.24")),
+        (Decimal("501050"), Decimal("0.32")),
+        (Decimal("751600"), Decimal("0.35")),
         (None, Decimal("0.37")),
     ],
     (2025, "mfs"): [
-        (Decimal("11750"), Decimal("0.10")),
-        (Decimal("47850"), Decimal("0.12")),
-        (Decimal("102100"), Decimal("0.22")),
-        (Decimal("195550"), Decimal("0.24")),
-        (Decimal("246625"), Decimal("0.32")),
-        (Decimal("369600"), Decimal("0.35")),
+        (Decimal("11925"), Decimal("0.10")),
+        (Decimal("48475"), Decimal("0.12")),
+        (Decimal("103350"), Decimal("0.22")),
+        (Decimal("197300"), Decimal("0.24")),
+        (Decimal("250525"), Decimal("0.32")),
+        (Decimal("375800"), Decimal("0.35")),
         (None, Decimal("0.37")),
     ],
     (2025, "hoh"): [
-        (Decimal("16800"), Decimal("0.10")),
-        (Decimal("64800"), Decimal("0.12")),
-        (Decimal("102100"), Decimal("0.22")),
-        (Decimal("195550"), Decimal("0.24")),
-        (Decimal("246600"), Decimal("0.32")),
-        (Decimal("620350"), Decimal("0.35")),
+        (Decimal("17000"), Decimal("0.10")),
+        (Decimal("64850"), Decimal("0.12")),
+        (Decimal("103350"), Decimal("0.22")),
+        (Decimal("197300"), Decimal("0.24")),
+        (Decimal("250500"), Decimal("0.32")),
+        (Decimal("626350"), Decimal("0.35")),
         (None, Decimal("0.37")),
     ],
     (2023, "single"): [
@@ -1103,8 +1103,11 @@ TAX_BRACKETS: dict[tuple[int, str], list[tuple[Decimal | None, Decimal]]] = {
     ],
 }
 
-# Child Tax Credit constants (2024)
-CTC_AMOUNT = Decimal("2000")
+# Child Tax Credit constants (amount is year-specific)
+CTC_AMOUNT_BY_YEAR: dict[int, Decimal] = {
+    2024: Decimal("2000"),
+    2025: Decimal("2200"),
+}
 CTC_PHASEOUT_SINGLE = Decimal("200000")
 CTC_PHASEOUT_MFJ = Decimal("400000")
 CTC_PHASEOUT_RATE = Decimal("50")  # $50 reduction per $1000 over threshold
@@ -1139,38 +1142,56 @@ SAVERS_CREDIT_RATES: dict[tuple[int, str], list[tuple[Decimal, Decimal]]] = {
         (Decimal("37500"), Decimal("0.20")),
         (Decimal("57375"), Decimal("0.10")),
     ],
-    # 2025 values (provisional; conservative carryover from 2024 limits)
+    # 2025 values
     (2025, "single"): [
-        (Decimal("23000"), Decimal("0.50")),
-        (Decimal("25000"), Decimal("0.20")),
-        (Decimal("38250"), Decimal("0.10")),
+        (Decimal("23750"), Decimal("0.50")),
+        (Decimal("25500"), Decimal("0.20")),
+        (Decimal("39500"), Decimal("0.10")),
     ],
     (2025, "mfj"): [
-        (Decimal("46000"), Decimal("0.50")),
-        (Decimal("50000"), Decimal("0.20")),
-        (Decimal("76500"), Decimal("0.10")),
+        (Decimal("47500"), Decimal("0.50")),
+        (Decimal("51000"), Decimal("0.20")),
+        (Decimal("79000"), Decimal("0.10")),
     ],
     (2025, "mfs"): [
-        (Decimal("23000"), Decimal("0.50")),
-        (Decimal("25000"), Decimal("0.20")),
-        (Decimal("38250"), Decimal("0.10")),
+        (Decimal("23750"), Decimal("0.50")),
+        (Decimal("25500"), Decimal("0.20")),
+        (Decimal("39500"), Decimal("0.10")),
     ],
     (2025, "hoh"): [
-        (Decimal("34500"), Decimal("0.50")),
-        (Decimal("37500"), Decimal("0.20")),
-        (Decimal("57375"), Decimal("0.10")),
+        (Decimal("35625"), Decimal("0.50")),
+        (Decimal("38250"), Decimal("0.20")),
+        (Decimal("59250"), Decimal("0.10")),
     ],
 }
 SAVERS_CREDIT_MAX_CONTRIBUTION = Decimal("2000")
 
-# EITC simplified thresholds (2024, no children)
-EITC_MAX_NO_CHILDREN = Decimal("632")
-EITC_INCOME_LIMIT_SINGLE_NO_CHILDREN = Decimal("18591")
-EITC_INCOME_LIMITS_NO_CHILDREN = {
-    "single": EITC_INCOME_LIMIT_SINGLE_NO_CHILDREN,
-    "mfj": EITC_INCOME_LIMIT_SINGLE_NO_CHILDREN,
-    "mfs": EITC_INCOME_LIMIT_SINGLE_NO_CHILDREN,
-    "hoh": EITC_INCOME_LIMIT_SINGLE_NO_CHILDREN,
+# EITC simplified thresholds (no children)
+EITC_MAX_NO_CHILDREN_BY_YEAR: dict[int, Decimal] = {
+    2024: Decimal("632"),
+    2025: Decimal("649"),
+}
+EITC_INCOME_LIMITS_NO_CHILDREN: dict[tuple[int, str], Decimal] = {
+    # 2024
+    (2024, "single"): Decimal("18591"),
+    (2024, "mfj"): Decimal("25511"),
+    (2024, "mfs"): Decimal("18591"),
+    (2024, "hoh"): Decimal("18591"),
+    (2024, "qw"): Decimal("18591"),
+    # 2025
+    (2025, "single"): Decimal("18591"),
+    (2025, "mfj"): Decimal("25511"),
+    (2025, "mfs"): Decimal("18591"),
+    (2025, "hoh"): Decimal("18591"),
+    (2025, "qw"): Decimal("18591"),
+}
+EITC_PHASE_IN_END_NO_CHILDREN_BY_YEAR: dict[int, Decimal] = {
+    2024: Decimal("8260"),
+    2025: Decimal("8490"),
+}
+EITC_PHASE_OUT_START_NO_CHILDREN_BY_YEAR: dict[int, Decimal] = {
+    2024: Decimal("10330"),
+    2025: Decimal("10620"),
 }
 
 
@@ -1329,6 +1350,7 @@ def calculate_schedule_e(
     data: ScheduleEData,
     modified_agi: Decimal,
     filing_status: FilingStatus,
+    tax_year: int = 2024,
 ) -> ScheduleEResult:
     """Calculate Schedule E rental income with passive activity loss limitations.
 
@@ -1352,7 +1374,7 @@ def calculate_schedule_e(
         >>> result.net_rental_income_loss
         Decimal('-10000')  # Full loss allowed under $100k MAGI
     """
-    config = get_tax_year_config(2024)
+    config = get_tax_year_config(tax_year)
 
     # Calculate per-property results
     property_results = []
@@ -1472,13 +1494,11 @@ def get_capital_gains_rate(
         low_threshold = config.ltcg_0_threshold_mfj
         high_threshold = config.ltcg_15_threshold_mfj
     elif filing_status == FilingStatus.MARRIED_FILING_SEPARATELY:
-        # MFS has half of MFJ thresholds
-        low_threshold = config.ltcg_0_threshold_mfj / 2
-        high_threshold = config.ltcg_15_threshold_mfj / 2
+        low_threshold = config.ltcg_0_threshold_mfs
+        high_threshold = config.ltcg_15_threshold_mfs
     elif filing_status == FilingStatus.HEAD_OF_HOUSEHOLD:
-        # HOH has specific thresholds (between single and MFJ)
-        low_threshold = Decimal("63000")  # 2024 HOH 0% threshold
-        high_threshold = Decimal("551350")  # 2024 HOH 15% threshold
+        low_threshold = config.ltcg_0_threshold_hoh
+        high_threshold = config.ltcg_15_threshold_hoh
     else:
         # Single
         low_threshold = config.ltcg_0_threshold_single
@@ -1495,6 +1515,7 @@ def get_capital_gains_rate(
 def calculate_schedule_d(
     data: ScheduleDData,
     filing_status: FilingStatus,
+    tax_year: int = 2024,
 ) -> ScheduleDResult:
     """Calculate Schedule D capital gains/losses with limitations.
 
@@ -1519,7 +1540,7 @@ def calculate_schedule_d(
         >>> result.net_included_in_income
         Decimal('2000')
     """
-    config = get_tax_year_config(2024)
+    config = get_tax_year_config(tax_year)
 
     # Get gross short-term and long-term before carryover
     gross_st = data.net_short_term
@@ -1659,15 +1680,19 @@ def convert_1099b_to_transactions(
 # QBI Deduction - Section 199A (PTAX-04-06)
 # =============================================================================
 
-# QBI Section 199A thresholds (2024)
-# Format: (threshold, phaseout_range)
-QBI_THRESHOLDS: dict[FilingStatus, tuple[Decimal, Decimal]] = {
-    FilingStatus.SINGLE: (Decimal("191950"), Decimal("50000")),
-    FilingStatus.MARRIED_FILING_JOINTLY: (Decimal("383900"), Decimal("100000")),
-    FilingStatus.MARRIED_FILING_SEPARATELY: (Decimal("191950"), Decimal("50000")),
-    FilingStatus.HEAD_OF_HOUSEHOLD: (Decimal("191950"), Decimal("50000")),
-    FilingStatus.QUALIFYING_WIDOW: (Decimal("383900"), Decimal("100000")),
-}
+def _get_qbi_threshold_and_phaseout(
+    filing_status: FilingStatus,
+    tax_year: int,
+) -> tuple[Decimal, Decimal]:
+    """Return (threshold, phaseout_range) for QBI deduction."""
+    config = get_tax_year_config(tax_year)
+
+    if filing_status in (
+        FilingStatus.MARRIED_FILING_JOINTLY,
+        FilingStatus.QUALIFYING_WIDOW,
+    ):
+        return config.qbi_threshold_mfj, config.qbi_phaseout * 2
+    return config.qbi_threshold_single, config.qbi_phaseout
 
 
 def calculate_qbi_deduction(
@@ -1675,6 +1700,7 @@ def calculate_qbi_deduction(
     taxable_income: Decimal,
     net_capital_gains: Decimal,
     filing_status: FilingStatus,
+    tax_year: int = 2024,
 ) -> QBIDeduction:
     """Calculate QBI deduction under Section 199A.
 
@@ -1710,10 +1736,7 @@ def calculate_qbi_deduction(
         >>> result.final_qbi_deduction
         Decimal('20000.00')
     """
-    threshold, phaseout = QBI_THRESHOLDS.get(
-        filing_status,
-        (Decimal("191950"), Decimal("50000")),
-    )
+    threshold, phaseout = _get_qbi_threshold_and_phaseout(filing_status, tax_year)
 
     phaseout_end = threshold + phaseout
 
@@ -1935,29 +1958,12 @@ def build_qbi_from_rental(
 # Premium Tax Credit - Form 8962 (PTAX-04-07)
 # =============================================================================
 
-# Federal Poverty Level (2024) - 48 contiguous states
-# Used for Premium Tax Credit calculation
-FPL_2024: dict[int, Decimal] = {
-    1: Decimal("14580"),
-    2: Decimal("19720"),
-    3: Decimal("24860"),
-    4: Decimal("30000"),
-    5: Decimal("35140"),
-    6: Decimal("40280"),
-    7: Decimal("45420"),
-    8: Decimal("50560"),
-}
-
-# Additional person above 8
-FPL_2024_ADDITIONAL = Decimal("5140")
-
-
 def get_fpl(household_size: int, tax_year: int = 2024) -> Decimal:
     """Get Federal Poverty Level for household size.
 
     Args:
         household_size: Number of people in tax household.
-        tax_year: Tax year (currently only 2024 supported).
+        tax_year: Tax year.
 
     Returns:
         Federal Poverty Level amount.
@@ -1966,11 +1972,18 @@ def get_fpl(household_size: int, tax_year: int = 2024) -> Decimal:
         >>> get_fpl(4)
         Decimal('30000')
     """
+    config = get_tax_year_config(tax_year)
+    base_1 = config.fpl_1_person
+    step = config.fpl_per_additional
+
+    if household_size <= 1:
+        return base_1
+
     if household_size <= 8:
-        return FPL_2024.get(household_size, FPL_2024[1])
+        return base_1 + step * (household_size - 1)
     else:
         # For each additional person above 8
-        return FPL_2024[8] + FPL_2024_ADDITIONAL * (household_size - 8)
+        return base_1 + step * 7 + step * (household_size - 8)
 
 
 def get_applicable_percentage(
@@ -2063,6 +2076,7 @@ def calculate_premium_tax_credit(
     household_size: int,
     form_1095a: Form1095A,
     filing_status: FilingStatus,
+    tax_year: int = 2024,
 ) -> PremiumTaxCredit:
     """Calculate Premium Tax Credit and reconcile advance payments.
 
@@ -2102,7 +2116,7 @@ def calculate_premium_tax_credit(
         True
     """
     # Calculate FPL percentage
-    fpl = get_fpl(household_size)
+    fpl = get_fpl(household_size, tax_year)
     income_as_fpl_percent = (household_income / fpl) * Decimal("100")
 
     # Check eligibility (100-400% FPL for 2024 under ARP extension)
@@ -2191,6 +2205,7 @@ def aggregate_income(
     schedule_d_data: ScheduleDData | None = None,
     filing_status: FilingStatus = FilingStatus.SINGLE,
     modified_agi_for_pal: Decimal | None = None,
+    tax_year: int = 2024,
 ) -> IncomeSummary:
     """Aggregate income from all tax documents.
 
@@ -2201,6 +2216,7 @@ def aggregate_income(
         schedule_d_data: Optional Schedule D capital gains/losses data.
         filing_status: Filing status for SE tax and capital loss limits.
         modified_agi_for_pal: MAGI for passive activity loss calculation.
+        tax_year: Tax year for year-specific thresholds.
 
     Returns:
         IncomeSummary with totals by income type including business and capital gains.
@@ -2313,6 +2329,7 @@ def aggregate_income(
         se_result = calculate_self_employment_tax(
             self_employment_income,
             filing_status,
+            tax_year,
         )
         se_tax = se_result.total_se_tax
         se_tax_deduction = se_result.deductible_portion
@@ -2348,7 +2365,12 @@ def aggregate_income(
             + total_other
             + schedule_c_profit
         )
-        sch_e_result = calculate_schedule_e(schedule_e_data, magi, filing_status)
+        sch_e_result = calculate_schedule_e(
+            schedule_e_data,
+            magi,
+            filing_status,
+            tax_year,
+        )
         schedule_e_rental_income = sch_e_result.total_rental_income
         schedule_e_expenses = sch_e_result.total_expenses
         schedule_e_net = sch_e_result.net_rental_income_loss
@@ -2360,7 +2382,11 @@ def aggregate_income(
     capital_gains_net = Decimal("0")
     capital_loss_carryforward = Decimal("0")
     if schedule_d_data:
-        sch_d_result = calculate_schedule_d(schedule_d_data, filing_status)
+        sch_d_result = calculate_schedule_d(
+            schedule_d_data,
+            filing_status,
+            tax_year,
+        )
         capital_gains_short_term = sch_d_result.net_short_term_gain_loss
         capital_gains_long_term = sch_d_result.net_long_term_gain_loss
         capital_gains_net = sch_d_result.net_included_in_income  # After loss limit
@@ -2550,8 +2576,11 @@ def _calculate_child_tax_credit(situation: TaxSituation) -> Decimal:
     if situation.num_qualifying_children <= 0:
         return Decimal("0")
 
-    # Base credit: $2,000 per child
-    base_credit = CTC_AMOUNT * situation.num_qualifying_children
+    ctc_amount = CTC_AMOUNT_BY_YEAR.get(
+        situation.tax_year,
+        CTC_AMOUNT_BY_YEAR[2024],
+    )
+    base_credit = ctc_amount * situation.num_qualifying_children
 
     # Determine phaseout threshold
     if situation.filing_status.lower() == "mfj":
@@ -2692,32 +2721,41 @@ def _calculate_eitc(situation: TaxSituation) -> Decimal:
     # Check income limit by filing status
     status = situation.filing_status.lower()
     limit = EITC_INCOME_LIMITS_NO_CHILDREN.get(
-        status, EITC_INCOME_LIMIT_SINGLE_NO_CHILDREN
+        (situation.tax_year, status),
+        EITC_INCOME_LIMITS_NO_CHILDREN[(2024, "single")],
     )
     if situation.agi > limit:
         return Decimal("0")
 
+    max_credit = EITC_MAX_NO_CHILDREN_BY_YEAR.get(
+        situation.tax_year,
+        EITC_MAX_NO_CHILDREN_BY_YEAR[2024],
+    )
+
     # Simplified credit calculation - phase in and phase out
-    # Max credit for no children in 2024 is $632
     earned = situation.earned_income
 
-    # Phase-in: credit increases with income up to about $7,840
-    phase_in_end = Decimal("7840")
+    phase_in_end = EITC_PHASE_IN_END_NO_CHILDREN_BY_YEAR.get(
+        situation.tax_year,
+        EITC_PHASE_IN_END_NO_CHILDREN_BY_YEAR[2024],
+    )
     phase_in_rate = Decimal("0.0765")
 
-    # Phase-out: credit decreases from about $9,800
-    phase_out_start = Decimal("9800")
+    phase_out_start = EITC_PHASE_OUT_START_NO_CHILDREN_BY_YEAR.get(
+        situation.tax_year,
+        EITC_PHASE_OUT_START_NO_CHILDREN_BY_YEAR[2024],
+    )
     phase_out_rate = Decimal("0.0765")
 
     if earned <= phase_in_end:
         credit = earned * phase_in_rate
     elif earned <= phase_out_start:
-        credit = EITC_MAX_NO_CHILDREN
+        credit = max_credit
     else:
         reduction = (earned - phase_out_start) * phase_out_rate
-        credit = max(Decimal("0"), EITC_MAX_NO_CHILDREN - reduction)
+        credit = max(Decimal("0"), max_credit - reduction)
 
-    return min(credit, EITC_MAX_NO_CHILDREN)
+    return min(credit, max_credit)
 
 
 def build_credit_inputs(documents: list[TaxDocument]) -> CreditInputs:

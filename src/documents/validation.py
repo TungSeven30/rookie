@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
+from src.tax.year_config import get_tax_year_config
+
 if TYPE_CHECKING:
     from src.documents.models import Form1099B, FormK1, W2Data
 
@@ -53,12 +55,10 @@ class DocumentValidator:
         ...     print(f"Review these issues: {result.warnings}")
     """
 
-    # 2024 Social Security wage cap - should be configurable per tax year
-    SS_WAGE_CAP_2024 = Decimal("168600")
     SS_TAX_RATE = Decimal("0.062")
     MEDICARE_TAX_RATE = Decimal("0.0145")
 
-    def validate_w2(self, w2: "W2Data") -> ValidationResult:
+    def validate_w2(self, w2: "W2Data", tax_year: int = 2024) -> ValidationResult:
         """Validate W-2 data for consistency.
 
         Checks:
@@ -69,12 +69,14 @@ class DocumentValidator:
 
         Args:
             w2: W2Data model to validate.
+            tax_year: Tax year for Social Security wage base checks.
 
         Returns:
             ValidationResult with any errors or warnings.
         """
         errors: list[str] = []
         warnings: list[str] = []
+        ss_wage_cap = get_tax_year_config(tax_year).ss_wage_base
 
         # Federal withholding shouldn't exceed wages
         if w2.federal_tax_withheld and w2.wages_tips_compensation:
@@ -85,15 +87,15 @@ class DocumentValidator:
                 )
 
         # Social Security wages have a cap
-        if w2.social_security_wages and w2.social_security_wages > self.SS_WAGE_CAP_2024:
+        if w2.social_security_wages and w2.social_security_wages > ss_wage_cap:
             warnings.append(
                 f"Social Security wages ({w2.social_security_wages}) "
-                f"exceed 2024 cap ({self.SS_WAGE_CAP_2024})"
+                f"exceed {tax_year} cap ({ss_wage_cap})"
             )
 
         # SS tax should be ~6.2% of SS wages (with tolerance for rounding)
         if w2.social_security_wages and w2.social_security_tax:
-            capped_wages = min(w2.social_security_wages, self.SS_WAGE_CAP_2024)
+            capped_wages = min(w2.social_security_wages, ss_wage_cap)
             expected_ss_tax = capped_wages * self.SS_TAX_RATE
             tolerance = Decimal("10")
             if abs(w2.social_security_tax - expected_ss_tax) > tolerance:
