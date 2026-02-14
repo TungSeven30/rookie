@@ -104,6 +104,7 @@ async def extract_document(
     document_type: DocumentType,
     media_type: str = "image/jpeg",
     client: "AsyncAnthropic | None" = None,
+    model_name: str | None = None,
 ) -> ExtractionResult:
     """Extract document data based on type.
 
@@ -115,6 +116,7 @@ async def extract_document(
         document_type: Type of document to extract (W2, 1099-INT, etc.).
         media_type: MIME type of the image (image/jpeg, image/png, etc.).
         client: Optional Anthropic client for dependency injection in tests.
+        model_name: Optional model name override for this extraction.
 
     Returns:
         Extracted data model based on document_type:
@@ -153,13 +155,14 @@ async def extract_document(
     if extractor is None:
         raise ValueError(f"No extractor available for document type: {document_type}")
 
-    return await extractor(image_bytes, media_type, client)
+    return await extractor(image_bytes, media_type, client, model_name)
 
 
 async def extract_w2(
     image_bytes: bytes,
     media_type: str = "image/jpeg",
     client: "AsyncAnthropic | None" = None,
+    model_name: str | None = None,
 ) -> W2Batch:
     """Extract one or more W-2 forms using Claude Vision.
 
@@ -188,6 +191,7 @@ async def extract_w2(
         prompt=W2_MULTI_EXTRACTION_PROMPT,
         response_model=W2Batch,
         client=client,
+        model_name=model_name,
     )
 
 
@@ -195,6 +199,7 @@ async def extract_1099_int(
     image_bytes: bytes,
     media_type: str = "image/jpeg",
     client: "AsyncAnthropic | None" = None,
+    model_name: str | None = None,
 ) -> Form1099INT:
     """Extract 1099-INT form data using Claude Vision.
 
@@ -217,6 +222,7 @@ async def extract_1099_int(
         prompt=FORM_1099_INT_PROMPT,
         response_model=Form1099INT,
         client=client,
+        model_name=model_name,
     )
 
 
@@ -224,6 +230,7 @@ async def extract_1099_div(
     image_bytes: bytes,
     media_type: str = "image/jpeg",
     client: "AsyncAnthropic | None" = None,
+    model_name: str | None = None,
 ) -> Form1099DIV:
     """Extract 1099-DIV form data using Claude Vision.
 
@@ -246,6 +253,7 @@ async def extract_1099_div(
         prompt=FORM_1099_DIV_PROMPT,
         response_model=Form1099DIV,
         client=client,
+        model_name=model_name,
     )
 
 
@@ -253,6 +261,7 @@ async def extract_1099_nec(
     image_bytes: bytes,
     media_type: str = "image/jpeg",
     client: "AsyncAnthropic | None" = None,
+    model_name: str | None = None,
 ) -> Form1099NEC:
     """Extract 1099-NEC form data using Claude Vision.
 
@@ -275,6 +284,7 @@ async def extract_1099_nec(
         prompt=FORM_1099_NEC_PROMPT,
         response_model=Form1099NEC,
         client=client,
+        model_name=model_name,
     )
 
 
@@ -282,6 +292,7 @@ async def extract_1098(
     image_bytes: bytes,
     media_type: str = "image/jpeg",
     client: "AsyncAnthropic | None" = None,
+    model_name: str | None = None,
 ) -> Form1098:
     """Extract 1098 Mortgage Interest Statement data using Claude Vision.
 
@@ -302,6 +313,7 @@ async def extract_1098(
         prompt=FORM_1098_PROMPT,
         response_model=Form1098,
         client=client,
+        model_name=model_name,
     )
 
 
@@ -309,6 +321,7 @@ async def extract_1099_r(
     image_bytes: bytes,
     media_type: str = "image/jpeg",
     client: "AsyncAnthropic | None" = None,
+    model_name: str | None = None,
 ) -> Form1099R:
     """Extract 1099-R Retirement Distributions data using Claude Vision.
 
@@ -329,6 +342,7 @@ async def extract_1099_r(
         prompt=FORM_1099_R_PROMPT,
         response_model=Form1099R,
         client=client,
+        model_name=model_name,
     )
 
 
@@ -336,6 +350,7 @@ async def extract_1099_g(
     image_bytes: bytes,
     media_type: str = "image/jpeg",
     client: "AsyncAnthropic | None" = None,
+    model_name: str | None = None,
 ) -> Form1099G:
     """Extract 1099-G Government Payments data using Claude Vision.
 
@@ -356,6 +371,7 @@ async def extract_1099_g(
         prompt=FORM_1099_G_PROMPT,
         response_model=Form1099G,
         client=client,
+        model_name=model_name,
     )
 
 
@@ -363,6 +379,7 @@ async def extract_1098_t(
     image_bytes: bytes,
     media_type: str = "image/jpeg",
     client: "AsyncAnthropic | None" = None,
+    model_name: str | None = None,
 ) -> Form1098T:
     """Extract 1098-T Tuition Statement data using Claude Vision.
 
@@ -383,6 +400,7 @@ async def extract_1098_t(
         prompt=FORM_1098_T_PROMPT,
         response_model=Form1098T,
         client=client,
+        model_name=model_name,
     )
 
 
@@ -390,6 +408,7 @@ async def extract_5498(
     image_bytes: bytes,
     media_type: str = "image/jpeg",
     client: "AsyncAnthropic | None" = None,
+    model_name: str | None = None,
 ) -> Form5498:
     """Extract 5498 IRA Contribution Information data using Claude Vision.
 
@@ -410,6 +429,7 @@ async def extract_5498(
         prompt=FORM_5498_PROMPT,
         response_model=Form5498,
         client=client,
+        model_name=model_name,
     )
 
 
@@ -417,6 +437,7 @@ async def extract_1099_s(
     image_bytes: bytes,
     media_type: str = "image/jpeg",
     client: "AsyncAnthropic | None" = None,
+    model_name: str | None = None,
 ) -> Form1099S:
     """Extract 1099-S Real Estate Proceeds data using Claude Vision.
 
@@ -437,6 +458,7 @@ async def extract_1099_s(
         prompt=FORM_1099_S_PROMPT,
         response_model=Form1099S,
         client=client,
+        model_name=model_name,
     )
 
 
@@ -444,6 +466,7 @@ async def extract_k1(
     image_bytes: bytes,
     media_type: str = "image/jpeg",
     client: "AsyncAnthropic | None" = None,
+    model_name: str | None = None,
 ) -> FormK1:
     """Extract Schedule K-1 data using Claude Vision.
 
@@ -468,6 +491,7 @@ async def extract_k1(
         prompt=FORM_K1_PROMPT,
         response_model=FormK1,
         client=client,
+        model_name=model_name,
     )
 
 
@@ -475,6 +499,7 @@ async def extract_1099_b(
     image_bytes: bytes,
     media_type: str = "image/jpeg",
     client: "AsyncAnthropic | None" = None,
+    model_name: str | None = None,
 ) -> list[Form1099B]:
     """Extract Form 1099-B transactions using Claude Vision.
 
@@ -498,6 +523,7 @@ async def extract_1099_b(
         prompt=FORM_1099_B_PROMPT,
         response_model=Form1099BExtraction,
         client=client,
+        model_name=model_name,
     )
     return result.transactions
 
@@ -506,6 +532,7 @@ async def extract_1099_b_summary(
     image_bytes: bytes,
     media_type: str = "image/jpeg",
     client: "AsyncAnthropic | None" = None,
+    model_name: str | None = None,
 ) -> Form1099BSummary:
     """Extract Form 1099-B summary totals using Claude Vision.
 
@@ -530,6 +557,7 @@ async def extract_1099_b_summary(
         prompt=FORM_1099_B_SUMMARY_PROMPT,
         response_model=Form1099BSummary,
         client=client,
+        model_name=model_name,
     )
 
 
@@ -537,6 +565,7 @@ async def extract_1095_a(
     image_bytes: bytes,
     media_type: str = "image/jpeg",
     client: "AsyncAnthropic | None" = None,
+    model_name: str | None = None,
 ) -> Form1095A:
     """Extract Form 1095-A Health Insurance Marketplace Statement using Claude Vision.
 
@@ -560,6 +589,7 @@ async def extract_1095_a(
         prompt=FORM_1095_A_PROMPT,
         response_model=Form1095A,
         client=client,
+        model_name=model_name,
     )
 
 
@@ -569,6 +599,7 @@ async def _extract_with_vision(
     prompt: str,
     response_model: type,
     client: "object | None" = None,
+    model_name: str | None = None,
 ) -> ExtractionResult:
     """Internal function to extract document data using Claude Vision API.
 
@@ -603,7 +634,9 @@ async def _extract_with_vision(
     from src.core.config import settings
 
     # Use provided client or create new one
-    resolved_model = resolve_vision_model(settings.anthropic_model)
+    resolved_model = resolve_vision_model(
+        model_name if model_name is not None else settings.anthropic_model
+    )
     if client is None:
         if resolved_model.provider == "openai":
             if AsyncOpenAI is None:

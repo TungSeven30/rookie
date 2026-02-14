@@ -163,15 +163,18 @@ class PersonalTaxAgent:
         self,
         storage_url: str,
         output_dir: Path,
+        document_model: str | None = None,
     ) -> None:
         """Initialize Personal Tax Agent.
 
         Args:
             storage_url: Base URL for document storage (s3://, gs://, /local/path).
             output_dir: Directory where output files will be written.
+            document_model: Optional model override for document processing.
         """
         self.storage_url = storage_url
         self.output_dir = output_dir
+        self.document_model = document_model
         self.escalations: list[str] = []
         self._user_form_type_overrides: dict[str, str] = {}
 
@@ -182,6 +185,7 @@ class PersonalTaxAgent:
         session: "AsyncSession",
         filing_status: str = "single",
         user_form_type_overrides: dict[str, str] | None = None,
+        document_model: str | None = None,
     ) -> PersonalTaxResult:
         """Process personal tax return.
 
@@ -199,6 +203,7 @@ class PersonalTaxAgent:
             user_form_type_overrides: Optional mapping of filename to user-selected
                 form type. When provided, the agent will use this instead of
                 automatic classification.
+            document_model: Optional model name override for document processing.
 
         Returns:
             PersonalTaxResult with all outputs and metadata.
@@ -219,6 +224,7 @@ class PersonalTaxAgent:
         
         # Store form type overrides for use during extraction
         self._user_form_type_overrides = user_form_type_overrides or {}
+        self.document_model = document_model
 
         # 1. Load context (PTAX-01)
         context = await self._load_context(session, client_id, tax_year)
@@ -482,7 +488,11 @@ class PersonalTaxAgent:
                 extraction uses the user-selected type.
         """
         # Always run classification (needed for mismatch detection)
-        classification = await classify_document(page_bytes, page_media_type)
+        classification = await classify_document(
+            page_bytes,
+            page_media_type,
+            model_name=self.document_model,
+        )
         original_type = classification.document_type
         original_confidence = classification.confidence
         original_reasoning = classification.reasoning
@@ -561,6 +571,7 @@ class PersonalTaxAgent:
             page_bytes,
             classification.document_type,
             page_media_type,
+            model_name=self.document_model,
         )
 
         w2_forms: list[W2Data] | None = None

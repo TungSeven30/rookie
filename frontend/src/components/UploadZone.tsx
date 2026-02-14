@@ -1,12 +1,14 @@
 import { useCallback, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { FileText, X, Upload, User, Calendar, Users, ChevronDown } from 'lucide-react'
+import { FileText, X, Upload, User, Calendar, Users, Cpu, ChevronDown } from 'lucide-react'
 import { cn } from '../lib/utils'
 import {
   FILING_STATUS_LABELS,
   DOCUMENT_TYPE_LABELS,
-  type FilingStatus,
   type DocumentTypeOption,
+  type DocumentModelOption,
+  MODEL_LABELS,
+  type FilingStatus,
   type UploadFile,
 } from '../types/api'
 import * as Select from '@radix-ui/react-select'
@@ -17,7 +19,8 @@ interface UploadZoneProps {
     clientName: string,
     taxYear: number,
     filingStatus: FilingStatus,
-    formTypes: DocumentTypeOption[]
+    formTypes: DocumentTypeOption[],
+    documentModel: DocumentModelOption
   ) => void
   isLoading?: boolean
 }
@@ -27,6 +30,9 @@ export function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
   const [clientName, setClientName] = useState('')
   const [taxYear, setTaxYear] = useState(2024)
   const [filingStatus, setFilingStatus] = useState<FilingStatus>('single')
+  const [documentModel, setDocumentModel] = useState<DocumentModelOption>(
+    'claude-opus-4-6'
+  )
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const newFiles: UploadFile[] = acceptedFiles.map(file => ({
@@ -60,7 +66,14 @@ export function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
     if (uploadFiles.length === 0 || !clientName.trim()) return
     const files = uploadFiles.map(uf => uf.file)
     const formTypes = uploadFiles.map(uf => uf.formType)
-    onSubmit(files, clientName.trim(), taxYear, filingStatus, formTypes)
+    onSubmit(
+      files,
+      clientName.trim(),
+      taxYear,
+      filingStatus,
+      formTypes,
+      documentModel
+    )
   }
 
   const canSubmit = uploadFiles.length > 0 && clientName.trim().length > 0 && !isLoading
@@ -170,7 +183,7 @@ export function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
       )}
 
       {/* Form fields */}
-      <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="mt-8 grid grid-cols-1 md:grid-cols-4 gap-4">
         {/* Client Name */}
         <div>
           <label htmlFor="clientName" className="label flex items-center gap-2">
@@ -239,6 +252,43 @@ export function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
                       </Select.Item>
                     )
                   )}
+                </Select.Viewport>
+              </Select.Content>
+            </Select.Portal>
+          </Select.Root>
+        </div>
+
+        {/* Document Model */}
+        <div>
+          <label className="label flex items-center gap-2">
+            <Cpu className="w-4 h-4" />
+            AI Model
+          </label>
+          <Select.Root
+            value={documentModel}
+            onValueChange={(value) => setDocumentModel(value as DocumentModelOption)}
+            disabled={isLoading}
+          >
+            <Select.Trigger className="input flex items-center justify-between">
+              <Select.Value />
+              <Select.Icon>
+                <svg className="w-4 h-4 text-surface-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </Select.Icon>
+            </Select.Trigger>
+            <Select.Portal>
+              <Select.Content className="bg-white rounded-lg shadow-lg border border-surface-200 overflow-hidden z-50">
+                <Select.Viewport className="p-1">
+                  {Object.entries(MODEL_LABELS).map(([value, label]) => (
+                    <Select.Item
+                      key={value}
+                      value={value}
+                      className="px-3 py-2 text-sm cursor-pointer rounded hover:bg-surface-100 outline-none data-[highlighted]:bg-surface-100"
+                    >
+                      <Select.ItemText>{label}</Select.ItemText>
+                    </Select.Item>
+                  ))}
                 </Select.Viewport>
               </Select.Content>
             </Select.Portal>

@@ -45,7 +45,7 @@ export default function App() {
               <WorkspaceToggle
                 active={mode === 'demo'}
                 icon={<FileStack className="w-4 h-4" />}
-                label="Demo"
+                label="Tax Return"
                 onClick={() => setMode('demo')}
               />
             </div>

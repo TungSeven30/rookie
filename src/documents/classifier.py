@@ -143,6 +143,7 @@ async def classify_document(
     image_bytes: bytes,
     media_type: str = "image/jpeg",
     client: "AsyncAnthropic | AsyncOpenAI | Any | None" = None,
+    model_name: str | None = None,
 ) -> ClassificationResult:
     """Classify tax document type from image using Claude Vision.
 
@@ -157,6 +158,7 @@ async def classify_document(
             - image/gif
             - image/webp
         client: Optional Anthropic client for dependency injection in tests.
+        model_name: Optional model name override for this classification.
 
     Returns:
         ClassificationResult with document_type, confidence, and reasoning.
@@ -175,13 +177,19 @@ async def classify_document(
         image_bytes = _convert_pdf_to_image_bytes(image_bytes)
         media_type = "image/png"
 
-    return await _classify_image(image_bytes, media_type, client)
+    return await _classify_image(
+        image_bytes=image_bytes,
+        media_type=media_type,
+        client=client,
+        model_name=model_name,
+    )
 
 
 async def _classify_image(
     image_bytes: bytes,
     media_type: str,
     client: "AsyncAnthropic | AsyncOpenAI | Any | None" = None,
+    model_name: str | None = None,
 ) -> ClassificationResult:
     """Classify an image using Claude Vision."""
     # Validate media type
@@ -203,7 +211,9 @@ async def _classify_image(
 
     from src.core.config import settings
 
-    resolved_model = resolve_vision_model(settings.anthropic_model)
+    resolved_model = resolve_vision_model(
+        model_name if model_name is not None else settings.anthropic_model
+    )
 
     # Use provided client or create new one
     if client is None:

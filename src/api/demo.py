@@ -55,6 +55,9 @@ DEMO_ARTIFACT_PROGRESS = "progress"
 DEMO_ARTIFACT_UPLOADED = "uploaded_document"
 DEMO_ARTIFACT_WORKSHEET = "drake_worksheet"
 DEMO_ARTIFACT_NOTES = "preparer_notes"
+DEMO_DOCUMENT_MODELS = frozenset(
+    {"claude-opus-4-6", "claude-sonnet-4-5-20250929"}
+)
 
 
 class ProcessingStage(str, Enum):
@@ -609,6 +612,7 @@ async def _process_job(task_id: int, session_factory: Any) -> None:
             agent = PersonalTaxAgent(
                 storage_url=storage_url,
                 output_dir=output_dir,
+                document_model=metadata.get("document_model"),
             )
 
             # Build user form type overrides from uploaded document artifacts
@@ -631,6 +635,7 @@ async def _process_job(task_id: int, session_factory: Any) -> None:
                 session=session,
                 filing_status=filing_status,
                 user_form_type_overrides=user_form_type_overrides,
+                document_model=metadata.get("document_model"),
             )
 
             await _emit_progress(
@@ -803,6 +808,7 @@ async def upload_documents(
     tax_year: int = Form(2024),
     filing_status: str = Form("single"),
     form_types: str | None = Form(None),
+    document_model: str | None = Form(None),
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> UploadResponse:
     """Upload tax documents for processing.
@@ -816,6 +822,8 @@ async def upload_documents(
             e.g., '["auto", "W2", "1099-INT"]'
             Valid values: auto, W2, 1099-INT, 1099-DIV, 1099-NEC,
                          1098, 1099-R, 1099-G, 1098-T, 5498, 1099-S
+        document_model: Optional selected model override for document extraction/classification.
+            Must be one of: claude-opus-4-6, claude-sonnet-4-5-20250929.
         db: Database session.
     """
     if db is None:
@@ -827,6 +835,19 @@ async def upload_documents(
             status_code=400,
             detail=f"Invalid filing status. Must be one of: {', '.join(valid_statuses)}",
         )
+    normalized_model = document_model.strip().lower() if document_model else None
+    if normalized_model:
+        if normalized_model not in DEMO_DOCUMENT_MODELS:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Invalid document_model. Must be one of: "
+                    "claude-opus-4-6, claude-sonnet-4-5-20250929"
+                ),
+            )
+
+    # Ensure canonical ID is stored (already validated).
+    selected_document_model = normalized_model
 
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
@@ -915,6 +936,7 @@ async def upload_documents(
             "tax_year": tax_year,
             "filing_status": filing_status,
             "storage_url": storage_url,
+            "document_model": selected_document_model,
         },
     )
 

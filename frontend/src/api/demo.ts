@@ -10,6 +10,7 @@ import type {
   ProgressEvent,
   FilingStatus,
   DocumentTypeOption,
+  DocumentModelOption,
 } from '../types/api'
 
 const API_BASE = '/api/demo'
@@ -30,7 +31,8 @@ export async function uploadDocuments(
   clientName: string,
   taxYear: number,
   filingStatus: FilingStatus,
-  formTypes?: DocumentTypeOption[]
+  formTypes?: DocumentTypeOption[],
+  documentModel?: DocumentModelOption
 ): Promise<UploadResponse> {
   const formData = new FormData()
   
@@ -44,6 +46,10 @@ export async function uploadDocuments(
   // Send form types as JSON array if provided
   if (formTypes && formTypes.length > 0) {
     formData.append('form_types', JSON.stringify(formTypes))
+  }
+
+  if (documentModel) {
+    formData.append('document_model', documentModel)
   }
   
   const response = await fetch(`${API_BASE}/upload`, {

@@ -104,6 +104,15 @@ export interface ResultsResponse {
 // Filing status options
 export type FilingStatus = 'single' | 'mfj' | 'mfs' | 'hoh'
 
+export type DocumentModelOption =
+  | 'claude-opus-4-6'
+  | 'claude-sonnet-4-5-20250929'
+
+export const MODEL_LABELS: Record<DocumentModelOption, string> = {
+  'claude-opus-4-6': 'Claude Opus 4.6',
+  'claude-sonnet-4-5-20250929': 'Claude Sonnet 4.5',
+}
+
 export const FILING_STATUS_LABELS: Record<FilingStatus, string> = {
   single: 'Single',
   mfj: 'Married Filing Jointly',

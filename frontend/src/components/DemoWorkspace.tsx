@@ -4,7 +4,12 @@ import { UploadZone } from './UploadZone'
 import { ProcessingProgress } from './ProcessingProgress'
 import { ResultsPanel } from './ResultsPanel'
 import { uploadDocuments, startProcessing, getResults } from '../api/demo'
-import type { FilingStatus, ResultsResponse, DocumentTypeOption } from '../types/api'
+import type {
+  FilingStatus,
+  ResultsResponse,
+  DocumentTypeOption,
+  DocumentModelOption,
+} from '../types/api'
 
 type AppState = 'upload' | 'processing' | 'results' | 'error'
 
@@ -28,7 +33,8 @@ export function DemoWorkspace() {
       clientName: string,
       taxYear: number,
       filingStatus: FilingStatus,
-      formTypes: DocumentTypeOption[]
+      formTypes: DocumentTypeOption[],
+      documentModel: DocumentModelOption
     ) => {
       try {
         setIsUploading(true)
@@ -39,7 +45,8 @@ export function DemoWorkspace() {
           clientName,
           taxYear,
           filingStatus,
-          formTypes
+          formTypes,
+          documentModel
         )
         setJobId(uploadResult.job_id)
 
@@ -77,7 +84,7 @@ export function DemoWorkspace() {
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-8">
             <h2 className="font-display text-3xl font-semibold text-surface-900 text-balance">
-              Process Tax Documents
+              Tax Return
             </h2>
             <p className="text-surface-500 mt-2 text-pretty max-w-lg mx-auto">
               Upload W-2s and 1099s. Rookie will extract the data, calculate taxes,
