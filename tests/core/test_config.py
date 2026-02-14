@@ -31,3 +31,14 @@ def test_allowed_upload_types_accepts_json_array(monkeypatch) -> None:
         "image/png",
         "image/jpg",
     ]
+
+
+def test_allowed_upload_types_rejects_invalid_object(monkeypatch) -> None:
+    """Invalid values fail with a clear validation error."""
+    monkeypatch.setenv("ALLOWED_UPLOAD_TYPES", '{"invalid":"json"}')
+    try:
+        Settings(database_url="postgresql+asyncpg://user@localhost:5432/testdb")
+    except Exception as exc:
+        assert "ALLOWED_UPLOAD_TYPES" in str(exc)
+    else:
+        raise AssertionError("Expected invalid ALLOWED_UPLOAD_TYPES to fail")

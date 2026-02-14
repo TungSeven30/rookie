@@ -1,10 +1,20 @@
 """Application configuration using Pydantic Settings."""
 
 import json
+from collections.abc import Iterable
+from pathlib import Path
 from typing import Annotated
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+
+DEFAULT_ALLOWED_UPLOAD_TYPES = [
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/jpg",
+]
 
 
 class Settings(BaseSettings):
@@ -34,7 +44,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     """OpenAI API key for document extraction when using OpenAI vision."""
 
-    anthropic_model: str = "claude-3-5-sonnet-20241022"
+    anthropic_model: str = "opus-4.6"
     """Model used by the document vision pipeline.
 
     Aliases are supported via `resolve_vision_model` and map to provider/model:
@@ -70,12 +80,7 @@ class Settings(BaseSettings):
 
     # NoDecode prevents pydantic-settings from forcing JSON parsing at the
     # env-source layer, so we can accept either JSON arrays or CSV strings.
-    allowed_upload_types: Annotated[list[str], NoDecode] = [
-        "application/pdf",
-        "image/jpeg",
-        "image/png",
-        "image/jpg",
-    ]
+    allowed_upload_types: Annotated[list[str], NoDecode] = DEFAULT_ALLOWED_UPLOAD_TYPES
     """Allowed content types for demo uploads."""
 
     demo_retention_days: int = 7
@@ -91,37 +96,68 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             text = value.strip()
             if not text:
-                return [
-                    "application/pdf",
-                    "image/jpeg",
-                    "image/png",
-                    "image/jpg",
-                ]
+                return DEFAULT_ALLOWED_UPLOAD_TYPES.copy()
 
-            # Try JSON first so values like:
-            #   ["application/pdf","image/jpeg"]
-            # are accepted from .env.
             try:
                 decoded = json.loads(text)
             except json.JSONDecodeError:
                 decoded = None
 
             if isinstance(decoded, list):
-                return [str(item).strip() for item in decoded if str(item).strip()]
+                return _normalize_upload_types(decoded)
             if isinstance(decoded, str):
                 text = decoded
+            elif decoded is not None:
+                raise ValueError(
+                    "ALLOWED_UPLOAD_TYPES must be a JSON array or comma-separated string."
+                )
 
             # Fallback: comma-separated values
-            return [item.strip() for item in text.split(",") if item.strip()]
+            parsed = [item.strip() for item in text.split(",")]
+            return _normalize_upload_types(parsed)
 
         if isinstance(value, (list, tuple, set)):
-            return [str(item).strip() for item in value if str(item).strip()]
-        return [
-            "application/pdf",
-            "image/jpeg",
-            "image/png",
-            "image/jpg",
-        ]
+            return _normalize_upload_types(value)
+
+        raise ValueError(
+            "ALLOWED_UPLOAD_TYPES must be a string, list, tuple, or set."
+        )
 
 
-settings = Settings()
+def _normalize_upload_types(values: Iterable[object]) -> list[str]:
+    """Normalize and dedupe upload types while preserving declaration order."""
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_item in values:
+        item = str(raw_item).strip().strip("'").strip('"')
+        if not item:
+            continue
+        item = item.lower()
+        if item in seen:
+            continue
+        normalized.append(item)
+        seen.add(item)
+
+    if not normalized:
+        return DEFAULT_ALLOWED_UPLOAD_TYPES.copy()
+    return normalized
+
+
+try:
+    settings = Settings()
+except Exception as exc:
+    env_file = Path(".env")
+    root_error = str(exc)
+    suggestions = [
+        "Ensure DATABASE_URL is set.",
+        "Allowed values for ALLOWED_UPLOAD_TYPES are:",
+        '  1) ["application/pdf","image/jpeg","image/png","image/jpg"]',
+        "  2) application/pdf,image/jpeg,image/png,image/jpg",
+    ]
+
+    raise RuntimeError(
+        "Failed to initialize application settings. "
+        f"Check environment variables in {env_file.resolve() if env_file.exists() else '.env'}.\n"
+        + f"Error: {root_error}\n"
+        + "\n".join(suggestions)
+    ) from exc
