@@ -805,7 +805,7 @@ async def _process_job(task_id: int, session_factory: Any) -> None:
 async def upload_documents(
     files: list[UploadFile] = File(...),
     client_name: str = Form("Demo Client"),
-    tax_year: int = Form(2024),
+    tax_year: int = Form(2025),
     filing_status: str = Form("single"),
     form_types: str | None = Form(None),
     document_model: str | None = Form(None),
@@ -1240,7 +1240,7 @@ async def get_results(
         job_id=str(job_id),
         status=task.status.value,
         client_name=metadata.get("client_name", results.get("client_name", "Demo Client")),
-        tax_year=int(metadata.get("tax_year", results.get("tax_year", 2024))),
+        tax_year=int(metadata.get("tax_year", results.get("tax_year", 2025))),
         filing_status=metadata.get(
             "filing_status", results.get("filing_status", "single")
         ),

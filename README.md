@@ -191,7 +191,7 @@ curl -X POST "http://127.0.0.1:8000/api/demo/upload" \
   -F "files=@/path/to/w2.pdf" \
   -F "files=@/path/to/1099int.jpg" \
   -F "client_name=Demo Client" \
-  -F "tax_year=2024" \
+  -F "tax_year=2025" \
   -F "filing_status=single"
 ```
 

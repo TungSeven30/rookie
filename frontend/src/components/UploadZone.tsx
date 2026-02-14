@@ -28,7 +28,7 @@ interface UploadZoneProps {
 export function UploadZone({ onSubmit, isLoading }: UploadZoneProps) {
   const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([])
   const [clientName, setClientName] = useState('')
-  const [taxYear, setTaxYear] = useState(2024)
+  const [taxYear, setTaxYear] = useState(2025)
   const [filingStatus, setFilingStatus] = useState<FilingStatus>('single')
   const [documentModel, setDocumentModel] = useState<DocumentModelOption>(
     'claude-opus-4-6'

@@ -361,6 +361,11 @@ class TestStandardDeduction:
         result = get_standard_deduction("single", 2024)
         assert result == Decimal("14600")
 
+    def test_standard_deduction_single_2025(self) -> None:
+        """Single filer 2025 standard deduction is $15,000."""
+        result = get_standard_deduction("single", 2025)
+        assert result == Decimal("15000")
+
     def test_standard_deduction_mfj_2024(self) -> None:
         """MFJ 2024 standard deduction is $29,200."""
         result = get_standard_deduction("mfj", 2024)
@@ -919,6 +924,21 @@ class TestCalculateTax:
         expected = Decimal("1160") + Decimal("4266") + Decimal("627")
         assert result.gross_tax == expected
         assert len(result.bracket_breakdown) == 3
+
+    def test_tax_10_percent_bracket_only_2025(self) -> None:
+        """Income under $11,750 is taxed at 10% for 2025 singles."""
+        result = calculate_tax(Decimal("10000"), "single", 2025)
+
+        assert result.gross_tax == Decimal("1000")
+        assert len(result.bracket_breakdown) == 1
+        assert result.bracket_breakdown[0]["rate"] == Decimal("0.10")
+
+    def test_tax_2025_mfj_crosses_into_12_percent(self) -> None:
+        """MFJ 2025 brackets should include both 10% and 12% for 50,000 income."""
+        result = calculate_tax(Decimal("50000"), "mfj", 2025)
+
+        expected = Decimal("2350") + Decimal("3180")
+        assert result.gross_tax == expected
 
     def test_tax_100000_single(self) -> None:
         """$100,000 taxable income for single filer."""

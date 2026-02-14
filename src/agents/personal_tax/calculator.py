@@ -969,6 +969,11 @@ STANDARD_DEDUCTIONS: dict[tuple[int, str], Decimal] = {
     (2024, "mfj"): Decimal("29200"),
     (2024, "mfs"): Decimal("14600"),
     (2024, "hoh"): Decimal("21900"),
+    # 2025 values (provisional; aligned with year_config and current deployment defaults)
+    (2025, "single"): Decimal("15000"),
+    (2025, "mfj"): Decimal("30000"),
+    (2025, "mfs"): Decimal("15000"),
+    (2025, "hoh"): Decimal("22500"),
     # 2023 values
     (2023, "single"): Decimal("13850"),
     (2023, "mfj"): Decimal("27700"),
@@ -1021,6 +1026,43 @@ TAX_BRACKETS: dict[tuple[int, str], list[tuple[Decimal | None, Decimal]]] = {
         (Decimal("191950"), Decimal("0.24")),
         (Decimal("243700"), Decimal("0.32")),
         (Decimal("609350"), Decimal("0.35")),
+        (None, Decimal("0.37")),
+    ],
+    # 2025 values (provisional, matching deployment defaults until final IRS table is added)
+    (2025, "single"): [
+        (Decimal("11750"), Decimal("0.10")),
+        (Decimal("47850"), Decimal("0.12")),
+        (Decimal("102100"), Decimal("0.22")),
+        (Decimal("195550"), Decimal("0.24")),
+        (Decimal("246625"), Decimal("0.32")),
+        (Decimal("620350"), Decimal("0.35")),
+        (None, Decimal("0.37")),
+    ],
+    (2025, "mfj"): [
+        (Decimal("23500"), Decimal("0.10")),
+        (Decimal("95250"), Decimal("0.12")),
+        (Decimal("202200"), Decimal("0.22")),
+        (Decimal("388100"), Decimal("0.24")),
+        (Decimal("492500"), Decimal("0.32")),
+        (Decimal("738700"), Decimal("0.35")),
+        (None, Decimal("0.37")),
+    ],
+    (2025, "mfs"): [
+        (Decimal("11750"), Decimal("0.10")),
+        (Decimal("47850"), Decimal("0.12")),
+        (Decimal("102100"), Decimal("0.22")),
+        (Decimal("195550"), Decimal("0.24")),
+        (Decimal("246625"), Decimal("0.32")),
+        (Decimal("369600"), Decimal("0.35")),
+        (None, Decimal("0.37")),
+    ],
+    (2025, "hoh"): [
+        (Decimal("16800"), Decimal("0.10")),
+        (Decimal("64800"), Decimal("0.12")),
+        (Decimal("102100"), Decimal("0.22")),
+        (Decimal("195550"), Decimal("0.24")),
+        (Decimal("246600"), Decimal("0.32")),
+        (Decimal("620350"), Decimal("0.35")),
         (None, Decimal("0.37")),
     ],
     (2023, "single"): [
@@ -1093,6 +1135,27 @@ SAVERS_CREDIT_RATES: dict[tuple[int, str], list[tuple[Decimal, Decimal]]] = {
         (Decimal("38250"), Decimal("0.10")),
     ],
     (2024, "hoh"): [
+        (Decimal("34500"), Decimal("0.50")),
+        (Decimal("37500"), Decimal("0.20")),
+        (Decimal("57375"), Decimal("0.10")),
+    ],
+    # 2025 values (provisional; conservative carryover from 2024 limits)
+    (2025, "single"): [
+        (Decimal("23000"), Decimal("0.50")),
+        (Decimal("25000"), Decimal("0.20")),
+        (Decimal("38250"), Decimal("0.10")),
+    ],
+    (2025, "mfj"): [
+        (Decimal("46000"), Decimal("0.50")),
+        (Decimal("50000"), Decimal("0.20")),
+        (Decimal("76500"), Decimal("0.10")),
+    ],
+    (2025, "mfs"): [
+        (Decimal("23000"), Decimal("0.50")),
+        (Decimal("25000"), Decimal("0.20")),
+        (Decimal("38250"), Decimal("0.10")),
+    ],
+    (2025, "hoh"): [
         (Decimal("34500"), Decimal("0.50")),
         (Decimal("37500"), Decimal("0.20")),
         (Decimal("57375"), Decimal("0.10")),
