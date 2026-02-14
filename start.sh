@@ -11,7 +11,7 @@ BACKEND_LOG_FILE="${RUN_DIR}/backend.log"
 FRONTEND_LOG_FILE="${RUN_DIR}/frontend.log"
 
 BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
-BACKEND_PORT="${BACKEND_PORT:-8000}"
+BACKEND_PORT="${BACKEND_PORT:-8001}"
 FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 VITE_DEMO_API_KEY="${VITE_DEMO_API_KEY:-${DEMO_API_KEY:-}}"
@@ -50,13 +50,13 @@ if is_running_file "$FRONTEND_PID_FILE"; then
 else
   (
     cd "$ROOT_DIR/frontend" || exit 1
-    if [[ -z "$VITE_DEMO_API_KEY" ]]; then
-      nohup npm run dev -- --host "$FRONTEND_HOST" --port "$FRONTEND_PORT" \
-        >>"$FRONTEND_LOG_FILE" 2>&1 &
-    else
-      nohup VITE_DEMO_API_KEY="$VITE_DEMO_API_KEY" npm run dev -- --host "$FRONTEND_HOST" --port "$FRONTEND_PORT" \
-        >>"$FRONTEND_LOG_FILE" 2>&1 &
+    if [[ -n "$VITE_DEMO_API_KEY" ]]; then
+      export VITE_DEMO_API_KEY
     fi
+
+    VITE_API_PROXY_TARGET="http://$BACKEND_HOST:$BACKEND_PORT" \
+      nohup npm run dev -- --host "$FRONTEND_HOST" --port "$FRONTEND_PORT" \
+      >>"$FRONTEND_LOG_FILE" 2>&1 &
     echo $! > "$FRONTEND_PID_FILE"
   )
   echo "Started frontend on http://${FRONTEND_HOST}:${FRONTEND_PORT} (pid $(cat "$FRONTEND_PID_FILE"))"
