@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     """Model used by the document vision pipeline.
 
     Aliases are supported via `resolve_vision_model` and map to provider/model:
-    - `opus-4.6` (or `opus`) -> Anthropic
+    - `opus-4.6` (or `opus`) -> Anthropic (`claude-opus-4-6`)
     - `gpt-5.3` (or `gpt`) -> OpenAI
     """
 

@@ -136,7 +136,7 @@ DEMO_RETENTION_DAYS=7
 ```
 
 `ANTHROPIC_MODEL` is routed through provider resolution, so:
-- `opus-4.6` maps to Anthropic.
+- `opus-4.6` maps to Anthropic as `claude-opus-4-6`.
 - `gpt-5.3` maps to OpenAI.
 
 If you use an OpenAI model, set `OPENAI_API_KEY` as well.

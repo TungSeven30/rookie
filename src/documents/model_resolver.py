@@ -10,7 +10,7 @@ import structlog
 
 logger = structlog.get_logger()
 
-_DEFAULT_ANTHROPIC_MODEL: Final[str] = "claude-3-5-sonnet-20241022"
+_DEFAULT_ANTHROPIC_MODEL: Final[str] = "claude-opus-4-6"
 _DEFAULT_OPENAI_MODEL: Final[str] = "gpt-5.3"
 
 
@@ -29,7 +29,7 @@ _ANTHROPIC_MODEL_ALIASES: Final[dict[str, str]] = {
     "opus_4.6": _DEFAULT_ANTHROPIC_MODEL,
     "opus-4-6": _DEFAULT_ANTHROPIC_MODEL,
     "claude-opus": _DEFAULT_ANTHROPIC_MODEL,
-    "claude-3-5-sonnet-20241022": _DEFAULT_ANTHROPIC_MODEL,
+    "claude-opus-4-6": _DEFAULT_ANTHROPIC_MODEL,
 }
 
 _OPENAI_MODEL_ALIASES: Final[dict[str, str]] = {

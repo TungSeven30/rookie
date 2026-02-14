@@ -2,12 +2,12 @@
 
 from src.documents.model_resolver import VisionModelSpec, resolve_vision_model
 
-DEFAULT_ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
+DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-6"
 DEFAULT_OPENAI_MODEL = "gpt-5.3"
 
 
 def test_resolve_vision_model_keeps_known_model() -> None:
-    model = resolve_vision_model("claude-3-5-sonnet-20241022")
+    model = resolve_vision_model("claude-opus-4-6")
     assert model == VisionModelSpec(provider="anthropic", model=DEFAULT_ANTHROPIC_MODEL)
 
 
