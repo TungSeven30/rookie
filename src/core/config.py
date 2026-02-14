@@ -1,7 +1,10 @@
 """Application configuration using Pydantic Settings."""
 
+import json
+from typing import Annotated
+
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -57,7 +60,9 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 50 * 1024 * 1024
     """Maximum upload size in bytes for demo files."""
 
-    allowed_upload_types: list[str] = [
+    # NoDecode prevents pydantic-settings from forcing JSON parsing at the
+    # env-source layer, so we can accept either JSON arrays or CSV strings.
+    allowed_upload_types: Annotated[list[str], NoDecode] = [
         "application/pdf",
         "image/jpeg",
         "image/png",
@@ -74,10 +79,34 @@ class Settings(BaseSettings):
     @field_validator("allowed_upload_types", mode="before")
     @classmethod
     def parse_allowed_upload_types(cls, value: object) -> list[str]:
-        """Parse allowed upload types from CSV or list."""
+        """Parse allowed upload types from JSON array, CSV, or list."""
         if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        if isinstance(value, list):
+            text = value.strip()
+            if not text:
+                return [
+                    "application/pdf",
+                    "image/jpeg",
+                    "image/png",
+                    "image/jpg",
+                ]
+
+            # Try JSON first so values like:
+            #   ["application/pdf","image/jpeg"]
+            # are accepted from .env.
+            try:
+                decoded = json.loads(text)
+            except json.JSONDecodeError:
+                decoded = None
+
+            if isinstance(decoded, list):
+                return [str(item).strip() for item in decoded if str(item).strip()]
+            if isinstance(decoded, str):
+                text = decoded
+
+            # Fallback: comma-separated values
+            return [item.strip() for item in text.split(",") if item.strip()]
+
+        if isinstance(value, (list, tuple, set)):
             return [str(item).strip() for item in value if str(item).strip()]
         return [
             "application/pdf",

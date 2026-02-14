@@ -249,7 +249,7 @@ Plans:
 
 Plans:
 - [x] 05-01-PLAN.md (Wave 1) — Review Infrastructure Backend APIs
-- [ ] 05-02-PLAN.md (Wave 2) — Reviewer Dashboard UI + WCAG 2.1 AA checks
+- [x] 05-02-PLAN.md (Wave 2) — Reviewer Dashboard UI + WCAG 2.1 AA checks
 - [ ] 05-03-PLAN.md (Wave 2) — Checker accuracy benchmark + injected-error harness
 - [ ] 05-04-PLAN.md (Wave 3) — TaxDome live sync hardening + fallback polling path
 
@@ -347,7 +347,7 @@ Plans:
 | 2 - Core Framework | Complete | 6/6 | 100% |
 | 3 - Personal Tax Simple | Complete | 7/7 | 100% |
 | 4 - Personal Tax Complex | Complete | 8/8 | 100% |
-| 5 - Review Infrastructure | In Progress | 1/4 | 25% |
+| 5 - Review Infrastructure | In Progress | 2/4 | 50% |
 | 6 - Business Tax | Complete | 7/7 | 100% |
 | 7 - Bookkeeping | Pending | 0/0 | 0% |
 | 8 - Production Hardening | Pending | 0/0 | 0% |
