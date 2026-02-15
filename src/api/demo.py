@@ -1076,12 +1076,16 @@ async def _process_job(
                     task_id,
                     ProgressEvent(
                         stage=ProcessingStage.GENERATING,
-                        progress=86,
+                        progress=82,
                         message="Generating worksheet and preparer notes",
                     ),
                 )
                 await session.commit()
 
+                logger.info(
+                    "demo_generating_outputs_start",
+                    task_id=task_id,
+                )
                 try:
                     worksheet_path_local, notes_path_local = await asyncio.wait_for(
                         asyncio.to_thread(
@@ -1098,7 +1102,15 @@ async def _process_job(
                         timeout=DEMO_OUTPUT_GENERATION_TIMEOUT_SECONDS,
                     )
                 except TimeoutError as exc:
+                    logger.error(
+                        "demo_generating_outputs_timeout",
+                        task_id=task_id,
+                    )
                     raise TimeoutError("Output generation timed out") from exc
+                logger.info(
+                    "demo_generating_outputs_complete",
+                    task_id=task_id,
+                )
                 result = PersonalTaxResult(
                     drake_worksheet_path=worksheet_path_local,
                     preparer_notes_path=notes_path_local,
@@ -1137,21 +1149,49 @@ async def _process_job(
                 ProgressEvent(
                     stage=ProcessingStage.GENERATING,
                     progress=90 if from_review else 80,
-                    message="Uploading generated outputs",
+                    message="Uploading worksheet",
                 ),
             )
             await session.commit()
 
             output_prefix = _build_output_prefix(client_id, tax_year)
+            logger.info(
+                "demo_upload_worksheet_start",
+                task_id=task_id,
+            )
             worksheet_path = await _upload_output_with_timeout(
                 storage_url,
                 output_prefix,
                 result.drake_worksheet_path,
             )
+            logger.info(
+                "demo_upload_worksheet_complete",
+                task_id=task_id,
+            )
+
+            await _emit_progress(
+                session,
+                task_id,
+                ProgressEvent(
+                    stage=ProcessingStage.GENERATING,
+                    progress=95 if from_review else 88,
+                    message="Uploading preparer notes",
+                ),
+            )
+            await session.commit()
+
+            logger.info(
+                "demo_upload_notes_start",
+                task_id=task_id,
+            )
             notes_path = await _upload_output_with_timeout(
                 storage_url,
                 output_prefix,
                 result.preparer_notes_path,
+            )
+            logger.info(
+                "demo_upload_notes_complete",
+                task_id=task_id,
             )
             for local_path in (
                 result.drake_worksheet_path,

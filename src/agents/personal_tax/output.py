@@ -89,13 +89,28 @@ def _format_decimal(value: Decimal | None) -> float | None:
 def _auto_fit_columns(worksheet) -> None:
     """Auto-fit column widths based on content.
 
+    Uses iter_cols with explicit bounds to avoid iterating over unexpectedly
+    large ranges. Caps row scan to prevent slowdown on very large worksheets.
+
     Args:
         worksheet: openpyxl worksheet to adjust.
     """
-    for column_cells in worksheet.columns:
+    max_row = getattr(worksheet, "max_row", 0)
+    max_col = getattr(worksheet, "max_column", 0)
+    if max_row <= 0 or max_col <= 0:
+        return
+    # Cap to prevent runaway iteration on malformed or huge sheets
+    max_rows_to_scan = min(max_row, 2000)
+    for col_tuple in worksheet.iter_cols(
+        min_row=1,
+        max_row=max_rows_to_scan,
+        values_only=False,
+    ):
+        if not col_tuple:
+            continue
         max_length = 0
-        column = column_cells[0].column_letter
-        for cell in column_cells:
+        column_letter = col_tuple[0].column_letter
+        for cell in col_tuple:
             try:
                 if cell.value:
                     cell_length = len(str(cell.value))
@@ -104,7 +119,7 @@ def _auto_fit_columns(worksheet) -> None:
             except (TypeError, AttributeError):
                 pass
         adjusted_width = min(max_length + 2, 50)
-        worksheet.column_dimensions[column].width = adjusted_width
+        worksheet.column_dimensions[column_letter].width = adjusted_width
 
 
 def _add_summary_sheet(
