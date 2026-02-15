@@ -283,6 +283,15 @@ async def test_verify_starts_post_review_processing(
                 ).decode("utf-8"),
             )
         )
+        session.add(
+            TaskArtifact(
+                task_id=task.id,
+                artifact_type=DEMO_ARTIFACT_EXTRACTION_PREVIEW,
+                content=orjson.dumps(
+                    {"serialized_extractions": [{"document_type": "W2", "data": {}}]}
+                ).decode("utf-8"),
+            )
+        )
         await session.commit()
 
     captured: dict[str, str] = {}
@@ -303,6 +312,47 @@ async def test_verify_starts_post_review_processing(
     assert response.status_code == 200
     assert response.json()["message"] == "Verification received. Continuing processing."
     assert captured["coro_name"] == "_process_job"
+
+
+@pytest.mark.asyncio
+async def test_verify_requires_cache_payload(
+    api_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    demo_headers: dict[str, str],
+) -> None:
+    """Verify endpoint rejects review jobs without serialized extraction cache."""
+    async with session_factory() as session:
+        client = Client(name="Verify Missing Cache Client")
+        session.add(client)
+        await session.flush()
+
+        task = Task(
+            client_id=client.id,
+            task_type=DEMO_TASK_TYPE,
+            status=TaskStatus.IN_PROGRESS,
+        )
+        session.add(task)
+        await session.flush()
+
+        session.add(
+            TaskArtifact(
+                task_id=task.id,
+                artifact_type=DEMO_ARTIFACT_PROGRESS,
+                content=orjson.dumps(
+                    {
+                        "stage": "review",
+                        "progress": 60,
+                        "message": "Review extracted data and confirm to continue",
+                    }
+                ).decode("utf-8"),
+            )
+        )
+        await session.commit()
+
+    response = await api_client.post(f"/api/demo/verify/{task.id}", headers=demo_headers)
+
+    assert response.status_code == 409
+    assert "Verification cache unavailable" in response.json()["detail"]
 
 
 @pytest.mark.asyncio

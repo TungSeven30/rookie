@@ -956,55 +956,71 @@ async def _process_job(
                     preview_artifact.content if preview_artifact else None
                 )
                 serialized_extractions = preview_payload.get("serialized_extractions", [])
-                if serialized_extractions:
-                    cached_extractions = _deserialize_extractions(serialized_extractions)
-                    agent.escalations = list(preview_payload.get("escalations", []))
-                    context = await agent._load_context(session, str(client_id), tax_year)
-                    income_summary, deduction_result, tax_result = agent._calculate_tax(
-                        cached_extractions,
-                        filing_status,
-                        tax_year,
+                if not serialized_extractions:
+                    raise RuntimeError(
+                        "Extraction cache missing for verification flow. Restart processing."
                     )
-                    variances = agent._compare_prior_year(
-                        context,
-                        income_summary,
-                        tax_result,
-                    )
-                    worksheet_path_local, notes_path_local = agent._generate_outputs(
-                        context=context,
-                        extractions=cached_extractions,
-                        income_summary=income_summary,
-                        deduction_result=deduction_result,
-                        tax_result=tax_result,
-                        variances=variances,
-                        filing_status=filing_status,
-                        tax_year=tax_year,
-                    )
-                    result = PersonalTaxResult(
-                        drake_worksheet_path=worksheet_path_local,
-                        preparer_notes_path=notes_path_local,
-                        income_summary=income_summary,
-                        tax_result=tax_result,
-                        variances=variances,
-                        extractions=cached_extractions,
-                        escalations=agent.escalations,
-                        overall_confidence=agent._determine_overall_confidence(
-                            cached_extractions
-                        ),
-                    )
-                else:
-                    logger.warning(
-                        "demo_preview_cache_missing",
-                        task_id=task_id,
-                    )
-                    result = await agent.process(
-                        client_id=str(client_id),
-                        tax_year=tax_year,
-                        session=session,
-                        filing_status=filing_status,
-                        user_form_type_overrides=user_form_type_overrides,
-                        document_model=metadata.get("document_model"),
-                    )
+
+                await _emit_progress(
+                    session,
+                    task_id,
+                    ProgressEvent(
+                        stage=ProcessingStage.CALCULATING,
+                        progress=74,
+                        message="Preparing verified data for tax calculation",
+                    ),
+                )
+                await session.commit()
+
+                cached_extractions = _deserialize_extractions(serialized_extractions)
+                agent.escalations = list(preview_payload.get("escalations", []))
+                context = await agent._load_context(session, str(client_id), tax_year)
+                income_summary, deduction_result, tax_result = await asyncio.to_thread(
+                    agent._calculate_tax,
+                    cached_extractions,
+                    filing_status,
+                    tax_year,
+                )
+                variances = agent._compare_prior_year(
+                    context,
+                    income_summary,
+                    tax_result,
+                )
+
+                await _emit_progress(
+                    session,
+                    task_id,
+                    ProgressEvent(
+                        stage=ProcessingStage.GENERATING,
+                        progress=86,
+                        message="Generating worksheet and preparer notes",
+                    ),
+                )
+                await session.commit()
+
+                worksheet_path_local, notes_path_local = await asyncio.to_thread(
+                    agent._generate_outputs,
+                    context,
+                    cached_extractions,
+                    income_summary,
+                    deduction_result,
+                    tax_result,
+                    variances,
+                    filing_status,
+                    tax_year,
+                )
+                result = PersonalTaxResult(
+                    drake_worksheet_path=worksheet_path_local,
+                    preparer_notes_path=notes_path_local,
+                    income_summary=income_summary,
+                    tax_result=tax_result,
+                    variances=variances,
+                    extractions=cached_extractions,
+                    escalations=agent.escalations,
+                    overall_confidence=agent._determine_overall_confidence(
+                        cached_extractions
+                    ),
+                )
             else:
                 await _emit_progress(
                     session,
@@ -1031,9 +1047,10 @@ async def _process_job(
                 ProgressEvent(
                     stage=ProcessingStage.GENERATING,
                     progress=90 if from_review else 80,
-                    message="Generating outputs",
+                    message="Uploading generated outputs",
                 ),
             )
+            await session.commit()
 
             output_prefix = _build_output_prefix(client_id, tax_year)
             worksheet_path = await _upload_output(
@@ -1587,6 +1604,19 @@ async def verify_extraction_preview(
         raise HTTPException(
             status_code=409,
             detail=f"Job cannot be verified from status: {task.status.value}",
+        )
+
+    preview_artifact = await _get_latest_artifact(
+        db, job_id, DEMO_ARTIFACT_EXTRACTION_PREVIEW
+    )
+    preview_payload = _json_loads(preview_artifact.content if preview_artifact else None)
+    if not preview_payload.get("serialized_extractions"):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Verification cache unavailable for this job. "
+                "Please restart processing from upload."
+            ),
         )
 
     await _emit_progress(
