@@ -16,6 +16,7 @@ import * as Progress from '@radix-ui/react-progress'
 import { cn } from '../lib/utils'
 import {
   getExtractionPreview,
+  getJobStatus,
   getUploadedDocuments,
   getUploadedDocumentViewUrl,
   subscribeToProgress,
@@ -93,34 +94,45 @@ export function ProcessingProgress({ jobId, onComplete, onError }: ProcessingPro
   const [loadingUploadedFiles, setLoadingUploadedFiles] = useState(false)
   const [uploadedFilesError, setUploadedFilesError] = useState<string | null>(null)
   const uploadedFilesRequestedRef = useRef(false)
+  const terminalHandledRef = useRef(false)
+
+  const applyStageStatus = (stage: string) => {
+    setStageStatuses(prev => {
+      const updated = { ...prev }
+      const stageIndex = STAGES.findIndex(s => s.key === stage)
+      if (stageIndex < 0) {
+        return updated
+      }
+
+      STAGES.forEach((s, i) => {
+        if (i < stageIndex) {
+          updated[s.key] = 'complete'
+        } else if (i === stageIndex) {
+          updated[s.key] = 'active'
+        } else {
+          updated[s.key] = 'pending'
+        }
+      })
+
+      return updated
+    })
+  }
 
   useEffect(() => {
+    terminalHandledRef.current = false
+
     const cleanup = subscribeToProgress(
       jobId,
       (event: ProgressEvent) => {
+        if (terminalHandledRef.current) {
+          return
+        }
+
         setProgress(event.progress)
         setMessage(event.message)
 
         if (event.stage && event.stage !== 'complete') {
-          setStageStatuses(prev => {
-            const updated = { ...prev }
-            const stageIndex = STAGES.findIndex(s => s.key === event.stage)
-            if (stageIndex < 0) {
-              return updated
-            }
-
-            STAGES.forEach((s, i) => {
-              if (i < stageIndex) {
-                updated[s.key] = 'complete'
-              } else if (i === stageIndex) {
-                updated[s.key] = 'active'
-              } else {
-                updated[s.key] = 'pending'
-              }
-            })
-
-            return updated
-          })
+          applyStageStatus(event.stage)
 
           if (event.stage === 'review') {
             setShowPreviewPanel(true)
@@ -185,17 +197,72 @@ export function ProcessingProgress({ jobId, onComplete, onError }: ProcessingPro
           })
 
           if (event.status === 'failed' || event.status === 'escalated') {
+            terminalHandledRef.current = true
             onError(event.message)
           } else {
+            terminalHandledRef.current = true
             onComplete()
           }
         }
       },
-      error => onError(error.message),
+      () => {
+        setMessage('Live updates disconnected. Checking status...')
+      },
       () => {}
     )
 
     return cleanup
+  }, [jobId, onComplete, onError])
+
+  useEffect(() => {
+    let active = true
+
+    const pollStatus = async () => {
+      if (!active || terminalHandledRef.current) {
+        return
+      }
+      try {
+        const status = await getJobStatus(jobId)
+        if (!active || terminalHandledRef.current) {
+          return
+        }
+
+        setProgress(status.progress)
+        if (status.message) {
+          setMessage(status.message)
+        }
+
+        if (status.current_stage && status.current_stage !== 'complete') {
+          applyStageStatus(status.current_stage)
+          if (status.current_stage === 'review') {
+            setShowPreviewPanel(true)
+          }
+          if (status.current_stage === 'calculating' || status.current_stage === 'generating') {
+            setShowPreviewPanel(false)
+          }
+        }
+
+        if (status.status === 'completed') {
+          terminalHandledRef.current = true
+          onComplete()
+        } else if (status.status === 'failed' || status.status === 'escalated') {
+          terminalHandledRef.current = true
+          onError(status.message || `Processing ${status.status}`)
+        }
+      } catch {
+        // Keep polling; transient status errors should not break the flow UI.
+      }
+    }
+
+    void pollStatus()
+    const interval = window.setInterval(() => {
+      void pollStatus()
+    }, 2000)
+
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
   }, [jobId, onComplete, onError])
 
   const handleVerifyAndContinue = async () => {
