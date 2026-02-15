@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
@@ -282,6 +283,51 @@ async def test_job_status_not_found(
 
     assert response.status_code == 404
     assert "Job not found" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_status_marks_stale_in_progress_task_failed(
+    api_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    demo_headers: dict[str, str],
+) -> None:
+    """Status endpoint auto-fails stale in-progress tasks."""
+    async with session_factory() as session:
+        client = Client(name="Stale Client")
+        session.add(client)
+        await session.flush()
+
+        task = Task(
+            client_id=client.id,
+            task_type=DEMO_TASK_TYPE,
+            status=TaskStatus.IN_PROGRESS,
+        )
+        session.add(task)
+        await session.flush()
+
+        session.add(
+            TaskArtifact(
+                task_id=task.id,
+                artifact_type=DEMO_ARTIFACT_PROGRESS,
+                content=orjson.dumps(
+                    {
+                        "stage": "generating",
+                        "progress": 90,
+                        "message": "Uploading generated outputs",
+                    }
+                ).decode("utf-8"),
+                created_at=datetime.now(UTC) - timedelta(minutes=10),
+            )
+        )
+        await session.commit()
+
+    response = await api_client.get(f"/api/demo/status/{task.id}", headers=demo_headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "failed"
+    assert payload["current_stage"] == "complete"
+    assert "Processing interrupted" in (payload["message"] or "")
 
 
 @pytest.mark.asyncio

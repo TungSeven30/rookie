@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
@@ -70,6 +70,7 @@ DEMO_DOCUMENT_MODELS = frozenset(
 DEMO_CALCULATION_TIMEOUT_SECONDS = 90
 DEMO_OUTPUT_GENERATION_TIMEOUT_SECONDS = 90
 DEMO_OUTPUT_UPLOAD_TIMEOUT_SECONDS = 45
+DEMO_STALE_PROCESSING_SECONDS = 180
 
 
 class ProcessingStage(str, Enum):
@@ -360,6 +361,57 @@ async def _get_metadata(session: AsyncSession, task_id: int) -> dict[str, Any]:
     """Load demo metadata for a task."""
     artifact = await _get_latest_artifact(session, task_id, DEMO_ARTIFACT_METADATA)
     return _json_loads(artifact.content if artifact else None)
+
+
+async def _mark_task_failed_if_stale(
+    session: AsyncSession,
+    task: Task,
+) -> bool:
+    """Fail stuck in-progress jobs that likely lost their background worker."""
+    if task.status not in {TaskStatus.IN_PROGRESS, TaskStatus.ASSIGNED}:
+        return False
+
+    progress_artifact = await _get_latest_artifact(
+        session, task.id, DEMO_ARTIFACT_PROGRESS
+    )
+    if not progress_artifact:
+        return False
+
+    progress_data = _json_loads(progress_artifact.content)
+    stage = progress_data.get("stage")
+    if stage in {
+        ProcessingStage.REVIEW.value,
+        ProcessingStage.UPLOADING.value,
+        ProcessingStage.COMPLETE.value,
+    }:
+        return False
+
+    age = datetime.now(UTC) - progress_artifact.created_at.replace(tzinfo=UTC)
+    if age <= timedelta(seconds=DEMO_STALE_PROCESSING_SECONDS):
+        return False
+
+    task.status = TaskStatus.FAILED
+    await _emit_progress(
+        session,
+        task.id,
+        ProgressEvent(
+            stage=ProcessingStage.COMPLETE,
+            progress=100,
+            message=(
+                "Processing interrupted (worker restart or crash). "
+                "Please start a new run."
+            ),
+            status=task.status.value,
+        ),
+    )
+    await session.commit()
+    logger.warning(
+        "demo_task_marked_stale_failed",
+        task_id=task.id,
+        stage=stage,
+        stale_seconds=int(age.total_seconds()),
+    )
+    return True
 
 
 async def _get_user_form_type_overrides(
@@ -1696,6 +1748,8 @@ async def stream_progress(job_id: int, request: Request) -> StreamingResponse:
                     yield "data: {\"error\": \"Job not found\"}\n\n"
                     return
 
+                await _mark_task_failed_if_stale(session, task)
+
                 stmt = (
                     select(TaskArtifact)
                     .where(TaskArtifact.task_id == job_id)
@@ -1756,6 +1810,8 @@ async def get_job_status(
     if not task:
         raise HTTPException(status_code=404, detail="Job not found")
 
+    await _mark_task_failed_if_stale(db, task)
+
     progress_artifact = await _get_latest_artifact(
         db, job_id, DEMO_ARTIFACT_PROGRESS
     )
@@ -1785,6 +1841,8 @@ async def get_results(
     task = await _get_task(db, job_id)
     if not task:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    await _mark_task_failed_if_stale(db, task)
 
     if task.status in {TaskStatus.PENDING, TaskStatus.IN_PROGRESS, TaskStatus.ASSIGNED}:
         raise HTTPException(status_code=202, detail="Processing still in progress")
