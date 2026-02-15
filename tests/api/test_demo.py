@@ -24,6 +24,7 @@ from src.api.demo import (
     DEMO_ARTIFACT_METADATA,
     DEMO_ARTIFACT_RESULTS,
     DEMO_ARTIFACT_PROGRESS,
+    DEMO_ARTIFACT_UPLOADED,
     DEMO_TASK_TYPE,
     _build_extraction_preview_payload,
     _build_results_payload,
@@ -302,6 +303,108 @@ async def test_verify_starts_post_review_processing(
     assert response.status_code == 200
     assert response.json()["message"] == "Verification received. Continuing processing."
     assert captured["coro_name"] == "_process_job"
+
+
+@pytest.mark.asyncio
+async def test_uploaded_documents_list_returns_files(
+    api_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    demo_headers: dict[str, str],
+) -> None:
+    """Uploaded-documents endpoint returns source file metadata."""
+    async with session_factory() as session:
+        client = Client(name="Uploads Client")
+        session.add(client)
+        await session.flush()
+
+        task = Task(
+            client_id=client.id,
+            task_type=DEMO_TASK_TYPE,
+            status=TaskStatus.IN_PROGRESS,
+        )
+        session.add(task)
+        await session.flush()
+
+        session.add(
+            TaskArtifact(
+                task_id=task.id,
+                artifact_type=DEMO_ARTIFACT_UPLOADED,
+                file_path=f"{client.id}/2024/source.pdf",
+                content=orjson.dumps(
+                    {
+                        "filename": "source.pdf",
+                        "content_type": "application/pdf",
+                        "size": 4096,
+                    }
+                ).decode("utf-8"),
+            )
+        )
+        await session.commit()
+
+    response = await api_client.get(
+        f"/api/demo/job/{task.id}/uploaded-documents",
+        headers=demo_headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["job_id"] == str(task.id)
+    assert len(payload["files"]) == 1
+    assert payload["files"][0]["filename"] == "source.pdf"
+    assert payload["files"][0]["content_type"] == "application/pdf"
+
+
+@pytest.mark.asyncio
+async def test_view_uploaded_document_streams_file(
+    api_client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    demo_headers: dict[str, str],
+    demo_storage_dir: Path,
+) -> None:
+    """Uploaded source document endpoint streams file bytes for verification preview."""
+    async with session_factory() as session:
+        client = Client(name="Uploads Stream Client")
+        session.add(client)
+        await session.flush()
+
+        task = Task(
+            client_id=client.id,
+            task_type=DEMO_TASK_TYPE,
+            status=TaskStatus.IN_PROGRESS,
+        )
+        session.add(task)
+        await session.flush()
+
+        relative_path = f"{client.id}/2024/source.pdf"
+        absolute_path = demo_storage_dir / relative_path
+        absolute_path.parent.mkdir(parents=True, exist_ok=True)
+        absolute_path.write_bytes(b"%PDF-1.4 uploaded preview test")
+
+        artifact = TaskArtifact(
+            task_id=task.id,
+            artifact_type=DEMO_ARTIFACT_UPLOADED,
+            file_path=relative_path,
+            content=orjson.dumps(
+                {
+                    "filename": "source.pdf",
+                    "content_type": "application/pdf",
+                    "size": 29,
+                }
+            ).decode("utf-8"),
+        )
+        session.add(artifact)
+        await session.flush()
+        artifact_id = artifact.id
+        await session.commit()
+
+    response = await api_client.get(
+        f"/api/demo/job/{task.id}/uploaded-documents/{artifact_id}",
+        headers=demo_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"%PDF-1.4 uploaded preview test"
+    assert response.headers["content-type"].startswith("application/pdf")
 
 
 @pytest.mark.asyncio

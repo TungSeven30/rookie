@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import orjson
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -180,6 +180,23 @@ class ExtractionPreviewResponse(BaseModel):
     message: str
     extractions: list[ExtractionItem]
     escalations: list[str]
+
+
+class UploadedDocumentItem(BaseModel):
+    """Uploaded source document metadata."""
+
+    artifact_id: int
+    filename: str
+    content_type: str
+    size: int | None = None
+    uploaded_at: str
+
+
+class UploadedDocumentsResponse(BaseModel):
+    """Uploaded source documents for a demo job."""
+
+    job_id: str
+    files: list[UploadedDocumentItem]
 
 
 class ResultsResponse(BaseModel):
@@ -1845,6 +1862,107 @@ async def download_file(
         file_iterator(),
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get(
+    "/job/{job_id}/uploaded-documents",
+    response_model=UploadedDocumentsResponse,
+)
+async def get_uploaded_documents(
+    job_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> UploadedDocumentsResponse:
+    """List uploaded source documents for verification UI."""
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not available")
+
+    task = await _get_task(db, job_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    result = await db.execute(
+        select(TaskArtifact)
+        .where(TaskArtifact.task_id == job_id)
+        .where(TaskArtifact.artifact_type == DEMO_ARTIFACT_UPLOADED)
+        .order_by(TaskArtifact.id.asc())
+    )
+    artifacts = list(result.scalars().all())
+
+    files: list[UploadedDocumentItem] = []
+    for artifact in artifacts:
+        content = _json_loads(artifact.content)
+        filename = content.get("filename")
+        if not filename and artifact.file_path:
+            filename = Path(artifact.file_path).name
+        files.append(
+            UploadedDocumentItem(
+                artifact_id=artifact.id,
+                filename=filename or f"document_{artifact.id}",
+                content_type=content.get("content_type", "application/octet-stream"),
+                size=content.get("size"),
+                uploaded_at=artifact.created_at.isoformat(),
+            )
+        )
+
+    return UploadedDocumentsResponse(
+        job_id=str(job_id),
+        files=files,
+    )
+
+
+@router.get("/job/{job_id}/uploaded-documents/{artifact_id}")
+async def view_uploaded_document(
+    job_id: int,
+    artifact_id: int,
+    download: bool = Query(default=False),
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+) -> StreamingResponse:
+    """Stream an uploaded source document for inline verification."""
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not available")
+
+    task = await _get_task(db, job_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    artifact = await db.get(TaskArtifact, artifact_id)
+    if not artifact or artifact.task_id != job_id:
+        raise HTTPException(status_code=404, detail="Uploaded document not found")
+    if artifact.artifact_type != DEMO_ARTIFACT_UPLOADED:
+        raise HTTPException(status_code=404, detail="Uploaded document not found")
+    if not artifact.file_path:
+        raise HTTPException(status_code=404, detail="Uploaded document not found")
+
+    metadata = await _get_metadata(db, job_id)
+    storage_url = metadata.get("storage_url", settings.default_storage_url)
+    fs = get_filesystem(storage_url)
+    full_path = build_full_path(storage_url, artifact.file_path)
+    if not fs.exists(full_path):
+        raise HTTPException(status_code=404, detail="Uploaded document not found")
+
+    content = _json_loads(artifact.content)
+    filename = content.get("filename")
+    if not filename:
+        filename = Path(artifact.file_path).name
+    media_type = content.get("content_type", "application/octet-stream")
+    disposition = "attachment" if download else "inline"
+
+    def file_iterator():
+        with fs.open(full_path, "rb") as handle:
+            while True:
+                chunk = handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+
+    return StreamingResponse(
+        file_iterator(),
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'{disposition}; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
     )
 
 

@@ -100,6 +100,19 @@ export interface ExtractionPreviewResponse {
   escalations: string[]
 }
 
+export interface UploadedDocumentItem {
+  artifact_id: number
+  filename: string
+  content_type: string
+  size: number | null
+  uploaded_at: string
+}
+
+export interface UploadedDocumentsResponse {
+  job_id: string
+  files: UploadedDocumentItem[]
+}
+
 // Full results
 export interface ResultsResponse {
   job_id: string

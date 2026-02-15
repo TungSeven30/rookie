@@ -8,6 +8,7 @@ import type {
   JobStatusResponse,
   ResultsResponse,
   ExtractionPreviewResponse,
+  UploadedDocumentsResponse,
   ProgressEvent,
   FilingStatus,
   DocumentTypeOption,
@@ -151,6 +152,42 @@ export async function verifyExtractionPreview(jobId: string): Promise<ProcessRes
   }
 
   return response.json()
+}
+
+/**
+ * List uploaded source documents for verification.
+ */
+export async function getUploadedDocuments(jobId: string): Promise<UploadedDocumentsResponse> {
+  const response = await fetch(`${API_BASE}/job/${jobId}/uploaded-documents`, {
+    headers: buildHeaders(),
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Failed to load uploaded documents' }))
+    throw new Error(error.detail || 'Failed to load uploaded documents')
+  }
+
+  return response.json()
+}
+
+/**
+ * Build inline preview URL for an uploaded source document.
+ */
+export function getUploadedDocumentViewUrl(
+  jobId: string,
+  artifactId: number,
+  download = false
+): string {
+  const params = new URLSearchParams()
+  if (download) {
+    params.set('download', 'true')
+  }
+  if (demoApiKey) {
+    params.set('demo_api_key', demoApiKey)
+  }
+  const query = params.toString()
+  const suffix = query ? `?${query}` : ''
+  return `${API_BASE}/job/${jobId}/uploaded-documents/${artifactId}${suffix}`
 }
 
 /**

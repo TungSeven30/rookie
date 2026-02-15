@@ -5,6 +5,7 @@ import {
   Check,
   Circle,
   ClipboardCheck,
+  Eye,
   FileOutput,
   FileSearch,
   FileText,
@@ -15,10 +16,16 @@ import * as Progress from '@radix-ui/react-progress'
 import { cn } from '../lib/utils'
 import {
   getExtractionPreview,
+  getUploadedDocuments,
+  getUploadedDocumentViewUrl,
   subscribeToProgress,
   verifyExtractionPreview,
 } from '../api/demo'
-import type { ExtractionPreviewResponse, ProgressEvent } from '../types/api'
+import type {
+  ExtractionPreviewResponse,
+  ProgressEvent,
+  UploadedDocumentItem,
+} from '../types/api'
 
 interface ProcessingProgressProps {
   jobId: string
@@ -55,6 +62,13 @@ function confidenceTone(confidence: string): string {
   return 'bg-rose-100 text-rose-700 border-rose-200'
 }
 
+function formatFileSize(size: number | null): string {
+  if (!size || size <= 0) return 'Unknown size'
+  const kb = size / 1024
+  if (kb < 1024) return `${kb.toFixed(1)} KB`
+  return `${(kb / 1024).toFixed(2)} MB`
+}
+
 export function ProcessingProgress({ jobId, onComplete, onError }: ProcessingProgressProps) {
   const [progress, setProgress] = useState(0)
   const [stageStatuses, setStageStatuses] = useState<Record<string, StageStatus>>(() => {
@@ -73,6 +87,12 @@ export function ProcessingProgress({ jobId, onComplete, onError }: ProcessingPro
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [showPreviewPanel, setShowPreviewPanel] = useState(false)
   const previewRequestedRef = useRef(false)
+  const [showFileViewer, setShowFileViewer] = useState(false)
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedDocumentItem[]>([])
+  const [selectedUploadedFile, setSelectedUploadedFile] = useState<UploadedDocumentItem | null>(null)
+  const [loadingUploadedFiles, setLoadingUploadedFiles] = useState(false)
+  const [uploadedFilesError, setUploadedFilesError] = useState<string | null>(null)
+  const uploadedFilesRequestedRef = useRef(false)
 
   useEffect(() => {
     const cleanup = subscribeToProgress(
@@ -122,6 +142,7 @@ export function ProcessingProgress({ jobId, onComplete, onError }: ProcessingPro
             }
           } else if (event.stage === 'calculating' || event.stage === 'generating') {
             setShowPreviewPanel(false)
+            setShowFileViewer(false)
             setVerifyingPreview(false)
           }
         }
@@ -189,6 +210,38 @@ export function ProcessingProgress({ jobId, onComplete, onError }: ProcessingPro
       setVerifyingPreview(false)
     }
   }
+
+  const loadUploadedFiles = async () => {
+    try {
+      setLoadingUploadedFiles(true)
+      setUploadedFilesError(null)
+      const response = await getUploadedDocuments(jobId)
+      setUploadedFiles(response.files)
+      if (response.files.length > 0) {
+        setSelectedUploadedFile(response.files[0])
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load uploaded files'
+      setUploadedFilesError(errorMessage)
+    } finally {
+      setLoadingUploadedFiles(false)
+    }
+  }
+
+  const handleToggleFileViewer = () => {
+    setShowFileViewer(prev => {
+      const next = !prev
+      if (next && !uploadedFilesRequestedRef.current) {
+        uploadedFilesRequestedRef.current = true
+        void loadUploadedFiles()
+      }
+      return next
+    })
+  }
+
+  const selectedFilePreviewUrl = selectedUploadedFile
+    ? getUploadedDocumentViewUrl(jobId, selectedUploadedFile.artifact_id)
+    : null
 
   const getStageIcon = (stage: StageInfo, status: StageStatus) => {
     const StageIcon = stage.icon
@@ -354,7 +407,22 @@ export function ProcessingProgress({ jobId, onComplete, onError }: ProcessingPro
                 ))}
               </div>
 
-              <div className="mt-5 flex justify-end">
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="btn-secondary px-4 py-2 min-h-9 text-sm"
+                    onClick={handleToggleFileViewer}
+                  >
+                    <Eye className="w-4 h-4" />
+                    {showFileViewer ? 'Hide imported files' : 'View imported files'}
+                  </button>
+                  {uploadedFiles.length > 0 && (
+                    <span className="text-xs font-medium text-surface-500">
+                      {uploadedFiles.length} file{uploadedFiles.length > 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
                 <button
                   type="button"
                   className="btn-primary"
@@ -365,6 +433,87 @@ export function ProcessingProgress({ jobId, onComplete, onError }: ProcessingPro
                   Looks good, continue
                 </button>
               </div>
+
+              {showFileViewer && (
+                <div className="mt-4 rounded-xl border border-surface-200 bg-white p-3">
+                  {loadingUploadedFiles && (
+                    <div className="flex items-center gap-2 text-sm text-surface-600 p-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading imported files...
+                    </div>
+                  )}
+
+                  {uploadedFilesError && (
+                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                      {uploadedFilesError}
+                    </div>
+                  )}
+
+                  {!loadingUploadedFiles && !uploadedFilesError && uploadedFiles.length === 0 && (
+                    <p className="text-sm text-surface-500 p-2">No imported files were found for this job.</p>
+                  )}
+
+                  {!loadingUploadedFiles && !uploadedFilesError && uploadedFiles.length > 0 && (
+                    <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-3">
+                      <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                        {uploadedFiles.map(file => (
+                          <button
+                            key={file.artifact_id}
+                            type="button"
+                            onClick={() => setSelectedUploadedFile(file)}
+                            className={cn(
+                              'w-full text-left rounded-lg border px-3 py-2 transition-colors',
+                              selectedUploadedFile?.artifact_id === file.artifact_id
+                                ? 'border-primary-300 bg-primary-50'
+                                : 'border-surface-200 bg-surface-50 hover:bg-surface-100'
+                            )}
+                          >
+                            <p className="text-sm font-medium text-surface-900 truncate">{file.filename}</p>
+                            <p className="text-[11px] text-surface-500 mt-1">{formatFileSize(file.size)}</p>
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="rounded-lg border border-surface-200 bg-surface-50 min-h-[380px] overflow-hidden">
+                        {selectedUploadedFile && selectedFilePreviewUrl ? (
+                          selectedUploadedFile.content_type.startsWith('image/') ? (
+                            <img
+                              src={selectedFilePreviewUrl}
+                              alt={selectedUploadedFile.filename}
+                              className="w-full h-[380px] object-contain bg-white"
+                            />
+                          ) : (
+                            <iframe
+                              key={selectedUploadedFile.artifact_id}
+                              src={selectedFilePreviewUrl}
+                              title={selectedUploadedFile.filename}
+                              className="w-full h-[380px] bg-white"
+                            />
+                          )
+                        ) : (
+                          <div className="h-[380px] flex items-center justify-center text-surface-500 text-sm">
+                            Select a file to preview
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {selectedUploadedFile && (
+                    <div className="mt-2 flex items-center justify-between text-xs text-surface-500">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-3.5 h-3.5" />
+                        <span className="truncate">{selectedUploadedFile.filename}</span>
+                      </div>
+                      <a
+                        href={getUploadedDocumentViewUrl(jobId, selectedUploadedFile.artifact_id, true)}
+                        className="text-primary-700 hover:text-primary-800 font-medium"
+                      >
+                        Download file
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
