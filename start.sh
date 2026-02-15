@@ -12,6 +12,7 @@ FRONTEND_LOG_FILE="${RUN_DIR}/frontend.log"
 
 BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 BACKEND_PORT="${BACKEND_PORT:-8001}"
+BACKEND_RELOAD="${BACKEND_RELOAD:-0}"
 FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 VITE_DEMO_API_KEY="${VITE_DEMO_API_KEY:-${DEMO_API_KEY:-}}"
@@ -37,7 +38,11 @@ if is_running_file "$BACKEND_PID_FILE"; then
 else
   (
     cd "$ROOT_DIR" || exit 1
-    nohup uv run uvicorn src.main:app --reload --host "$BACKEND_HOST" --port "$BACKEND_PORT" \
+    RELOAD_ARGS=()
+    if [[ "$BACKEND_RELOAD" == "1" ]]; then
+      RELOAD_ARGS+=(--reload)
+    fi
+    nohup uv run uvicorn src.main:app "${RELOAD_ARGS[@]}" --host "$BACKEND_HOST" --port "$BACKEND_PORT" \
       >>"$BACKEND_LOG_FILE" 2>&1 &
     echo $! > "$BACKEND_PID_FILE"
   )
