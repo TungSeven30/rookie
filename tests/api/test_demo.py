@@ -25,7 +25,9 @@ from src.api.demo import (
     DEMO_ARTIFACT_RESULTS,
     DEMO_ARTIFACT_PROGRESS,
     DEMO_TASK_TYPE,
+    _build_extraction_preview_payload,
     _build_results_payload,
+    _deserialize_extractions,
 )
 from src.api.deps import get_db
 from src.core.config import settings
@@ -544,6 +546,45 @@ async def test_build_results_payload_includes_w2_key_fields() -> None:
     key_fields = payload["extractions"][0]["key_fields"]
     assert key_fields["wages"] == "$78,321.05"
     assert key_fields["federal_withholding"] == "$13,120.45"
+
+
+@pytest.mark.asyncio
+async def test_extraction_preview_roundtrip_preserves_w2_data() -> None:
+    """Serialized preview cache can be restored for post-review calculation."""
+    w2 = W2Data(
+        employee_ssn="123-45-6789",
+        employer_ein="12-3456789",
+        employer_name="Test Corp",
+        employee_name="John Doe",
+        wages_tips_compensation=Decimal("78321.05"),
+        federal_tax_withheld=Decimal("13120.45"),
+        social_security_wages=Decimal("78321.05"),
+        social_security_tax=Decimal("4857.91"),
+        medicare_wages=Decimal("78321.05"),
+        medicare_tax=Decimal("1135.75"),
+        confidence="HIGH",
+    )
+
+    preview_payload = _build_extraction_preview_payload(
+        task_id=7,
+        extractions=[
+            {
+                "type": "W2",
+                "document_type": "W2",
+                "filename": "2025_W-2.pdf",
+                "confidence": "HIGH",
+                "data": w2,
+            }
+        ],
+        escalations=[],
+    )
+
+    restored = _deserialize_extractions(preview_payload["serialized_extractions"])
+    assert len(restored) == 1
+    restored_w2 = restored[0]["data"]
+    assert isinstance(restored_w2, W2Data)
+    assert restored_w2.wages_tips_compensation == Decimal("78321.05")
+    assert restored_w2.federal_tax_withheld == Decimal("13120.45")
 
 
 @pytest.mark.asyncio

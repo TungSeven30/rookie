@@ -19,14 +19,21 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.agents.personal_tax.agent import EscalationRequired, PersonalTaxAgent
+from src.agents.personal_tax.agent import (
+    EscalationRequired,
+    PersonalTaxAgent,
+    PersonalTaxResult,
+)
 from src.agents.personal_tax.calculator import calculate_deductions
 from src.api.deps import get_db, verify_demo_api_key
 from src.core.config import settings
 from src.core.logging import get_logger
 from src.documents.models import (
+    DocumentType,
+    Form1095A,
     Form1098,
     Form1098T,
+    Form1099B,
     Form1099DIV,
     Form1099G,
     Form1099INT,
@@ -34,6 +41,7 @@ from src.documents.models import (
     Form1099R,
     Form1099S,
     Form5498,
+    FormK1,
     W2Data,
 )
 from src.integrations.storage import build_full_path, get_filesystem, write_file
@@ -440,6 +448,117 @@ def _build_key_fields(extraction: dict[str, Any]) -> dict[str, str]:
     return key_fields
 
 
+DOCUMENT_MODEL_BY_TYPE: dict[str, type[Any]] = {
+    DocumentType.W2.value: W2Data,
+    DocumentType.FORM_1099_INT.value: Form1099INT,
+    DocumentType.FORM_1099_DIV.value: Form1099DIV,
+    DocumentType.FORM_1099_NEC.value: Form1099NEC,
+    DocumentType.FORM_1098.value: Form1098,
+    DocumentType.FORM_1099_R.value: Form1099R,
+    DocumentType.FORM_1099_G.value: Form1099G,
+    DocumentType.FORM_1098_T.value: Form1098T,
+    DocumentType.FORM_5498.value: Form5498,
+    DocumentType.FORM_1099_S.value: Form1099S,
+    DocumentType.FORM_K1.value: FormK1,
+    DocumentType.FORM_1099_B.value: Form1099B,
+    DocumentType.FORM_1095_A.value: Form1095A,
+}
+
+
+def _serialize_extractions(extractions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Serialize extractions for storage between review and calculation phases."""
+    serialized: list[dict[str, Any]] = []
+    for ext in extractions:
+        data = ext.get("data")
+        is_list_data = isinstance(data, list)
+        serialized_data: Any = None
+        if is_list_data:
+            serialized_data = [
+                item.model_dump(mode="json")
+                for item in data
+                if hasattr(item, "model_dump")
+            ]
+        elif data is not None and hasattr(data, "model_dump"):
+            serialized_data = data.model_dump(mode="json")
+
+        serialized.append(
+            {
+                "type": (
+                    ext.get("type").value
+                    if isinstance(ext.get("type"), DocumentType)
+                    else ext.get("document_type")
+                ),
+                "document_type": ext.get("document_type"),
+                "filename": ext.get("filename"),
+                "confidence": ext.get("confidence"),
+                "classification_confidence": ext.get("classification_confidence"),
+                "classification_reasoning": ext.get("classification_reasoning"),
+                "classification_overridden": ext.get("classification_overridden", False),
+                "classification_override_source": ext.get(
+                    "classification_override_source"
+                ),
+                "multiple_forms_detected": ext.get("multiple_forms_detected", False),
+                "classification_original_type": ext.get("classification_original_type"),
+                "classification_original_confidence": ext.get(
+                    "classification_original_confidence"
+                ),
+                "classification_original_reasoning": ext.get(
+                    "classification_original_reasoning"
+                ),
+                "data_is_list": is_list_data,
+                "data": serialized_data,
+            }
+        )
+    return serialized
+
+
+def _deserialize_extractions(serialized: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Reconstruct extraction records from serialized payload."""
+    extractions: list[dict[str, Any]] = []
+    for item in serialized:
+        document_type = str(item.get("document_type") or item.get("type") or "UNKNOWN")
+        model_cls = DOCUMENT_MODEL_BY_TYPE.get(document_type)
+        data_payload = item.get("data")
+        data: Any = None
+
+        if model_cls is not None and data_payload is not None:
+            if item.get("data_is_list") and isinstance(data_payload, list):
+                data = [model_cls.model_validate(entry) for entry in data_payload]
+            elif isinstance(data_payload, dict):
+                data = model_cls.model_validate(data_payload)
+
+        extraction_type: DocumentType = DocumentType.UNKNOWN
+        try:
+            extraction_type = DocumentType(document_type)
+        except ValueError:
+            logger.warning("unknown_document_type_in_cache", document_type=document_type)
+
+        extractions.append(
+            {
+                "type": extraction_type,
+                "document_type": document_type,
+                "filename": item.get("filename", "unknown"),
+                "confidence": item.get("confidence", "LOW"),
+                "data": data,
+                "classification_confidence": item.get("classification_confidence"),
+                "classification_reasoning": item.get("classification_reasoning"),
+                "classification_overridden": item.get("classification_overridden", False),
+                "classification_override_source": item.get(
+                    "classification_override_source"
+                ),
+                "multiple_forms_detected": item.get("multiple_forms_detected", False),
+                "classification_original_type": item.get("classification_original_type"),
+                "classification_original_confidence": item.get(
+                    "classification_original_confidence"
+                ),
+                "classification_original_reasoning": item.get(
+                    "classification_original_reasoning"
+                ),
+            }
+        )
+    return extractions
+
+
 def _build_extraction_preview_payload(
     task_id: int,
     extractions: list[dict[str, Any]],
@@ -472,6 +591,7 @@ def _build_extraction_preview_payload(
             for ext in extractions
         ],
         "escalations": escalations,
+        "serialized_extractions": _serialize_extractions(extractions),
     }
 
 
@@ -696,6 +816,10 @@ async def _prepare_job_for_review(task_id: int, session_factory: Any) -> None:
             await session.commit()
 
             extractions = await agent._extract_documents(documents)
+            context = await agent._load_context(session, str(client_id), tax_year)
+            agent._check_missing_documents(context, extractions)
+            agent._check_conflicts(extractions)
+            agent._check_new_form_escalations(extractions)
             preview_payload = _build_extraction_preview_payload(
                 task_id=task_id,
                 extractions=extractions,
@@ -807,7 +931,64 @@ async def _process_job(
 
             user_form_type_overrides = await _get_user_form_type_overrides(session, task_id)
 
-            if not from_review:
+            if from_review:
+                preview_artifact = await _get_latest_artifact(
+                    session, task_id, DEMO_ARTIFACT_EXTRACTION_PREVIEW
+                )
+                preview_payload = _json_loads(
+                    preview_artifact.content if preview_artifact else None
+                )
+                serialized_extractions = preview_payload.get("serialized_extractions", [])
+                if serialized_extractions:
+                    cached_extractions = _deserialize_extractions(serialized_extractions)
+                    agent.escalations = list(preview_payload.get("escalations", []))
+                    context = await agent._load_context(session, str(client_id), tax_year)
+                    income_summary, deduction_result, tax_result = agent._calculate_tax(
+                        cached_extractions,
+                        filing_status,
+                        tax_year,
+                    )
+                    variances = agent._compare_prior_year(
+                        context,
+                        income_summary,
+                        tax_result,
+                    )
+                    worksheet_path_local, notes_path_local = agent._generate_outputs(
+                        context=context,
+                        extractions=cached_extractions,
+                        income_summary=income_summary,
+                        deduction_result=deduction_result,
+                        tax_result=tax_result,
+                        variances=variances,
+                        filing_status=filing_status,
+                        tax_year=tax_year,
+                    )
+                    result = PersonalTaxResult(
+                        drake_worksheet_path=worksheet_path_local,
+                        preparer_notes_path=notes_path_local,
+                        income_summary=income_summary,
+                        tax_result=tax_result,
+                        variances=variances,
+                        extractions=cached_extractions,
+                        escalations=agent.escalations,
+                        overall_confidence=agent._determine_overall_confidence(
+                            cached_extractions
+                        ),
+                    )
+                else:
+                    logger.warning(
+                        "demo_preview_cache_missing",
+                        task_id=task_id,
+                    )
+                    result = await agent.process(
+                        client_id=str(client_id),
+                        tax_year=tax_year,
+                        session=session,
+                        filing_status=filing_status,
+                        user_form_type_overrides=user_form_type_overrides,
+                        document_model=metadata.get("document_model"),
+                    )
+            else:
                 await _emit_progress(
                     session,
                     task_id,
@@ -818,15 +999,14 @@ async def _process_job(
                     ),
                 )
                 await session.commit()
-
-            result = await agent.process(
-                client_id=str(client_id),
-                tax_year=tax_year,
-                session=session,
-                filing_status=filing_status,
-                user_form_type_overrides=user_form_type_overrides,
-                document_model=metadata.get("document_model"),
-            )
+                result = await agent.process(
+                    client_id=str(client_id),
+                    tax_year=tax_year,
+                    session=session,
+                    filing_status=filing_status,
+                    user_form_type_overrides=user_form_type_overrides,
+                    document_model=metadata.get("document_model"),
+                )
 
             await _emit_progress(
                 session,
