@@ -18,7 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from src.agents.personal_tax.agent import PersonalTaxResult
 from src.agents.personal_tax.calculator import IncomeSummary, TaxResult
-from src.documents.models import W2Data
+from src.context.builder import AgentContext
+from src.documents.models import DocumentType, W2Data
 from src.api.demo import (
     DEMO_ARTIFACT_EXTRACTION_PREVIEW,
     DEMO_ARTIFACT_METADATA,
@@ -141,6 +142,135 @@ async def test_upload_invalid_filing_status(
 
     assert response.status_code == 400
     assert "Invalid filing status" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_demo_review_to_results_end_to_end(
+    api_client: AsyncClient,
+    demo_headers: dict[str, str],
+    test_pdf_file: BytesIO,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """End-to-end flow reaches completed status from review verification."""
+
+    def fake_scan_documents(self, client_id: str, tax_year: int):  # type: ignore[no-untyped-def]
+        return [{"name": "test_w2.pdf", "path": "ignored", "extension": "pdf"}]
+
+    async def fake_extract_documents(self, documents):  # type: ignore[no-untyped-def]
+        w2 = W2Data(
+            employee_ssn="123-45-6789",
+            employer_ein="12-3456789",
+            employer_name="Test Corp",
+            employee_name="John Doe",
+            wages_tips_compensation=Decimal("85000"),
+            federal_tax_withheld=Decimal("12000"),
+            social_security_wages=Decimal("85000"),
+            social_security_tax=Decimal("5270"),
+            medicare_wages=Decimal("85000"),
+            medicare_tax=Decimal("1232.5"),
+            confidence="HIGH",
+        )
+        return [
+            {
+                "type": DocumentType.W2,
+                "document_type": "W2",
+                "filename": "test_w2.pdf",
+                "confidence": "HIGH",
+                "data": w2,
+                "classification_confidence": 0.99,
+                "classification_reasoning": "test fixture",
+                "classification_overridden": False,
+                "classification_override_source": None,
+                "multiple_forms_detected": False,
+                "classification_original_type": None,
+                "classification_original_confidence": None,
+                "classification_original_reasoning": None,
+            }
+        ]
+
+    async def fake_load_context(
+        self, session: AsyncSession, client_id: str, tax_year: int
+    ) -> AgentContext:
+        return AgentContext(
+            client_id=int(client_id),
+            client_name="E2E Client",
+            tax_year=tax_year,
+            task_type="personal_tax",
+            prior_year_return=None,
+        )
+
+    monkeypatch.setattr(
+        "src.agents.personal_tax.agent.PersonalTaxAgent._scan_documents",
+        fake_scan_documents,
+    )
+    monkeypatch.setattr(
+        "src.agents.personal_tax.agent.PersonalTaxAgent._extract_documents",
+        fake_extract_documents,
+    )
+    monkeypatch.setattr(
+        "src.agents.personal_tax.agent.PersonalTaxAgent._load_context",
+        fake_load_context,
+    )
+
+    upload_response = await api_client.post(
+        "/api/demo/upload",
+        headers=demo_headers,
+        files=[("files", ("test_w2.pdf", test_pdf_file, "application/pdf"))],
+        data={"client_name": "E2E Client", "tax_year": "2025", "filing_status": "single"},
+    )
+    assert upload_response.status_code == 200
+    job_id = upload_response.json()["job_id"]
+
+    process_response = await api_client.post(
+        f"/api/demo/process/{job_id}",
+        headers=demo_headers,
+    )
+    assert process_response.status_code == 200
+
+    reached_review = False
+    for _ in range(200):
+        status_response = await api_client.get(
+            f"/api/demo/status/{job_id}",
+            headers=demo_headers,
+        )
+        assert status_response.status_code == 200
+        status_data = status_response.json()
+        if status_data["current_stage"] == "review":
+            reached_review = True
+            break
+        if status_data["status"] in {"failed", "escalated", "completed"}:
+            break
+        await asyncio.sleep(0.05)
+
+    assert reached_review, "Job never reached review stage"
+
+    verify_response = await api_client.post(
+        f"/api/demo/verify/{job_id}",
+        headers=demo_headers,
+    )
+    assert verify_response.status_code == 200
+
+    terminal_status = None
+    for _ in range(300):
+        status_response = await api_client.get(
+            f"/api/demo/status/{job_id}",
+            headers=demo_headers,
+        )
+        assert status_response.status_code == 200
+        status_data = status_response.json()
+        if status_data["status"] in {"completed", "failed", "escalated"}:
+            terminal_status = status_data["status"]
+            break
+        await asyncio.sleep(0.05)
+
+    assert terminal_status == "completed"
+
+    results_response = await api_client.get(
+        f"/api/demo/results/{job_id}",
+        headers=demo_headers,
+    )
+    assert results_response.status_code == 200
+    assert results_response.json()["status"] == "completed"
 
 
 @pytest.mark.asyncio

@@ -67,6 +67,9 @@ DEMO_ARTIFACT_NOTES = "preparer_notes"
 DEMO_DOCUMENT_MODELS = frozenset(
     {"claude-opus-4-6", "claude-sonnet-4-5-20250929"}
 )
+DEMO_CALCULATION_TIMEOUT_SECONDS = 90
+DEMO_OUTPUT_GENERATION_TIMEOUT_SECONDS = 90
+DEMO_OUTPUT_UPLOAD_TIMEOUT_SECONDS = 45
 
 
 class ProcessingStage(str, Enum):
@@ -776,6 +779,25 @@ async def _upload_output(
     return storage_path
 
 
+async def _upload_output_with_timeout(
+    storage_url: str,
+    output_prefix: str,
+    source_path: Path,
+    *,
+    timeout_seconds: int = DEMO_OUTPUT_UPLOAD_TIMEOUT_SECONDS,
+) -> str:
+    """Upload output file with timeout protection."""
+    try:
+        return await asyncio.wait_for(
+            _upload_output(storage_url, output_prefix, source_path),
+            timeout=timeout_seconds,
+        )
+    except TimeoutError as exc:
+        raise TimeoutError(
+            f"Timed out uploading output file: {source_path.name}"
+        ) from exc
+
+
 async def _prepare_job_for_review(task_id: int, session_factory: Any) -> None:
     """Run extraction-only phase and pause for user verification."""
     async with session_factory() as session:
@@ -890,13 +912,17 @@ async def _prepare_job_for_review(task_id: int, session_factory: Any) -> None:
         except Exception as exc:
             logger.exception("demo_prepare_failed", task_id=task_id, error=str(exc))
             task.status = TaskStatus.FAILED
+            failure_message = "Processing failed"
+            error_detail = str(exc).strip()
+            if error_detail:
+                failure_message = f"Processing failed: {error_detail[:180]}"
             await _emit_progress(
                 session,
                 task_id,
                 ProgressEvent(
                     stage=ProcessingStage.COMPLETE,
                     progress=100,
-                    message="Processing failed",
+                    message=failure_message,
                     status=task.status.value,
                 ),
             )
@@ -975,12 +1001,18 @@ async def _process_job(
                 cached_extractions = _deserialize_extractions(serialized_extractions)
                 agent.escalations = list(preview_payload.get("escalations", []))
                 context = await agent._load_context(session, str(client_id), tax_year)
-                income_summary, deduction_result, tax_result = await asyncio.to_thread(
-                    agent._calculate_tax,
-                    cached_extractions,
-                    filing_status,
-                    tax_year,
-                )
+                try:
+                    income_summary, deduction_result, tax_result = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            agent._calculate_tax,
+                            cached_extractions,
+                            filing_status,
+                            tax_year,
+                        ),
+                        timeout=DEMO_CALCULATION_TIMEOUT_SECONDS,
+                    )
+                except TimeoutError as exc:
+                    raise TimeoutError("Tax calculation timed out") from exc
                 variances = agent._compare_prior_year(
                     context,
                     income_summary,
@@ -998,17 +1030,23 @@ async def _process_job(
                 )
                 await session.commit()
 
-                worksheet_path_local, notes_path_local = await asyncio.to_thread(
-                    agent._generate_outputs,
-                    context,
-                    cached_extractions,
-                    income_summary,
-                    deduction_result,
-                    tax_result,
-                    variances,
-                    filing_status,
-                    tax_year,
-                )
+                try:
+                    worksheet_path_local, notes_path_local = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            agent._generate_outputs,
+                            context,
+                            cached_extractions,
+                            income_summary,
+                            deduction_result,
+                            tax_result,
+                            variances,
+                            filing_status,
+                            tax_year,
+                        ),
+                        timeout=DEMO_OUTPUT_GENERATION_TIMEOUT_SECONDS,
+                    )
+                except TimeoutError as exc:
+                    raise TimeoutError("Output generation timed out") from exc
                 result = PersonalTaxResult(
                     drake_worksheet_path=worksheet_path_local,
                     preparer_notes_path=notes_path_local,
@@ -1053,12 +1091,12 @@ async def _process_job(
             await session.commit()
 
             output_prefix = _build_output_prefix(client_id, tax_year)
-            worksheet_path = await _upload_output(
+            worksheet_path = await _upload_output_with_timeout(
                 storage_url,
                 output_prefix,
                 result.drake_worksheet_path,
             )
-            notes_path = await _upload_output(
+            notes_path = await _upload_output_with_timeout(
                 storage_url,
                 output_prefix,
                 result.preparer_notes_path,
@@ -1130,12 +1168,12 @@ async def _process_job(
 
             if payload_result is not None:
                 output_prefix = _build_output_prefix(client_id, tax_year)
-                worksheet_path = await _upload_output(
+                worksheet_path = await _upload_output_with_timeout(
                     storage_url,
                     output_prefix,
                     payload_result.drake_worksheet_path,
                 )
-                notes_path = await _upload_output(
+                notes_path = await _upload_output_with_timeout(
                     storage_url,
                     output_prefix,
                     payload_result.preparer_notes_path,
@@ -1192,13 +1230,17 @@ async def _process_job(
         except Exception as exc:
             logger.exception("demo_processing_failed", task_id=task_id, error=str(exc))
             task.status = TaskStatus.FAILED
+            failure_message = "Processing failed"
+            error_detail = str(exc).strip()
+            if error_detail:
+                failure_message = f"Processing failed: {error_detail[:180]}"
             await _emit_progress(
                 session,
                 task_id,
                 ProgressEvent(
                     stage=ProcessingStage.COMPLETE,
                     progress=100,
-                    message="Processing failed",
+                    message=failure_message,
                     status=task.status.value,
                 ),
             )
