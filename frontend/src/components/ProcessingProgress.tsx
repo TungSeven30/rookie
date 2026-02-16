@@ -340,18 +340,38 @@ export function ProcessingProgress({ jobId, onComplete, onError }: ProcessingPro
     )
   }
 
+  const activeStageIndex = STAGES.findIndex(s => stageStatuses[s.key] === 'active')
+  const stepLabel =
+    activeStageIndex >= 0
+      ? `Step ${activeStageIndex + 1} of ${STAGES.length}`
+      : progress >= 100
+        ? 'Complete'
+        : 'Processing'
+
   return (
     <div className="card p-8">
       <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
+        <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center shrink-0">
           <Sparkles className="w-5 h-5 text-primary-600" />
         </div>
-        <div>
-          <h2 className="font-display text-xl font-semibold text-surface-900">Processing Documents</h2>
-          <p className="text-sm text-surface-500">{message}</p>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="font-display text-xl font-semibold text-surface-900">
+              Processing Documents
+            </h2>
+            <span className="text-xs font-medium text-surface-500 uppercase tracking-wide">
+              {stepLabel}
+            </span>
+          </div>
+          <p className="text-base font-medium text-surface-700 mt-1">
+            {message || 'Processing...'}
+          </p>
         </div>
       </div>
 
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <span className="text-sm text-surface-600">{progress}% complete</span>
+      </div>
       <Progress.Root
         className="relative overflow-hidden bg-surface-100 rounded-full w-full h-3 mb-8"
         value={progress}
@@ -380,16 +400,21 @@ export function ProcessingProgress({ jobId, onComplete, onError }: ProcessingPro
                 )}
               </div>
 
-              <span
-                className={cn(
-                  'text-sm font-medium',
-                  status === 'complete' && 'text-green-700',
-                  status === 'active' && 'text-primary-700',
-                  status === 'pending' && 'text-surface-400'
+              <div className="min-w-0 flex-1">
+                <span
+                  className={cn(
+                    'text-sm font-medium block',
+                    status === 'complete' && 'text-green-700',
+                    status === 'active' && 'text-primary-700',
+                    status === 'pending' && 'text-surface-400'
+                  )}
+                >
+                  {stage.label}
+                </span>
+                {status === 'active' && message && message !== stage.label && (
+                  <span className="text-xs text-surface-600 mt-0.5 block">{message}</span>
                 )}
-              >
-                {stage.label}
-              </span>
+              </div>
             </div>
           )
         })}
