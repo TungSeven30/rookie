@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import queue
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -71,6 +72,7 @@ DEMO_CALCULATION_TIMEOUT_SECONDS = 90
 DEMO_OUTPUT_GENERATION_TIMEOUT_SECONDS = 90
 DEMO_OUTPUT_UPLOAD_TIMEOUT_SECONDS = 45
 DEMO_STALE_PROCESSING_SECONDS = 180
+DEMO_STALE_GENERATING_SECONDS = 600  # 10 min: worksheet gen + upload in separate worker
 
 
 class ProcessingStage(str, Enum):
@@ -386,8 +388,18 @@ async def _mark_task_failed_if_stale(
     }:
         return False
 
+    # GENERATING/CALCULATING can take minutes; use longer timeout for separate worker
+    stale_seconds = (
+        DEMO_STALE_GENERATING_SECONDS
+        if stage
+        in {
+            ProcessingStage.GENERATING.value,
+            ProcessingStage.CALCULATING.value,
+        }
+        else DEMO_STALE_PROCESSING_SECONDS
+    )
     age = datetime.now(UTC) - progress_artifact.created_at.replace(tzinfo=UTC)
-    if age <= timedelta(seconds=DEMO_STALE_PROCESSING_SECONDS):
+    if age <= timedelta(seconds=stale_seconds):
         return False
 
     task.status = TaskStatus.FAILED
@@ -409,7 +421,8 @@ async def _mark_task_failed_if_stale(
         "demo_task_marked_stale_failed",
         task_id=task.id,
         stage=stage,
-        stale_seconds=int(age.total_seconds()),
+        age_seconds=int(age.total_seconds()),
+        threshold_seconds=stale_seconds,
     )
     return True
 
@@ -1082,6 +1095,32 @@ async def _process_job(
                 )
                 await session.commit()
 
+                progress_queue: queue.Queue[tuple[str, int] | None] = queue.Queue()
+
+                def progress_cb(msg: str, pct: int) -> None:
+                    progress_queue.put((msg, pct))
+
+                async def drain_progress() -> None:
+                    while True:
+                        try:
+                            item = progress_queue.get(timeout=0.3)
+                        except queue.Empty:
+                            continue
+                        if item is None:
+                            break
+                        msg, pct = item
+                        await _emit_progress(
+                            session,
+                            task_id,
+                            ProgressEvent(
+                                stage=ProcessingStage.GENERATING,
+                                progress=pct,
+                                message=msg,
+                            ),
+                        )
+                        await session.commit()
+
+                drain_task = asyncio.create_task(drain_progress())
                 logger.info(
                     "demo_generating_outputs_start",
                     task_id=task_id,
@@ -1098,6 +1137,7 @@ async def _process_job(
                             variances,
                             filing_status,
                             tax_year,
+                            progress_callback=progress_cb,
                         ),
                         timeout=DEMO_OUTPUT_GENERATION_TIMEOUT_SECONDS,
                     )
@@ -1107,6 +1147,9 @@ async def _process_job(
                         task_id=task_id,
                     )
                     raise TimeoutError("Output generation timed out") from exc
+                finally:
+                    progress_queue.put(None)
+                    await drain_task
                 logger.info(
                     "demo_generating_outputs_complete",
                     task_id=task_id,

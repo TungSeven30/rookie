@@ -24,7 +24,7 @@ from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from src.agents.personal_tax.calculator import (
     CapitalTransaction,
@@ -1329,6 +1329,8 @@ class PersonalTaxAgent:
         variances: list[VarianceItem],
         filing_status: str,
         tax_year: int,
+        *,
+        progress_callback: Callable[[str, int], None] | None = None,
     ) -> tuple[Path, Path]:
         """Generate output files (PTAX-13, PTAX-14).
 
@@ -1415,6 +1417,8 @@ class PersonalTaxAgent:
             tax_result=tax_result,
             output_path=worksheet_path,
         )
+        if progress_callback:
+            progress_callback("Worksheet complete", 85)
 
         # Generate preparer notes
         notes_path = self.output_dir / f"preparer_notes_{tax_year}.md"
